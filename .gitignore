@@ -1,0 +1,28 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local profile and app data
+/user-data/
+/local-data/
+/uploads/
+/storage/
+/cache/
+*.sqlite
+*.sqlite3
+*.db
+
+# Local development artifacts
+.venv/
+venv/
+node_modules/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.log
