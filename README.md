@@ -6,16 +6,25 @@ The first search defaults to remote work explicitly eligible from Italy, but you
 
 ## Run locally
 
-Requirements: Python 3.10 or newer. In PowerShell, activate the existing Conda `gen` environment, then run from the project folder:
+Requirements: Python 3.10 or newer and the existing Conda `gen` environment. Run from the project folder:
 
 ```powershell
-conda activate gen
-python -m pip install -e ".[dev]"
+conda run -n gen python -m pip install -e ".[dev]"
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
-python -m clue_ai
+.\scripts\clue.ps1 start
 ```
 
-Then open http://127.0.0.1:8000. The server binds to this computer only. A fresh copy of `.env.example` starts with a blank key; the app works without one. This local checkout's ignored `.env` is owner-configured and is never committed.
+Then open http://127.0.0.1:8000. The server binds to this computer only and stays in the foreground; press Ctrl+C in that PowerShell window when you finish. A fresh copy of `.env.example` starts with a blank key; the app works without one. This local checkout's ignored `.env` is owner-configured and is never committed.
+
+Use the same PowerShell window, or another one, to manage the local server:
+
+```powershell
+.\scripts\clue.ps1 status
+.\scripts\clue.ps1 stop
+.\scripts\clue.ps1 restart
+```
+
+The helper always runs against Conda `gen`. `stop` and `restart` close a Python server from that environment if it occupies port 8000. They refuse to stop a non-Python process or a process launched from another environment. Stopping the server does not delete the profile or `.data/` files. The app is not installed as a background service and does not start automatically.
 
 To enable Jev later, add your key to .env and restart Clue. Read the data disclosure in Settings; Clue does not inspect TypeSafe account terms, billing/refill settings, or other uses of the key. Scoring requires your opt-in and an explicit Score with Jev action. The app reserves at most USD 4 over 30 days toward your USD 5 owner ceiling; that local limit does not guarantee account-wide charges.
 

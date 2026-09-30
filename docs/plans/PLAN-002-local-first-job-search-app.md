@@ -175,6 +175,25 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 
 After M1 wiring, validate the local end-to-end flow with synthetic files and source/API fixtures, a mocked TypeSafe response, no external network in automated tests, localhost-only listening, and deletion of the isolated temporary data directory. Inspect UI keyboard flow, responsive layout, errors and empty states, source attribution, location evidence, stale/unscored labels, cost reservation, and the Git diff. The owner waived 200% zoom and TypeSafe account checks. Browser accessibility-tree and keyboard review now cover onboarding, profile, search, synthetic results, and settings; actual speech-reader playback remains unverified because no screen-reader control is available in the browser session. After M2, validate live Jev only with synthetic data and the owner's configured key. No real CV was sent during implementation; later real-CV use requires the owner's explicit in-app opt-in and per-search scoring action.
 
+## M3 — Local server lifecycle controls
+
+**Status:** Implemented and validated locally; direct-to-main checkpoint pending.
+
+**Goal:** Make it easy to inspect, stop, restart, and run the local server only while the owner is actively using it.
+
+**Acceptance criteria:**
+
+- [x] PowerShell `start` runs Clue in the foreground; `stop` ends it, and `restart` closes the old process before starting a fresh one.
+- [x] `status`, `stop`, and `restart` manage a Python server occupying port 8000 only when its executable matches Conda `gen`; refuse to stop a non-Python process or a process from another environment.
+- [x] Stop/restart leaves `.data/` and profile data untouched; Clue does not run as an automatic background service.
+- [x] Local smoke verification confirmed the server response, shutdown, and port release; the server was not left running.
+
+**Validation:** `scripts/clue.ps1` was syntax-checked and exercised through status/start/stop/restart. The localhost page returned HTTP 200 after both start and restart; stop returned cleanly, and `netstat` confirmed port 8000 was free afterward. The full Conda `gen` suite passed (65 tests, one upstream deprecation warning), Ruff and byte-compilation passed, and `git diff --check` passed.
+
+**Documentation:** README startup and server-control commands updated. No data deletion or background startup behavior was added.
+
+**Git checkpoint:** Push this validated server lifecycle fix directly to `main`, following the owner's standing instruction.
+
 ## Rollback / recovery
 
 Keep local databases and uploads under ignored `.data/`; test data is temporary. Stop an individual source by setting its state to `Review` or `Blocked`. Stop all paid calls by removing the key or setting the local budget to zero. If a validated main checkpoint needs rollback, use a new corrective commit; never force-push or bypass failed remote checks.
