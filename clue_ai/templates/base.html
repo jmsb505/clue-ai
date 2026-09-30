@@ -11,35 +11,35 @@
 <body {% if status_url %}data-status-url="{{ status_url }}"{% endif %}>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <div class="app-shell">
-    <aside class="sidebar" aria-label="Main navigation">
+    <aside class="sidebar" aria-label="Site links and status">
       <a class="brand" href="/" aria-label="Clue AI home">
         <span class="brand-mark" aria-hidden="true">c</span>
         <span class="brand-name">clue<span>ai</span></span>
       </a>
       <p class="rail-label">YOUR SEARCH</p>
-      <nav class="main-nav">
-        <a href="/" class="{% if active_page == 'home' %}is-active{% endif %}">
+      <nav class="main-nav" aria-label="Your search">
+        <a href="/" class="{% if active_page == 'home' %}is-active{% endif %}" {% if active_page == 'home' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
         </a>
-        <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}">
+        <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}" {% if active_page == 'profile' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">◎</span><span>My profile</span>
         </a>
-        <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}">
+        <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}" {% if active_page == 'search' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⌕</span><span>Find roles</span>
         </a>
-        <a href="/saved" class="{% if active_page == 'saved' %}is-active{% endif %}">
+        <a href="/saved" class="{% if active_page == 'saved' %}is-active{% endif %}" {% if active_page == 'saved' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">♡</span><span>Saved roles</span>
         </a>
-        <a href="/hidden" class="{% if active_page == 'hidden' %}is-active{% endif %}">
+        <a href="/hidden" class="{% if active_page == 'hidden' %}is-active{% endif %}" {% if active_page == 'hidden' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⊘</span><span>Hidden roles</span>
         </a>
       </nav>
       <p class="rail-label rail-label-spaced">WORKSPACE</p>
-      <nav class="main-nav">
-        <a href="/sources" class="{% if active_page == 'sources' %}is-active{% endif %}">
+      <nav class="main-nav" aria-label="Workspace">
+        <a href="/sources" class="{% if active_page == 'sources' %}is-active{% endif %}" {% if active_page == 'sources' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⌁</span><span>Sources</span>
         </a>
-        <a href="/settings" class="{% if active_page == 'settings' %}is-active{% endif %}">
+        <a href="/settings" class="{% if active_page == 'settings' %}is-active{% endif %}" {% if active_page == 'settings' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span>
         </a>
       </nav>

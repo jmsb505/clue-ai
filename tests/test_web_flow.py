@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 from urllib.parse import urlparse
 
+import pytest
 from conftest import make_job
 from docx import Document
 from fastapi.testclient import TestClient
@@ -23,6 +24,29 @@ def test_local_views_render_without_a_jev_key(settings):
         response = client.get(route)
         assert response.status_code == 200, route
     assert client.get("/health").json() == {"status": "ok", "storage": "local"}
+
+
+@pytest.mark.parametrize(
+    ("route", "current_href"),
+    (
+        ("/", "/"),
+        ("/profile", "/profile"),
+        ("/search", "/search"),
+        ("/saved", "/saved"),
+        ("/hidden", "/hidden"),
+        ("/sources", "/sources"),
+        ("/settings", "/settings"),
+    ),
+)
+def test_primary_navigation_names_groups_and_marks_current_page(settings, route, current_href):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    response = client.get(route)
+
+    assert response.status_code == 200
+    assert 'aria-label="Your search"' in response.text
+    assert 'aria-label="Workspace"' in response.text
+    assert f'<a href="{current_href}" class="is-active" aria-current="page">' in response.text
 
 
 def test_localhost_and_same_origin_boundaries_reject_cross_origin_requests(settings):

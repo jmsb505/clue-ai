@@ -127,7 +127,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - [x] Deterministic hard constraints run before Jev. Unknown location evidence remains unknown; the UI never treats a generic remote label as Italy eligibility.
 - [x] With no Jev key, results remain visible with “fit not evaluated.” With a key, the SDK uses versioned typed questions, bounded batches, disabled retries, and a monthly reserve that stops before the $4.00 app inference cap.
 - [x] Save/hide/open-source actions work; the delete flow removes CV, profile, searches/preferences, indexed/saved results, and usage history while preserving nonpersonal source definitions.
-- [x] UI has visible keyboard focus, responsive forms/results, understandable empty/error states, and reduced-motion rules without third-party fonts or analytics. Keyboard focus and 320/640/651px layouts were manually inspected.
+- [x] UI has visible keyboard focus, two named navigation groups with an announced current page, responsive forms/results, understandable empty/error states, and reduced-motion rules without third-party fonts or analytics. Keyboard focus and 320/640/651px layouts were manually inspected.
 - [ ] Complete manual verification at 200% browser zoom and a full screen-reader review of onboarding, profile, search, results, and settings.
 - [x] `.env` remains ignored; `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder; no key or CV is committed.
 - [x] The offline validation suite passed with synthetic documents, fixtures, and a mocked Jev service. No live Jev/source call occurred during tests.
@@ -190,6 +190,7 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Verify synthetic error and exhausted-budget paths locally: no automatic retries/fallbacks, safe unscored results, and no client creation after the cap.
 - [x] Re-run all checks in Conda `gen`: 42 tests passed (one upstream deprecation warning), Ruff passed, and byte-compilation passed.
 - [x] Commit and push M2 synthetic Jev evidence and tests as a separate checkpoint on `main`; `git ls-remote` verified `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.
+- [x] Improve sidebar semantics with accessible names for both navigation groups and `aria-current="page"` on the active route; a parameterized regression check covers all seven primary routes. The final full suite passed 63 tests, Ruff, and byte-compilation.
 - [x] Re-check official TypeSafe API docs for an account billing/credit/refill endpoint; none is documented. Do not inspect the authenticated console or undocumented endpoints without the owner.
 - [ ] Complete the actual 200% zoom and full screen-reader review once the app can be opened in a supported local browser/accessibility setup.
 - [ ] Obtain the owner's account-specific TypeSafe spend/refill/Order evidence and real-CV terms decision before sending any personal candidate data.
