@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1/M2 pushed and remote-verified; M3a pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`; M3b validated locally, main checkpoint pending; M3c remains
+Status: ACTIVE — M1/M2, M3a, and M3b pushed and remote-verified on `main`; M3b SHA `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`; M3c remains
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -220,7 +220,7 @@ Expected Git progression: do not mark this gate complete until owner evidence is
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`. M3b's manual backup/restore behavior passed local validation and its main checkpoint is pending. M3c keeps account billing, terms, and personal relevance as owner gates. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`. M3b's manual backup/restore behavior is pushed and remote-verified at `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. M3c keeps account billing, terms, and personal relevance as owner gates. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -241,7 +241,7 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - M2 validation in Conda `gen`: 50 tests passed, Ruff passed after an import-order correction, byte-compilation passed, and `git diff --check` passed. Separate milestone commit `0ee104bd699645025980ee8874ebb590846ca3da` was pushed to `main`; `git ls-remote origin refs/heads/main` matched that SHA.
 - No real CV, Jev request, app database, or job listing was persisted or sent to Jev during PLAN-001 M2. The public-source checks cost `$0`.
 - PLAN-001 M3a adds a repeatable synthetic-only runner and records its one-request/five-listing results, comparison with the keyword baseline, methodology defects corrected during the run, and known cost uncertainty in `docs/evaluations/PLAN-001-M3-synthetic-jev.md`. The result is an integration check, not evidence of personal relevance or Jev superiority.
-- PLAN-001 M3b's synthetic backup/restore and deletion tests passed in Conda `gen`; `.env` and `.data/` remain ignored. Operating limits are documented in `docs/operations/local-data-backup-and-deletion.md`. Refresh and scoring use request-triggered in-process tasks, with no recurring scheduler or hosted compute.
+- PLAN-001 M3b's synthetic backup/restore and deletion tests passed in Conda `gen`; `.env` and `.data/` remain ignored. Operating limits are documented in `docs/operations/local-data-backup-and-deletion.md`. Refresh and score orchestration use request-triggered in-process tasks, with no recurring scheduler or extra hosted compute. Commit `9399ad81e0cd34ed244045d4ab52e70d0e4a7245` is pushed to and verified on `main`.
 - PLAN-001 M3 and the account/privacy gates in [PLAN-002](PLAN-002-local-first-job-search-app.md) remain active.
 
 ## Implementation discoveries / decisions

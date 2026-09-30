@@ -1,9 +1,9 @@
 # Project documentation
 
-**Status:** PLAN-001 M1/M2 and M3a pushed and remote-verified; M3b passed local validation and its `main` checkpoint is pending. PLAN-002 M1/M2 are pushed.
+**Status:** PLAN-001 M1/M2, M3a, and M3b pushed and remote-verified; M3b `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. PLAN-002 M1/M2 are pushed.
 **Research snapshot:** 2026-09-30
 
-This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. PLAN-002 M1/M2 and PLAN-001 M1/M2/M3a are pushed to `main`; PLAN-001 M3b has local validation evidence, with its main checkpoint pending. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
+This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. PLAN-002 M1/M2 and PLAN-001 M1/M2/M3a/M3b are pushed to `main`; M3b's verified SHA is recorded above. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
 
 ## Authority map
 

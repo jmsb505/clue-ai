@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1/M2 and M3a are pushed and remote-verified on `main`; M3b passed local validation and its checkpoint is pending, while M3c remains. PLAN-002 M1/M2 are pushed; TypeSafe account terms, real-CV choice, personal relevance calibration, and accessibility review remain.
+**Status:** PLAN-001 M1/M2, M3a, and M3b are pushed and remote-verified on `main`; M3b SHA is `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. M3c remains. PLAN-002 M1/M2 are pushed; TypeSafe account terms, real-CV choice, personal relevance calibration, and accessibility review remain.
 **Updated:** 2026-09-30
 
 ## Owner-set cost ceiling

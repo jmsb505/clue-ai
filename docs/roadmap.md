@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2 and M3a pushed and remote-verified on `main`; M3b passed local validation and its checkpoint is pending; M3c and personal-use gates remain. PLAN-002 M1/M2 are pushed.
+**Status:** PLAN-001 M1/M2, M3a, and M3b pushed and remote-verified on `main`; M3b SHA `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. M3c and personal-use gates remain. PLAN-002 M1/M2 are pushed.
 **Updated:** 2026-09-30
 
 ## Definition gate
@@ -33,7 +33,7 @@ Proceed after TypeSafe and source conditions in [the definition gate](readiness/
 
 ## Current implementation state
 
-PLAN-002 M1 and M2 are pushed to `main`; the latter used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). PLAN-001 M1/M2 and M3a are pushed and remote-verified; M3a `31c2479a593795f67a4cb67e6afebaefcb71f9b8` passed the full 56-test suite, Ruff, byte-compilation, and diff checks. Its five-item synthetic benchmark used one Jev request; Jev and the keyword baseline both had `nDCG@5 = 1.0` against assistant-authored labels. This is integration evidence, not personal calibration. M3b's backup/restore and deletion tests also pass, and its checkpoint is pending. No real CV or live listing was sent to Jev. Account-level TypeSafe terms and charges, owner relevance judgments, source approvals, local device protections, and accessibility review remain open.
+PLAN-002 M1 and M2 are pushed to `main`; the latter used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). PLAN-001 M1/M2, M3a, and M3b are pushed and remote-verified; M3b `9399ad81e0cd34ed244045d4ab52e70d0e4a7245` contains the backup/restore guide and synthetic validation. The full 56-test suite, Ruff, byte-compilation, and diff checks passed. M3a's five-item synthetic benchmark used one Jev request; Jev and the keyword baseline both had `nDCG@5 = 1.0` against assistant-authored labels. This is integration evidence, not personal calibration. No real CV or live listing was sent to Jev. Account-level TypeSafe terms and charges, owner relevance judgments, source approvals, local device protections, and accessibility review remain open.
 
 ## Delivery workflow
 
