@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1 and M2 pushed and remote-verified on `main`; M3 remains
+Status: ACTIVE — M1/M2 pushed and remote-verified; M3a validated locally, main checkpoint pending; M3b/M3c remain
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -150,45 +150,77 @@ Applicable specialized skills: `milestone-delivery`; verify local file, key, and
 
 Expected Git checkpoint: implement, validate, commit, and push each crawler milestone directly to `main`. Do not create milestone branches or bypass repository protections; stop and report if a required check or push is rejected.
 
-### M3 — Validate Jev ranking and zero-cost operations
+### M3 — Jev ranking validation and zero-cost local operation
 
-Goal: Prove the job index and Jev ranking can support a transparent search within the owner's cost ceiling.
+Goal: Validate the scorer on synthetic job data, verify local controls, and make account-level spend and personal-data gates explicit. Deliver M3a and M3b as separate validated `main` checkpoints. M3c requires owner account evidence and remains a use-readiness gate.
+
+#### M3a — Synthetic ranking benchmark
+
+Goal: Compare Jev's bounded scores with a simple keyword baseline on a reproducible synthetic-only dataset, and verify hard filters and score evidence.
 
 Subtasks:
 
-- [ ] Use synthetic CV/listing pairs for ranking evaluation; keep real CV-derived data out of Jev calls until TypeSafe terms and the $5 stop are verified.
-- [ ] Compare user/candidate relevance judgments, a keyword baseline, and Jev's bounded scores.
-- [ ] Measure top-result relevance, confidence/missingness, hard-filter correctness, duplicate/stale rates, and original-link validity.
-- [ ] Add a hard all-in $5/month Jev stop; disable automatic paid-credit refills.
-- [ ] Verify local storage, backups, API-key handling, and scheduled crawling run at $0.
+- [x] Create one synthetic candidate and eight synthetic listings; send only the five hard-filter-eligible listings to Jev in one batch.
+- [x] Compare fixed synthetic reference grades, keyword phrase counts, and Jev's weighted scores. Labels were authored for this scenario and are not the owner's personal relevance judgments.
+- [x] Measure top-result relevance, confidence, filter false-pass/reject count, duplicate/stale records, canonical-link structure, and request cost.
+- [x] Keep all candidate/job inputs synthetic and use a disposable local database that is removed after metrics are read.
 
-Affected areas: Jev adapter, rank/evidence view, local profile/privacy, operations and budget controls.
+Affected areas: evaluation runner, Jev score integration, deterministic filters, and evaluation evidence.
 
-Dependencies: TypeSafe Order/DPA, local data controls, and approved free sources.
+Dependencies: current Jev API key and an app-side budget reserve; no real CV or source listing.
 
 Acceptance criteria:
 
-- [ ] Every displayed fit score has traceable CV/job evidence and a confidence/unknown state; no score implies hiring probability.
-- [ ] Hard constraints never pass a benchmark result that violates the user's explicit must-have.
-- [ ] Jev pauses at the hard monthly limit and labels unscored listings without using a substitute model.
-- [ ] All non-TypeSafe recurring costs are $0 at measured pilot load.
+- [x] The final benchmark run uses one API request, scores five listings, preserves four score dimensions/evidence, and reports confidence and cost.
+- [x] Hard filters return all five expected examples with zero false passes and zero false rejects.
+- [x] The Jev and keyword rankings are both compared to the synthetic relevance grades, with limitations documented.
 
 Validation:
 
-- [ ] Written evaluation results and per-search cost ledger.
-- [ ] Local deletion and backup test with synthetic data before personal real-CV use.
+- [x] Offline suite tests dataset filters, metric bounds, duplicate/stale/link evidence, and one-batch temporary-ledger handling.
+- [x] Final synthetic request: one Jev batch, five scored, no unscored results, `$0.000259434` app-ledger cost. A corrected preceding attempt lost its temporary usage record after the database directory was removed; the bound and correction are disclosed in `docs/evaluations/PLAN-001-M3-synthetic-jev.md`.
+- [x] The exploratory first run is superseded: a fixture's negative sentence contained a required keyword and duplicate titles made its ranking ambiguous.
 
-Documentation updates:
+Documentation updates: `docs/evaluations/PLAN-001-M3-synthetic-jev.md`, architecture, roadmap, and readiness gate.
 
-- [ ] Update product definition, cost assumptions, source-of-truth architecture, definition/readiness gate, and decision records.
+Expected Git checkpoint: one `main` commit for the benchmark code, tests, evidence, and source-of-truth updates; record and verify the remote SHA before starting M3b.
 
-Applicable specialized skills: `milestone-delivery`; public release-readiness work is out of scope unless the owner later chooses to distribute or host the app.
+#### M3b — Local storage and backup behavior
 
-Expected Git checkpoint: implement, validate, commit, and push each Jev/cost milestone directly to `main`. Do not create milestone branches or bypass repository protections; stop and report if a required check or push is rejected.
+Goal: Verify local deletion and a manual, zero-cost backup/restore path using synthetic data. Do not add an automatic/cloud backup service.
+
+Subtasks:
+
+- [ ] Test copying a stopped app's `.data/` directory and restoring its database/profile/CV with synthetic data.
+- [ ] Verify `.env` and `.data/` remain Git-ignored; document that the key is not included in data backups.
+- [ ] Document that backups must use a user-selected encrypted offline destination and are not deleted by the in-app deletion action.
+- [ ] Confirm the app has no background scheduler; searches refresh due sources locally and no paid compute/service is used.
+
+Acceptance criteria:
+
+- [ ] A synthetic copy can restore the local profile and CV; the existing delete test removes the active local profile, CV, history, jobs, and Jev ledger.
+- [ ] Backup limitations, encryption responsibility, key recovery, and deletion scope are visible in operating documentation.
+- [ ] No recurring non-TypeSafe cost or hosted backup path is introduced.
+
+Expected Git checkpoint: separate validated M3b commit pushed directly to `main`.
+
+#### M3c — Account-level cost and owner relevance gates
+
+Goal: Confirm the accepted TypeSafe Order/account settings and the owner's relevance judgments before relying on results or sending real CV-derived profile data.
+
+Open owner evidence:
+
+- [ ] Check the account's applicable Order and credit conversion; verify automatic paid-credit refill is off and all-in TypeSafe charges stay below `$5` per month. The app's hard rolling reserve is `$4`, but it cannot observe other account use, taxes, or account credits.
+- [ ] The owner reviews the synthetic relevance examples and supplies personal judgments, or elects to defer personal calibration.
+- [ ] The owner decides whether the current TypeSafe DPA, U.S. processing/transfer, retention, and telemetry terms are acceptable for any reviewed CV-derived fields. Until then, no real CV-derived data is sent.
+
+Public terms research is recorded in the synthetic evaluation note and definition gate; account-specific billing and consent cannot be inferred from public documentation.
+
+Expected Git progression: do not mark this gate complete until owner evidence is supplied. No workaround or alternate model is permitted.
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3 still requires the synthetic Jev benchmark, coverage/relevance measures, and zero-cost backup/deletion operations. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is implemented and locally validated, with its `main` checkpoint pending. M3b covers zero-cost manual backup/restore; M3c keeps account billing, terms, and personal relevance as owner gates. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -208,6 +240,7 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - M2 live evidence is recorded in `docs/research/source-discovery-and-crawl-review.md`. The Prima EU API returned 90/90 parsed records in one request; its public page returned one JSON-LD posting with the same canonical URL, and the host's `robots.txt` allowed the request. YLD's API returned five postings; its public page returned HTTP 200 but Scrapling signaled a block, so it was not retried.
 - M2 validation in Conda `gen`: 50 tests passed, Ruff passed after an import-order correction, byte-compilation passed, and `git diff --check` passed. Separate milestone commit `0ee104bd699645025980ee8874ebb590846ca3da` was pushed to `main`; `git ls-remote origin refs/heads/main` matched that SHA.
 - No real CV, Jev request, app database, or job listing was persisted or sent to Jev during PLAN-001 M2. The public-source checks cost `$0`.
+- PLAN-001 M3a adds a repeatable synthetic-only runner and records its one-request/five-listing results, comparison with the keyword baseline, methodology defects corrected during the run, and known cost uncertainty in `docs/evaluations/PLAN-001-M3-synthetic-jev.md`. The result is an integration check, not evidence of personal relevance or Jev superiority.
 - PLAN-001 M3 and the account/privacy gates in [PLAN-002](PLAN-002-local-first-job-search-app.md) remain active.
 
 ## Implementation discoveries / decisions
@@ -228,3 +261,5 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - `docs/research/source-discovery-and-crawl-review.md`
 - `docs/decisions/0003-bounded-public-company-crawling.md`
 - `docs/readiness/definition-gate.md`
+- `docs/evaluations/PLAN-001-M3-synthetic-jev.md`
+- `docs/operations/local-data-backup-and-deletion.md`

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2 pushed and remote-verified on `main` (M2 `0ee104bd699645025980ee8874ebb590846ca3da`); PLAN-002 M1/M2 already pushed. PLAN-001 M3 and personal-use gates remain.
+**Status:** PLAN-001 M1/M2 pushed and remote-verified on `main`; M3a synthetic benchmark passed locally with its checkpoint pending; M3b/M3c and personal-use gates remain. PLAN-002 M1/M2 are pushed.
 **Updated:** 2026-09-30
 
 ## Definition gate
@@ -21,7 +21,7 @@ On approved sources only, compare documented API/feed retrieval with sitemaps, `
 
 ## 3. Validate Jev ranking and free-tier operation
 
-Use synthetic CV/listing pairs. Compare Jev's bounded criteria and user-weighted rank to personal judgments and a keyword baseline. Verify the $5/month all-in hard stop and disable automatic paid-credit refills. Check local save, delete, and backup behavior with synthetic data.
+Use synthetic CV/listing pairs. Compare Jev's bounded criteria and user-weighted rank to owner judgments and a keyword baseline. Verify the $5/month all-in hard stop and disable automatic paid-credit refills. Check local save, delete, and backup behavior with synthetic data. PLAN-001 M3a has completed a five-item synthetic benchmark; M3b covers backup and restore, and M3c requires account-level evidence and owner decisions.
 
 **Acceptance:** A written evaluation supports score labels and confidence display; hard constraints behave deterministically; all displayed jobs have source evidence; low-confidence/unvalidated-language results stay unscored; all non-TypeSafe recurring costs stay $0.
 
@@ -33,7 +33,7 @@ Proceed after TypeSafe and source conditions in [the definition gate](readiness/
 
 ## Current implementation state
 
-PLAN-002 M1 and M2 are pushed to `main`; the latter used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). No CV or listing was sent to Jev. PLAN-001 M1 and M2 are pushed and remote-verified; M2 `0ee104bd699645025980ee8874ebb590846ca3da` passed 50 tests, Ruff, byte-compilation, and diff checks. Its transient Lever parser sample was not persisted; Lever and YLD remain disabled in `Review`. Provider terms, the synthetic relevance benchmark, backup/deletion evidence, and accessibility review remain open.
+PLAN-002 M1 and M2 are pushed to `main`; the latter used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). PLAN-001 M1 and M2 are pushed and remote-verified; M2 `0ee104bd699645025980ee8874ebb590846ca3da` passed 50 tests, Ruff, byte-compilation, and diff checks. Its transient Lever parser sample was not persisted; Lever and YLD remain disabled in `Review`. PLAN-001 M3a's synthetic benchmark scored five listings in one Jev request; Jev and the keyword baseline both had `nDCG@5 = 1.0` against assistant-authored labels. This is integration evidence, not personal calibration. No real CV or live listing was sent to Jev. M3a's `main` checkpoint is pending; manual backup/restore evidence, account-level TypeSafe terms and charges, owner relevance judgments, source approvals, and accessibility review remain open.
 
 ## Delivery workflow
 

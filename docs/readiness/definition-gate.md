@@ -1,7 +1,7 @@
 # Definition gate
 
 **Definition status:** PASS — product and bounded-pilot definition complete  
-**Personal local-use readiness:** PARTIAL — TypeSafe terms, source behavior, and ranking evidence remain  
+**Personal local-use readiness:** PARTIAL — TypeSafe account terms, ongoing source approvals, local backup validation, and personal relevance calibration remain
 **Reviewed:** 2026-09-30
 
 This gate separates “is the personal app defined?” from “is it ready to use with the owner's real CV and rely on its rankings?” The first answer is yes. The second needs a few provider and local-runtime checks.
@@ -15,21 +15,21 @@ This gate separates “is the personal app defined?” from “is it ready to us
 | Pilot defaults | PASS | PDF/DOCX first; English UI; default 30-day posting window; 24-hour “recently checked” label; a listing in an unvalidated language may show without a Jev score; [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/); a 30-second p95 search target on an already indexed pilot set. | Measure usability, language handling, accessibility, and response time during pilot. |
 | Source acquisition policy | PASS | The enabled five-source set is Jobicy, RemoteJobs.org, Remote OK, Remote First Jobs, and Startup Jobs, each with a documented $0 path, attribution/direct link, refresh, and local retention. EURES is not integrated; ATS and other aggregators remain `Review` per the [source review](../research/source-discovery-and-crawl-review.md) and ADR 0003. | For each ATS board, check ongoing display, attribution, refresh, and retention terms before enabling it; the source list remains intentionally incomplete. |
 | Crawling policy | PASS | Scrapling is selected for bounded local crawling of registered public HTML job and career pages; feeds/APIs remain direct connectors. Crawl outside the request path, respect source controls, stop on blocks, and exclude stealth, proxy rotation, CAPTCHA bypass, logged-in automation, and SERP scraping. | Validate the Scrapling adapter and each source parser during the local pilot. |
-| Jev role and ranking | PASS | TypeSafe Jev is the required fit evaluator. One synthetic API request verified the typed score path; code owns permissions, exact constraints, and user-weighted rank. Display evidence and uncertainty; never imply hiring probability. | Validate rubric and confidence thresholds against a representative relevance benchmark before relying on rankings. |
+| Jev role and ranking | PARTIAL | TypeSafe Jev remains the required fit evaluator. PLAN-001 M3a scored five eligible synthetic postings in one request; Jev and an exact-keyword baseline both scored `nDCG@5 = 1.0` against assistant-authored synthetic grades. This verifies the integration and metric path, not personal usefulness or superiority over the baseline. | Owner reviews the synthetic examples or defers personal calibration; continue to show evidence and uncertainty and never imply hiring probability. |
 | Budget | PASS | Owner cap: $5/month all-in for TypeSafe Jev and $0 for every other source/service. App-side $4 rolling reserve and stop behavior are covered by local tests; the synthetic request used 1,574 input tokens, with `$0.00006611` estimated by the app ledger at its configured rate. | Verify provider credit conversion, taxes, automatic refills, and the account's all-in hard stop. |
-| Candidate data and deletion | PASS for pilot definition | CV, saved profile, preferences, local job index, and results live on the owner's device with user-controlled deletion. Minimize data sent to Jev; no real CVs until its personal-use/data terms and local controls pass. | Verify TypeSafe terms, telemetry, retention, deletion, and transfer; confirm local file and backup handling. |
+| Candidate data and deletion | PASS for pilot definition | CV, saved profile, preferences, local job index, and results live on the owner's device with user-controlled deletion. The M3a runner used only synthetic data and a disposable database. No real CVs until TypeSafe terms and local controls pass. | Validate manual local backup/restore; verify TypeSafe terms, telemetry, retention, deletion, and transfer. |
 | System boundaries | PASS for local plan | Local profile → source connectors → local normalization/dedup/freshness → deterministic constraints → Jev → transparent results. FastAPI/Jinja/SQLite is selected; no crawl runs synchronously for each search. | Validate local file/key handling and source adapters in PLAN-002. |
-| Validation plan | PASS for local plan | Use a representative synthetic evaluation set and measure relevance, location-filter correctness, confidence/missingness, source link validity, freshness, duplicates, latency, and per-search Jev cost. | Run evaluation before the owner relies on fit scores for personal searches. |
+| Validation plan | PARTIAL | M3a's synthetic-only benchmark measured hard-filter correctness, confidence, stale/duplicate/link signals, Jev cost, and Jev/keyword `nDCG@5`. Both rankers scored 1.0 on assistant-authored labels; this small constructed set does not establish personal relevance, live-source freshness, latency, or comparative ranking quality. | Gather the owner's relevance judgments or defer personal calibration; validate local backup and use-readiness gates separately. |
 
 ## Checks before using a real CV or relying on rankings
 
 These items cannot be closed by product research alone; they require provider terms or local runtime evidence.
 
 1. Confirm the TypeSafe API's personal-use terms, Order/DPA, account-specific credit conversion, $5 all-in stop, retention, telemetry, deletion, and data transfer terms before sending a real CV-derived profile.
-2. The initial free source set is selected and its feeds were smoke-checked; M2 added a transient Lever API/page parser comparison. Continue source-by-source terms validation in PLAN-001 M3 before enabling any employer/ATS board. The [source review](../research/source-discovery-and-crawl-review.md) records coverage, limits, and alternatives with conflicting or incomplete terms.
-3. Verify local file permissions, local backups, and user-controlled deletion. No hosted accounts, authentication service, or shared deployment is planned.
+2. The initial free source set is selected and its feeds were smoke-checked; M2 added a transient Lever API/page parser comparison. Continue source-by-source terms validation before enabling any employer/ATS board. The [source review](../research/source-discovery-and-crawl-review.md) records coverage, limits, and alternatives with conflicting or incomplete terms.
+3. Validate the documented manual local backup/restore procedure and review local file permissions. The existing deletion action is tested; no hosted accounts, authentication service, or shared deployment is planned.
 4. Revisit privacy or employment/AI review only if the owner later offers the app to other users.
-5. Build a representative synthetic evaluation set and show that score labels, evidence, and confidence are useful before the owner relies on rankings.
+5. Review the synthetic benchmark examples and provide personal relevance judgments, or explicitly defer personal calibration before relying on rankings.
 
 ## Gate decision
 

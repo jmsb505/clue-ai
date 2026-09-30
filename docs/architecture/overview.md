@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1 and M2 are pushed and remote-verified on `main` (M2 `0ee104bd699645025980ee8874ebb590846ca3da`); M3 remains active. PLAN-002 M1/M2 are pushed; TypeSafe account terms, real-CV choice, accessibility review, and ranking benchmark remain.
+**Status:** PLAN-001 M1/M2 are pushed and remote-verified on `main`; M3a's synthetic benchmark passed locally and its `main` checkpoint is pending, while M3b/M3c remain. PLAN-002 M1/M2 are pushed; TypeSafe account terms, real-CV choice, personal relevance calibration, and accessibility review remain.
 **Updated:** 2026-09-30
 
 ## Owner-set cost ceiling
@@ -81,18 +81,18 @@ The first increment uses FastAPI/Uvicorn on `127.0.0.1`, Jinja templates, semant
 
 Use TypeSafe's official Python SDK for `/v1/systemone`, with Jev pinned to `jev-1.13.0`. Configure `RetryPolicy(max_retries=0)`. Before each request, reserve an 80,000-token allowance at the current documented input price, then settle successful responses to returned `usage.input_tokens`; ambiguous failures retain the reservation. The app enforces a $4.00 inference cap over a rolling 30-day period, leaving $1.00 of the owner's $5 ceiling as a buffer. See [ADR 0006](../decisions/0006-jev-scoring-and-budget-guard.md).
 
-The local implementation includes profile/CV review, source management, feed/ATS/Scrapling adapters, SQLite persistence, deterministic search, Jev scoring controls, results, saved/hidden views, and local deletion. PLAN-001 M2 transiently compared one public Prima Lever EU API response with its job page; the board remains disabled in `Review` until ongoing display, refresh, attribution, and retention conditions are checked. PLAN-002 M2 verified Jev with one synthetic live call; no CV or job listing was sent to Jev. No listing from the source comparison was persisted to `.data/`. Real-CV use remains gated on TypeSafe terms, local privacy controls, source review, and ranking evidence. See [PLAN-001](../plans/PLAN-001-free-local-source-discovery.md) and [PLAN-002](../plans/PLAN-002-local-first-job-search-app.md) for evidence and remaining gates.
+The local implementation includes profile/CV review, source management, feed/ATS/Scrapling adapters, SQLite persistence, deterministic search, Jev scoring controls, results, saved/hidden views, and local deletion. PLAN-001 M2 transiently compared one public Prima Lever EU API response with its job page; the board remains disabled in `Review` until ongoing display, refresh, attribution, and retention conditions are checked. PLAN-002 M2 and PLAN-001 M3a used synthetic Jev inputs only; no CV or live job listing was sent to Jev. M3a's five-item benchmark scored `nDCG@5 = 1.0` for Jev and the keyword baseline on assistant-authored labels, so it confirms the evaluation path but not personal relevance or Jev's advantage. Its evidence is in [the M3a evaluation](../evaluations/PLAN-001-M3-synthetic-jev.md). Manual backup/restore validation and account-level terms remain open; real-CV use stays gated on TypeSafe terms, local privacy controls, source review, and owner relevance judgments. See [PLAN-001](../plans/PLAN-001-free-local-source-discovery.md) and [PLAN-002](../plans/PLAN-002-local-first-job-search-app.md) for evidence and remaining gates.
 
 ## Provider and deployment choices still open
 
 - Geography-specific source coverage beyond the initial Jobicy, RemoteJobs.org, Remote OK, Remote First Jobs, and Startup Jobs feeds; track additional sources in the registry.
 - Per-company review and enablement for Greenhouse, Lever, SmartRecruiters, and Scrapling career-page connectors.
 - Additional source-specific Scrapling parsers and schedules beyond the single Prima/YLD M2 pilot.
-- Local deletion and backup behavior; TypeSafe telemetry, retention, deletion, and international transfer terms.
+- Manual local backup/restore validation; TypeSafe telemetry, retention, deletion, and international transfer terms.
 - TypeSafe account terms and billing settings, including the user's applicable DPA, privacy/retention conditions, credit/refill settings, actual request limits, and account availability.
 - Additional languages and calibrated Jev rubrics; the first implementation only attempts English profile/listing pairs and still needs evaluation.
 - Local usability target: WCAG 2.2 AA, a 24-hour freshness label, and 30-second p95 search response against an already indexed dataset.
-- Measured Jev usage and score calibration on synthetic CV/listing pairs; the application reservation is not a substitute for provider billing controls.
+- Personal relevance calibration; the synthetic benchmark ties the keyword baseline and is not evidence of Jev superiority. The application reservation is not a substitute for provider billing controls.
 
 ## Operational constraints
 
