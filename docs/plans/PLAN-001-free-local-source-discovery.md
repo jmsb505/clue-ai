@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1 source slice complete locally; PLAN-001 M2/M3 and the M1 main push remain
+Status: ACTIVE — M1 source slice pushed and remote-verified; PLAN-001 M2/M3 remain
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -15,7 +15,7 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 ## Current state
 
 - Product definition, reference/market research, source discovery policy, and architecture are documented.
-- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. This source evidence plan remains active for live source review.
+- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. PLAN-001 M1 is separately pushed and verified at `69f536ee00e3eadc50fd877d99c87371add387d5`; M2/M3 remain active.
 - Scrapling remains the selected crawler; its bounded adapter, JSON-LD parser, and linked-page HTML fallback are wired in PLAN-002. Fixture validation is complete; live employer-page validation remains pending for M2.
 - The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. TypeSafe account terms and a safe local API-key arrangement remain open. No real candidate data is in use.
 
@@ -204,7 +204,7 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - Representative official listings were reviewed: Jobicy Nash EAE UK/Europe (explicit Europe), Remote OK Sofia role (contradictory broad remote label and Bulgaria/relocation text), and Startup Jobs Smartcat EMEA (London and customer travel; not confirmed from Italy). No remote/EMEA label alone was promoted to confirmed eligibility.
 - `remotejobs_api` was added with one daily 50-record request per role query, up to four queries, 14-day retention, exact visible credit, and direct listing links. Offline connector and UI attribution tests were added; full results are recorded below after validation.
 - M1 validation in Conda `gen`: 44 tests passed, Ruff passed, and `compileall` passed. The one Starlette/AnyIO deprecation warning originates upstream and did not fail the run.
-- PLAN-001 M1 is complete locally; its direct-to-`main` commit and push are the next operation. No API key, CV, listing data, or local database entered Git.
+- PLAN-001 M1 was committed and pushed directly to `main` as `69f536ee00e3eadc50fd877d99c87371add387d5`; `git ls-remote` matched that SHA. No API key, CV, listing data, or local database entered Git.
 - Application, crawler, and Jev work remains tracked in [PLAN-002](PLAN-002-local-first-job-search-app.md) and PLAN-001 M2/M3; source-page live crawling has not yet been performed.
 
 ## Implementation discoveries / decisions

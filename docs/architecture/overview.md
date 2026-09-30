@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1 source slice implemented and locally validated; milestone push and PLAN-001 M2/M3 remain. PLAN-002 M1/M2 are pushed; TypeSafe account terms and ranking benchmark remain.
+**Status:** PLAN-001 M1 source slice pushed to `main` at `69f536ee00e3eadc50fd877d99c87371add387d5`; PLAN-001 M2/M3 remain. PLAN-002 M1/M2 are pushed; TypeSafe account terms and ranking benchmark remain.
 **Updated:** 2026-09-30
 
 ## Owner-set cost ceiling
