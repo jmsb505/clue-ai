@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from shutil import copytree
+
 from conftest import make_job
 
 from clue_ai.database import (
@@ -188,3 +190,26 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     from clue_ai.database import get_settings
 
     assert get_settings(database)["jev_consent_at"] == ""
+
+
+def test_stopped_app_data_copy_can_restore_synthetic_profile_and_cv(settings, database):
+    profile = CandidateProfile(
+        summary="Synthetic profile for a local backup check",
+        target_roles="Data Analyst",
+        profile_language="en",
+        cv_filename="synthetic.docx",
+    )
+    save_profile(database, profile)
+    saved_profile = get_profile(database)
+    cv_path = settings.cv_dir / "synthetic.docx"
+    cv_path.parent.mkdir(parents=True, exist_ok=True)
+    cv_path.write_bytes(b"synthetic CV bytes")
+
+    backup_dir = settings.data_dir.parent / "offline-backup"
+    restored_dir = settings.data_dir.parent / "restored-data"
+    copytree(settings.data_dir, backup_dir)
+    copytree(backup_dir, restored_dir)
+
+    assert get_profile(restored_dir / "clue.sqlite3") == saved_profile
+    assert (restored_dir / "cv" / "synthetic.docx").read_bytes() == b"synthetic CV bytes"
+    assert not (backup_dir / ".env").exists()

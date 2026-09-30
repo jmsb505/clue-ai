@@ -1,7 +1,7 @@
 # Definition gate
 
 **Definition status:** PASS — product and bounded-pilot definition complete  
-**Personal local-use readiness:** PARTIAL — TypeSafe account terms, ongoing source approvals, local backup validation, and personal relevance calibration remain
+**Personal local-use readiness:** PARTIAL — TypeSafe account terms, ongoing source approvals, local device protection, and personal relevance calibration remain
 **Reviewed:** 2026-09-30
 
 This gate separates “is the personal app defined?” from “is it ready to use with the owner's real CV and rely on its rankings?” The first answer is yes. The second needs a few provider and local-runtime checks.
@@ -17,9 +17,9 @@ This gate separates “is the personal app defined?” from “is it ready to us
 | Crawling policy | PASS | Scrapling is selected for bounded local crawling of registered public HTML job and career pages; feeds/APIs remain direct connectors. Crawl outside the request path, respect source controls, stop on blocks, and exclude stealth, proxy rotation, CAPTCHA bypass, logged-in automation, and SERP scraping. | Validate the Scrapling adapter and each source parser during the local pilot. |
 | Jev role and ranking | PARTIAL | TypeSafe Jev remains the required fit evaluator. PLAN-001 M3a scored five eligible synthetic postings in one request; Jev and an exact-keyword baseline both scored `nDCG@5 = 1.0` against assistant-authored synthetic grades. This verifies the integration and metric path, not personal usefulness or superiority over the baseline. | Owner reviews the synthetic examples or defers personal calibration; continue to show evidence and uncertainty and never imply hiring probability. |
 | Budget | PASS | Owner cap: $5/month all-in for TypeSafe Jev and $0 for every other source/service. App-side $4 rolling reserve and stop behavior are covered by local tests; the synthetic request used 1,574 input tokens, with `$0.00006611` estimated by the app ledger at its configured rate. | Verify provider credit conversion, taxes, automatic refills, and the account's all-in hard stop. |
-| Candidate data and deletion | PASS for pilot definition | CV, saved profile, preferences, local job index, and results live on the owner's device with user-controlled deletion. The M3a runner used only synthetic data and a disposable database. No real CVs until TypeSafe terms and local controls pass. | Validate manual local backup/restore; verify TypeSafe terms, telemetry, retention, deletion, and transfer. |
+| Candidate data and deletion | PASS for pilot definition | CV, saved profile, preferences, local job index, and results live on the owner's device with user-controlled deletion. M3a used only synthetic data and a disposable database; M3b tested local deletion and manual backup/restore using synthetic data. No real CVs until TypeSafe terms and local device protections are checked. | Owner confirms device encryption and file permissions; verify TypeSafe terms, telemetry, retention, deletion, and transfer. |
 | System boundaries | PASS for local plan | Local profile → source connectors → local normalization/dedup/freshness → deterministic constraints → Jev → transparent results. FastAPI/Jinja/SQLite is selected; no crawl runs synchronously for each search. | Validate local file/key handling and source adapters in PLAN-002. |
-| Validation plan | PARTIAL | M3a's synthetic-only benchmark measured hard-filter correctness, confidence, stale/duplicate/link signals, Jev cost, and Jev/keyword `nDCG@5`. Both rankers scored 1.0 on assistant-authored labels; this small constructed set does not establish personal relevance, live-source freshness, latency, or comparative ranking quality. | Gather the owner's relevance judgments or defer personal calibration; validate local backup and use-readiness gates separately. |
+| Validation plan | PARTIAL | M3a's synthetic-only benchmark measured hard-filter correctness, confidence, stale/duplicate/link signals, Jev cost, and Jev/keyword `nDCG@5`. Both rankers scored 1.0 on assistant-authored labels; this small constructed set does not establish personal relevance, live-source freshness, latency, or comparative ranking quality. M3b tested synthetic local backup/restore and deletion. | Gather the owner's relevance judgments or defer personal calibration; complete TypeSafe, source, and local-device checks. |
 
 ## Checks before using a real CV or relying on rankings
 
@@ -27,7 +27,7 @@ These items cannot be closed by product research alone; they require provider te
 
 1. Confirm the TypeSafe API's personal-use terms, Order/DPA, account-specific credit conversion, $5 all-in stop, retention, telemetry, deletion, and data transfer terms before sending a real CV-derived profile.
 2. The initial free source set is selected and its feeds were smoke-checked; M2 added a transient Lever API/page parser comparison. Continue source-by-source terms validation before enabling any employer/ATS board. The [source review](../research/source-discovery-and-crawl-review.md) records coverage, limits, and alternatives with conflicting or incomplete terms.
-3. Validate the documented manual local backup/restore procedure and review local file permissions. The existing deletion action is tested; no hosted accounts, authentication service, or shared deployment is planned.
+3. Confirm local file permissions and device encryption. Manual backup/restore and user-controlled deletion are documented and tested with synthetic data; no hosted accounts, authentication service, or shared deployment is planned.
 4. Revisit privacy or employment/AI review only if the owner later offers the app to other users.
 5. Review the synthetic benchmark examples and provide personal relevance judgments, or explicitly defer personal calibration before relying on rankings.
 

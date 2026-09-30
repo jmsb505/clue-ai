@@ -33,6 +33,8 @@ The initial feeds do not cover the whole internet. Open the original listing and
 
 The `.env` file, `.data/`, CV uploads, databases, and development caches are ignored by Git. Do not commit your key, CV, or `.data/` folder. Deletion cannot remove data already processed by TypeSafe. PLAN-002 M1/M2 and PLAN-001 M3a used synthetic candidate data only. M3a scored five synthetic listings in one Jev request; Jev and a simple keyword baseline both achieved `nDCG@5 = 1.0` on assistant-authored grades. This validates the scoring/evaluation path, not personal relevance or Jev superiority. Its methodology, result, and cost limitations are recorded in [the M3a evaluation](docs/evaluations/PLAN-001-M3-synthetic-jev.md). PLAN-001 M2 separately fetched one public Lever API and job page into process memory for parser comparison; no source listing was persisted to `.data/`.
 
+A synthetic backup/restore check confirms that the local profile and CV can be restored from a copy of `.data/`. Backups are manual, should go to an offline destination protected by encryption, and do not include `.env`; see the [backup and deletion guide](docs/operations/local-data-backup-and-deletion.md).
+
 ## Project documents
 
 - [Product definition](docs/product-definition.md)
@@ -43,5 +45,6 @@ The `.env` file, `.data/`, CV uploads, databases, and development caches are ign
 - [Roadmap](docs/roadmap.md)
 - [Detailed implementation plan](docs/plans/PLAN-001-free-local-source-discovery.md)
 - [Synthetic Jev benchmark](docs/evaluations/PLAN-001-M3-synthetic-jev.md)
+- [Local backup and deletion guide](docs/operations/local-data-backup-and-deletion.md)
 - [Local app implementation plan](docs/plans/PLAN-002-local-first-job-search-app.md)
 - [UI/UX implementation review](docs/research/ui-ux-implementation-review.md)

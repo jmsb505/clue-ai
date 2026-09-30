@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1/M2 pushed and remote-verified; M3a validated locally, main checkpoint pending; M3b/M3c remain
+Status: ACTIVE — M1/M2 pushed and remote-verified; M3a pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`; M3b validated locally, main checkpoint pending; M3c remains
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -191,16 +191,16 @@ Goal: Verify local deletion and a manual, zero-cost backup/restore path using sy
 
 Subtasks:
 
-- [ ] Test copying a stopped app's `.data/` directory and restoring its database/profile/CV with synthetic data.
-- [ ] Verify `.env` and `.data/` remain Git-ignored; document that the key is not included in data backups.
-- [ ] Document that backups must use a user-selected encrypted offline destination and are not deleted by the in-app deletion action.
-- [ ] Confirm the app has no background scheduler; searches refresh due sources locally and no paid compute/service is used.
+- [x] Test copying a stopped app's `.data/` directory and restoring its database/profile/CV with synthetic data.
+- [x] Verify `.env` and `.data/` remain Git-ignored; document that the key is not included in data backups.
+- [x] Document that backups must use a user-selected encrypted offline destination and are not deleted by the in-app deletion action.
+- [x] Confirm there is no recurring scheduler: source refresh and score orchestration run only after the user starts a search or scoring action. Jev remains separately budgeted; no other hosted or paid compute is added.
 
 Acceptance criteria:
 
-- [ ] A synthetic copy can restore the local profile and CV; the existing delete test removes the active local profile, CV, history, jobs, and Jev ledger.
-- [ ] Backup limitations, encryption responsibility, key recovery, and deletion scope are visible in operating documentation.
-- [ ] No recurring non-TypeSafe cost or hosted backup path is introduced.
+- [x] A synthetic copy can restore the local profile and CV; the existing delete test removes the active local profile, CV, history, jobs, and Jev ledger.
+- [x] Backup limitations, encryption responsibility, key recovery, and deletion scope are visible in operating documentation.
+- [x] No recurring non-TypeSafe cost or hosted backup path is introduced.
 
 Expected Git checkpoint: separate validated M3b commit pushed directly to `main`.
 
@@ -220,7 +220,7 @@ Expected Git progression: do not mark this gate complete until owner evidence is
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is implemented and locally validated, with its `main` checkpoint pending. M3b covers zero-cost manual backup/restore; M3c keeps account billing, terms, and personal relevance as owner gates. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`. M3b's manual backup/restore behavior passed local validation and its main checkpoint is pending. M3c keeps account billing, terms, and personal relevance as owner gates. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -241,6 +241,7 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - M2 validation in Conda `gen`: 50 tests passed, Ruff passed after an import-order correction, byte-compilation passed, and `git diff --check` passed. Separate milestone commit `0ee104bd699645025980ee8874ebb590846ca3da` was pushed to `main`; `git ls-remote origin refs/heads/main` matched that SHA.
 - No real CV, Jev request, app database, or job listing was persisted or sent to Jev during PLAN-001 M2. The public-source checks cost `$0`.
 - PLAN-001 M3a adds a repeatable synthetic-only runner and records its one-request/five-listing results, comparison with the keyword baseline, methodology defects corrected during the run, and known cost uncertainty in `docs/evaluations/PLAN-001-M3-synthetic-jev.md`. The result is an integration check, not evidence of personal relevance or Jev superiority.
+- PLAN-001 M3b's synthetic backup/restore and deletion tests passed in Conda `gen`; `.env` and `.data/` remain ignored. Operating limits are documented in `docs/operations/local-data-backup-and-deletion.md`. Refresh and scoring use request-triggered in-process tasks, with no recurring scheduler or hosted compute.
 - PLAN-001 M3 and the account/privacy gates in [PLAN-002](PLAN-002-local-first-job-search-app.md) remain active.
 
 ## Implementation discoveries / decisions
