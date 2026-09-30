@@ -190,7 +190,7 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Verify synthetic error and exhausted-budget paths locally: no automatic retries/fallbacks, safe unscored results, and no client creation after the cap.
 - [x] Re-run all checks in Conda `gen`: 42 tests passed (one upstream deprecation warning), Ruff passed, and byte-compilation passed.
 - [x] Commit and push M2 synthetic Jev evidence and tests as a separate checkpoint on `main`; `git ls-remote` verified `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.
-- [x] Improve sidebar semantics with accessible names for both navigation groups and `aria-current="page"` on the active route; a parameterized regression check covers all seven primary routes. The final full suite passed 63 tests, Ruff, and byte-compilation.
+- [x] Improve sidebar semantics with accessible names for both navigation groups and `aria-current="page"` on the active route; a parameterized regression check covers all seven primary routes. The final full suite passed 63 tests, Ruff, and byte-compilation. Follow-up commit `1b7752f0c20e57486d1b665a20cf3c78ba392133` was pushed to and verified on `main`.
 - [x] Re-check official TypeSafe API docs for an account billing/credit/refill endpoint; none is documented. Do not inspect the authenticated console or undocumented endpoints without the owner.
 - [ ] Complete the actual 200% zoom and full screen-reader review once the app can be opened in a supported local browser/accessibility setup.
 - [ ] Obtain the owner's account-specific TypeSafe spend/refill/Order evidence and real-CV terms decision before sending any personal candidate data.
