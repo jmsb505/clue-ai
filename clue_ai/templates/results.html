@@ -160,7 +160,8 @@
           </span>
           <span class="source-trail-meta">
             {% if job.posted_at %}Posted {{ job.posted_at[:10] }} · {% endif %}
-            Checked {{ job.last_checked_at[:10] if job.last_checked_at else 'date unknown' }}
+            Checked {{ job.last_checked_at[:16].replace('T', ' ') if job.last_checked_at else 'date unknown' }} UTC
+            {% for source in job.sources %} · {{ source.name }} {{ source.state }}{% if source.last_state and source.last_state != 'ok' %} ({{ source.last_state }}){% endif %}{% endfor %}
           </span>
         </div>
         <div class="job-actions">

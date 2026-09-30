@@ -13,6 +13,8 @@ from clue_ai.repository import get_source
 from clue_ai.sources import (
     FetchOutcome,
     SourceFetchError,
+    _allowed_hosts,
+    _connector_url,
     _looks_blocked,
     _parse_rss_feed,
     _url_is_allowed,
@@ -53,6 +55,9 @@ def test_jobicy_feed_normalizes_source_credit_original_url_and_eligibility_text(
     assert "discard" not in job.description
     assert job.workplace_type == "remote"
     assert job.posted_at.startswith("2026-09-29")
+    assert outcome.response_bytes == len(payload)
+    assert outcome.raw_records == 1
+    assert outcome.parse_failures == 0
 
 
 def test_rss_parser_keeps_direct_link_and_credit(settings, database):
@@ -183,8 +188,31 @@ def test_source_endpoint_host_is_allowlisted_before_any_fetch(settings, monkeypa
 def test_denied_and_challenge_signals_are_detected_without_evasion():
     assert _looks_blocked(b"<html>Access denied - verify you are human</html>")
     assert not _looks_blocked(b"<rss><channel><title>Remote roles</title></channel></rss>")
+    assert not _looks_blocked(b"<script src='/static/recaptcha-application-form.js'></script>")
+    assert _looks_blocked(b"<div>Please complete the captcha to continue.</div>")
     assert _url_is_allowed("https://jobicy.com/api/v2/jobs", {"jobicy.com"})
     assert not _url_is_allowed("http://jobicy.com/api/v2/jobs", {"jobicy.com"})
+
+
+def test_lever_region_selects_its_documented_public_api_host():
+    source = {"config": {"site": "prima", "region": "eu"}}
+    assert _connector_url({"kind": "lever", **source}) == (
+        "https://api.eu.lever.co/v0/postings/prima?mode=json"
+    )
+    assert _allowed_hosts(source, "lever", "https://api.eu.lever.co/v0/postings/prima") == {
+        "api.eu.lever.co"
+    }
+
+    global_source = {"config": {"site": "example"}}
+    assert _connector_url({"kind": "lever", **global_source}) == (
+        "https://api.lever.co/v0/postings/example?mode=json"
+    )
+    assert _allowed_hosts(global_source, "lever", "https://api.lever.co/v0/postings/example") == {
+        "api.lever.co"
+    }
+
+    with pytest.raises(SourceFetchError, match="supported Lever site region"):
+        _connector_url({"kind": "lever", "config": {"site": "example", "region": "other"}})
 
 
 def test_career_url_rejects_private_dns_and_accepts_public_dns(monkeypatch):
@@ -217,6 +245,7 @@ def test_scrapling_spider_uses_robots_and_bounded_ordinary_crawl(
             per_domain=spider.concurrent_requests_per_domain,
             delay=spider.download_delay,
             retries=spider.max_blocked_retries,
+            logging_level=spider.logging_level,
             host=spider.allowed_domains,
             url=spider.start_urls,
         )
@@ -246,6 +275,7 @@ def test_scrapling_spider_uses_robots_and_bounded_ordinary_crawl(
         "per_domain": 1,
         "delay": 2.0,
         "retries": 0,
+        "logging_level": 20,
         "host": {"careers.example.org"},
         "url": ["https://careers.example.org/jobs"],
     }
@@ -280,6 +310,41 @@ def test_scrapling_marks_blocked_status_without_followup_request(
     )
 
     assert outcome.blocked
+
+
+def test_scrapling_reports_404_and_response_metrics(settings, monkeypatch):
+    from scrapling.spiders import Spider
+
+    monkeypatch.setattr("clue_ai.sources.validate_career_url", lambda _url: (True, ""))
+    monkeypatch.setattr(
+        Spider,
+        "start",
+        lambda _spider: SimpleNamespace(
+            stats=SimpleNamespace(
+                response_status_count={"status_404": 1},
+                requests_count=1,
+                response_bytes=246,
+            ),
+            items=[],
+        ),
+    )
+    outcome = fetch_source(
+        {
+            "id": "careers",
+            "name": "Careers",
+            "kind": "scrapling",
+            "endpoint": "https://careers.example.org/jobs/example",
+            "config": {"career_url": "https://careers.example.org/jobs/example"},
+            "state": "approved",
+            "enabled": 1,
+        },
+        SearchCriteria(),
+        settings,
+    )
+
+    assert outcome.not_found_count == 1
+    assert outcome.response_bytes == 246
+    assert outcome.status_counts == {"status_404": 1}
 
 
 def test_fresh_fixture_job_helper_has_direct_source_links():

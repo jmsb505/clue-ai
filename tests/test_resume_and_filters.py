@@ -171,3 +171,21 @@ def test_unknown_location_can_be_excluded_by_explicit_user_choice():
     }
 
     assert filter_jobs([item], SearchCriteria(include_unknown_location=False)) == []
+
+
+def test_results_checked_over_24_hours_ago_are_marked_stale():
+    item = {
+        "id": "old-check",
+        "title": "Software Engineer",
+        "company": "Example Labs",
+        "description": "Fully remote role open to candidates in Italy.",
+        "location_raw": "Italy",
+        "workplace_type": "remote",
+        "posted_at": "",
+        "last_checked_at": "2020-01-01T00:00:00+00:00",
+    }
+
+    results = filter_jobs([item], SearchCriteria())
+
+    assert len(results) == 1
+    assert results[0]["freshness_status"] == "stale"

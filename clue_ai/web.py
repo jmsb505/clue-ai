@@ -518,8 +518,13 @@ def create_app(
             token = _form_text(form, "identifier", 100).strip()
             if not re.fullmatch(r"[A-Za-z0-9_-]+", token):
                 return RedirectResponse("/sources?notice=Enter+a+valid+Lever+site+identifier.", status_code=303)
+            region = _form_text(form, "lever_region", 16).strip().casefold() or "eu"
+            if region not in {"global", "eu"}:
+                return RedirectResponse("/sources?notice=Choose+a+valid+Lever+site+region.", status_code=303)
+            host = "api.eu.lever.co" if region == "eu" else "api.lever.co"
             config["site"] = token
-            endpoint = f"https://api.lever.co/v0/postings/{token}?mode=json"
+            config["region"] = region
+            endpoint = f"https://{host}/v0/postings/{token}?mode=json"
         elif kind == "smartrecruiters":
             token = _form_text(form, "identifier", 100).strip()
             if not re.fullmatch(r"[A-Za-z0-9_-]+", token):

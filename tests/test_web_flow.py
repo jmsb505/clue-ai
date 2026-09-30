@@ -82,6 +82,28 @@ def test_source_management_requires_review_before_enabling(settings):
     assert get_source(settings.database_path, source_id)["enabled"] == 1
 
 
+def test_lever_source_form_records_the_selected_region(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    response = client.post(
+        "/sources/add",
+        data={
+            "kind": "lever",
+            "company": "Prima",
+            "identifier": "prima",
+            "lever_region": "eu",
+        },
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    source = next(item for item in list_sources(settings.database_path) if item["name"] == "Prima")
+
+    assert response.status_code == 303
+    assert source["state"] == "review"
+    assert source["enabled"] == 0
+    assert source["endpoint"] == "https://api.eu.lever.co/v0/postings/prima?mode=json"
+    assert source["config"]["region"] == "eu"
+
+
 def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     settings, monkeypatch
 ):
@@ -111,7 +133,13 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
             description=base_job.description,
         )
         job.posted_at = base_job.posted_at
-        return FetchOutcome(jobs=[job], checked=1)
+        return FetchOutcome(
+            jobs=[job],
+            checked=1,
+            response_bytes=1_024,
+            raw_records=1,
+            status_counts={"status_200": 1},
+        )
 
     monkeypatch.setattr(services, "fetch_source", fake_fetch)
     response = client.post(
@@ -129,6 +157,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     assert "Software Engineer" in results.text
     assert 'href="https://jobs.example.org/openings/software-engineer"' in results.text
     assert "Fit not evaluated" in results.text or "not evaluated" in results.text.casefold()
+    assert "HTTP 200" in results.text
     assert set(calls) == {"jobicy", "remotejobs", "remoteok", "remotefirstjobs", "startupjobs"}
     assert "Powered by RemoteJobs.org" in results.text
     assert not any(call.startswith("user-") for call in calls)

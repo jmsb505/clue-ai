@@ -95,6 +95,14 @@
         <input name="identifier" maxlength="100" placeholder="Find this in the official career link">
         <small id="source-identifier-help">Use the public board's identifier, not a guessed token.</small>
       </label>
+      <label class="field" data-source-field="lever-region" hidden>
+        <span>Lever board region</span>
+        <select name="lever_region">
+          <option value="eu" selected>EU · jobs.eu.lever.co</option>
+          <option value="global">Global · jobs.lever.co</option>
+        </select>
+        <small>Choose the region used by the employer’s public Lever board.</small>
+      </label>
       <label class="field" data-source-field="career-url">
         <span>Official careers page URL</span>
         <input type="url" name="career_url" maxlength="2000" placeholder="https://company.example/careers">

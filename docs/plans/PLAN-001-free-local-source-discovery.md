@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1 source slice pushed and remote-verified; PLAN-001 M2/M3 remain
+Status: ACTIVE — M1 pushed and remote-verified; M2 validated locally, main checkpoint pending; M3 remains
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -15,9 +15,9 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 ## Current state
 
 - Product definition, reference/market research, source discovery policy, and architecture are documented.
-- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. PLAN-001 M1 is separately pushed and verified at `69f536ee00e3eadc50fd877d99c87371add387d5`; M2/M3 remain active.
-- Scrapling remains the selected crawler; its bounded adapter, JSON-LD parser, and linked-page HTML fallback are wired in PLAN-002. Fixture validation is complete; live employer-page validation remains pending for M2.
-- The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. TypeSafe account terms and a safe local API-key arrangement remain open. No real candidate data is in use.
+- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. PLAN-001 M1 is separately pushed and verified at `69f536ee00e3eadc50fd877d99c87371add387d5`; PLAN-001 M2 has passed local validation and is pending its separate checkpoint.
+- Scrapling remains the selected crawler. Its robots-aware, bounded Spider now covers direct job pages through JSON-LD or static HTML fallback, and M2 compared one Lever EU API listing with its public page. Other individual employer/ATS sources remain `Review` until approved per board.
+- The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. M2 validates an EU Lever API/page comparison as a transient parser experiment; that employer board remains disabled in `Review`, as do other ATS sources, until ongoing-use conditions are checked. TypeSafe account terms and a safe local API-key arrangement remain open. No real candidate data is in use.
 
 ## Desired state
 
@@ -116,15 +116,15 @@ Expected Git checkpoint: implement, validate, commit, and push each source miles
 
 ### M2 — Implement and validate a controlled Scrapling crawler
 
-Goal: Implement the selected Scrapling adapter and validate it on a small set of approved public job and career pages with ordinary, identifiable requests.
+Goal: Implement the selected Scrapling adapter and validate it on a small set of documented public endpoints/pages with ordinary, identifiable requests. A transient technical sample may validate parsing where published API documentation supports public retrieval; it does not approve a board for scheduled ingestion, durable caching, or display. Keep such boards disabled in `Review` until those ongoing-use conditions are checked.
 
 Subtasks:
 
-- [ ] Compare a documented feed/API with static HTML/JSON-LD on approved public job and career pages.
-- [ ] Use Scrapling Spider for registered public pages; set `robots_txt_obey = True`, `concurrent_requests = 4`, `concurrent_requests_per_domain = 1`, and a base `download_delay = 2.0`.
-- [ ] Set an identifying User-Agent with ordinary request headers; honor stricter `Crawl-delay` and `Request-rate` values when robots rules provide them.
-- [ ] Test dynamic rendering only for a permitted page that cannot be read from HTTP/feed/schema; no stealth, proxies, or bypass.
-- [ ] Capture parse failures, 401/403/429/block signals, delisted jobs, duplicate cases, response size, and last-seen timestamps.
+- [x] Compare a documented Lever EU postings API response with static JSON-LD from the same public posting; separately record Greenhouse's ambiguous HTTP-200 detector signal without repeating the request. Prima and YLD remain disabled in `Review` pending ongoing-use checks.
+- [x] Use Scrapling Spider for registered public pages; set `robots_txt_obey = True`, `concurrent_requests = 4`, `concurrent_requests_per_domain = 1`, and a base `download_delay = 2.0`.
+- [x] Set an identifying User-Agent with ordinary request headers; rely on Scrapling's robots-aware delay for stricter `Crawl-delay` and `Request-rate` values.
+- [x] Static API/JSON-LD was sufficient, so dynamic rendering was unnecessary. No stealth, proxies, or bypass were used.
+- [x] Capture parse failures, 401/403/429/block signals, 404/not-found signals, expired postings, duplicate counts, response sizes, HTTP status, and last-seen timestamps in source/search records.
 
 Affected areas: crawler adapter, source registry, normalized listing schema, source-health monitoring.
 
@@ -132,19 +132,19 @@ Dependencies: M1 source set and the owner's local computer; no paid compute or h
 
 Acceptance criteria:
 
-- [ ] Every result retains a canonical source URL, source ID, observed time, posted date when supplied, and source state.
-- [ ] A source block or rate limit stops the connector without an evasion attempt.
-- [ ] Results marked “recently checked” meet the defined 24-hour freshness target; older results are labeled stale/unknown.
-- [ ] No non-TypeSafe spend is incurred.
+- [x] Every result retains a canonical source URL, source ID, observed time, posted date when supplied, and source state.
+- [x] Explicit source-denial/challenge and rate-limit signals stop the connector without an evasion attempt; offline tests distinguish ordinary CAPTCHA-related page text from explicit challenge messages. The earlier YLD signal came from the then-broad detector, is ambiguous, and was not retried.
+- [x] Results marked “recently checked” meet the defined 24-hour freshness target; older results are labeled stale/unknown.
+- [x] No non-TypeSafe spend was incurred.
 
 Validation:
 
-- [ ] Manual source-by-source crawl audit and link verification.
-- [ ] A documented stale/deleted/duplicate sample review; do not send live CVs.
+- [x] Manual transient parser comparison and source-link audit for the Prima Lever EU listing; YLD's earlier ambiguous detector observation was recorded without a repeat request. Both boards remain disabled in `Review` for ongoing use.
+- [x] Document stale, 404/expired, and duplicate handling from the live sample plus offline fixtures; do not send live CVs.
 
 Documentation updates:
 
-- [ ] Record parser coverage, source limitations, data retention, and crawl schedule in the source review and architecture.
+- [x] Record parser coverage, source limitations, data retention, and crawl schedule in the source review and architecture.
 
 Applicable specialized skills: `milestone-delivery`; verify local file, key, and source-data handling.
 
@@ -188,7 +188,7 @@ Expected Git checkpoint: implement, validate, commit, and push each Jev/cost mil
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. M1 source selection and feed/API smoke evidence are complete locally. Remaining PLAN-001 evidence includes approved employer-page crawl behavior, stale/delisted handling, duplicate/link checks, the Jev benchmark and cost ledger, backups/deletion, and measured source coverage. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection is pushed; M2's one-source API/page comparison and offline validation have passed locally, with its separate `main` checkpoint pending. M3 still requires the synthetic Jev benchmark, coverage/relevance measures, and zero-cost backup/deletion operations. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -205,11 +205,17 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - `remotejobs_api` was added with one daily 50-record request per role query, up to four queries, 14-day retention, exact visible credit, and direct listing links. Offline connector and UI attribution tests were added; full results are recorded below after validation.
 - M1 validation in Conda `gen`: 44 tests passed, Ruff passed, and `compileall` passed. The one Starlette/AnyIO deprecation warning originates upstream and did not fail the run.
 - PLAN-001 M1 was committed and pushed directly to `main` as `69f536ee00e3eadc50fd877d99c87371add387d5`; `git ls-remote` matched that SHA. No API key, CV, listing data, or local database entered Git.
-- Application, crawler, and Jev work remains tracked in [PLAN-002](PLAN-002-local-first-job-search-app.md) and PLAN-001 M2/M3; source-page live crawling has not yet been performed.
+- M2 live evidence is recorded in `docs/research/source-discovery-and-crawl-review.md`. The Prima EU API returned 90/90 parsed records in one request; its public page returned one JSON-LD posting with the same canonical URL, and the host's `robots.txt` allowed the request. YLD's API returned five postings; its public page returned HTTP 200 but Scrapling signaled a block, so it was not retried.
+- M2 validation in Conda `gen`: 50 tests passed, Ruff passed after an import-order correction, byte-compilation passed, and `git diff --check` passed. The M2 main checkpoint and remote SHA are pending.
+- No real CV, Jev request, app database, or job listing was persisted or sent to Jev during PLAN-001 M2. The public-source checks cost `$0`.
+- PLAN-001 M3 and the account/privacy gates in [PLAN-002](PLAN-002-local-first-job-search-app.md) remain active.
 
 ## Implementation discoveries / decisions
 
 - Scrapling is selected. Its documented robots behavior is optional and off by default; set it on explicitly. The Spider also needs explicit global/per-domain concurrency and download-delay settings.
+- Lever's public postings API has separate global and EU hosts. The connector now selects the host from the saved source region; otherwise an EU board such as Prima returns HTTP 404 from the global endpoint.
+- The crawler captures response bytes/status, raw and parsed record counts, parser failures, not-found pages, source state, and duplicate merges. A 404 keeps cached listings stale; publisher `validThrough` and configured source-retention rules control expiry/removal.
+- A direct job-detail URL is parsed from JSON-LD first and can use the bounded static HTML fallback. The pilot needed no browser rendering. Spider item logging is set to INFO so full descriptions are not echoed in local debug output.
 - Scrapling's README advertises anti-bot bypass and proxy rotation. Those features are excluded from the product policy.
 - The five enabled sources are the only currently approved app feeds/APIs. Adzuna and Jooble need owner-supplied registration keys; Remote Landers lacks descriptions for Jev and is metadata-only; EURES remains manual-only until an official vacancy API/reuse path is documented.
 - Remote First Jobs' JSON API overlaps its RSS corpus and delays publication by 24 hours, so it is not enabled alongside the fresher RSS.

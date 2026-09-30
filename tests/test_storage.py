@@ -18,9 +18,11 @@ from clue_ai.repository import (
     get_source,
     list_sources,
     monthly_jev_usage,
+    prune_expired_data,
     record_source_state,
     reserve_jev_budget,
     save_jobs,
+    save_jobs_with_report,
     save_run_results,
     saved_jobs,
     set_job_user_state,
@@ -90,6 +92,29 @@ def test_search_result_keeps_per_run_location_and_freshness_evidence(database):
     assert result["freshness_status"] == "recent"
     assert result["freshness_age_days"] == 0
     assert result["score_state"] == "unscored"
+    assert result["sources"][0]["state"] == "approved"
+    assert result["sources"][0]["last_state"] == "never"
+    assert result["sources"][0]["last_seen_at"]
+
+
+def test_job_index_reports_duplicate_records_and_keeps_one_canonical_job(database):
+    job = make_job()
+
+    report = save_jobs_with_report(database, [job, job])
+
+    assert report.saved == 2
+    assert report.deduplicated == 1
+    assert len(all_active_jobs(database)) == 1
+
+
+def test_expired_posting_is_removed_from_active_results(database):
+    job = make_job()
+    job.valid_through = "2020-01-01T00:00:00+00:00"
+    save_jobs(database, [job])
+
+    prune_expired_data(database)
+
+    assert all_active_jobs(database) == []
 
 
 def test_saved_state_is_local_and_listed(database):

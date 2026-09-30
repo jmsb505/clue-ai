@@ -14,7 +14,7 @@ from clue_ai.repository import (
     get_run_results,
     prune_expired_data,
     record_source_state,
-    save_jobs,
+    save_jobs_with_report,
     save_run_results,
     sources_due,
     update_run,
@@ -58,18 +58,35 @@ def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
                 record_source_state(
                     database_path, source["id"], "blocked", outcome.message
                 )
-                checked_notes.append(f"{source['name']}: paused after a block response.")
+                statuses = _status_summary(outcome)
+                checked_notes.append(
+                    f"{source['name']}: paused after a block response; "
+                    f"{outcome.checked} request(s), {outcome.response_bytes} response bytes"
+                    f"{statuses}."
+                )
                 continue
-            stored = save_jobs(database_path, outcome.jobs)
+            save_report = save_jobs_with_report(database_path, outcome.jobs)
             found_count += len(outcome.jobs)
             record_source_state(
                 database_path,
                 source["id"],
-                "ok",
+                "partial" if outcome.parse_failures or outcome.not_found_count else "ok",
                 checked_at=utc_now(),
             )
+            detail = (
+                f"{len(outcome.jobs)} parsed from {outcome.raw_records} record(s); "
+                f"{save_report.deduplicated} deduplicated; "
+                f"{outcome.parse_failures} parse failure(s); "
+                f"{outcome.response_bytes} response bytes across {outcome.checked} request(s)"
+                f"{_status_summary(outcome)}."
+            )
+            if outcome.not_found_count:
+                detail += (
+                    f" {outcome.not_found_count} page(s) returned 404; cached listings remain "
+                    "stale until their normal expiry or retention rule applies."
+                )
             checked_notes.append(
-                f"{source['name']}: checked; {len(outcome.jobs)} listings ({stored} indexed)."
+                f"{source['name']}: checked; {save_report.saved} listing record(s) indexed. {detail}"
             )
         except SourceFetchError as exc:
             state = "blocked" if exc.blocked else "error"
@@ -99,6 +116,8 @@ def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
         checked_sources=checked_notes,
         found_count=found_count,
     )
+
+
     prune_expired_data(database_path)
     indexed = all_active_jobs(database_path)
     indexed = [job for job in indexed if not job.get("hidden")]
@@ -130,6 +149,17 @@ def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
         matched_count=len(matched),
         completed=True,
     )
+
+
+def _status_summary(outcome: FetchOutcome) -> str:
+    if not outcome.status_counts:
+        return ""
+    codes = ", ".join(
+        f"HTTP {key.removeprefix('status_')} ×{count}"
+        for key, count in sorted(outcome.status_counts.items())
+        if count
+    )
+    return f"; {codes}" if codes else ""
 
 
 def run_search_worker(database_path: Path, settings: Settings, run_id: str) -> None:

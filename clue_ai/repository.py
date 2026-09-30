@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -259,9 +260,20 @@ def has_active_runs(database_path: Path) -> bool:
     return row is not None
 
 
+@dataclass(frozen=True)
+class SaveJobsReport:
+    saved: int
+    deduplicated: int
+
+
 def save_jobs(database_path: Path, jobs: list[NormalizedJob]) -> int:
+    return save_jobs_with_report(database_path, jobs).saved
+
+
+def save_jobs_with_report(database_path: Path, jobs: list[NormalizedJob]) -> SaveJobsReport:
     now = utc_now()
     saved = 0
+    deduplicated = 0
     with connect(database_path) as db:
         db.execute("BEGIN IMMEDIATE")
         for job in jobs:
@@ -282,6 +294,8 @@ def save_jobs(database_path: Path, jobs: list[NormalizedJob]) -> int:
                 ).fetchone()
             job_id = row["id"] if row else stable_job_id(url)
             primary_url = row["canonical_url"] if row else url
+            if row is not None:
+                deduplicated += 1
             db.execute(
                 """INSERT INTO jobs
                    (id, fingerprint, canonical_url, title, company, description, location_raw,
@@ -348,7 +362,7 @@ def save_jobs(database_path: Path, jobs: list[NormalizedJob]) -> int:
             )
             saved += 1
         db.execute("COMMIT")
-    return saved
+    return SaveJobsReport(saved=saved, deduplicated=deduplicated)
 
 
 def save_run_results(
@@ -440,8 +454,9 @@ def get_run_results(database_path: Path, run_id: str) -> list[dict[str, Any]]:
             job["eligibility_status"] = job.pop("result_eligibility_status")
             job["eligibility_evidence"] = job.pop("result_eligibility_evidence")
             sources = db.execute(
-                """SELECT s.id, s.name, s.attribution, js.source_url, js.source_posted_at,
-                          js.last_seen_at
+                """SELECT s.id, s.name, s.attribution, s.state, s.last_state,
+                          s.last_checked_at AS source_checked_at, js.source_url,
+                          js.source_posted_at, js.last_seen_at
                    FROM job_sources js JOIN sources s ON s.id = js.source_id
                    WHERE js.job_id = ? ORDER BY js.last_seen_at DESC""",
                 (job["id"],),
@@ -459,6 +474,8 @@ def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
     with connect(database_path) as db:
         rows = db.execute(
             """SELECT j.*, s.id AS source_id, s.name AS source_name, s.attribution,
+                      s.state AS source_state, s.last_state AS source_last_state,
+                      s.last_checked_at AS source_checked_at,
                       js.source_url, js.source_posted_at,
                       COALESCE(u.hidden, 0) AS hidden, COALESCE(u.saved, 0) AS saved
                FROM jobs j
@@ -476,6 +493,9 @@ def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
             "id": item.pop("source_id"),
             "name": item.pop("source_name"),
             "attribution": item.pop("attribution"),
+            "state": item.pop("source_state"),
+            "last_state": item.pop("source_last_state"),
+            "source_checked_at": item.pop("source_checked_at"),
             "source_url": item.pop("source_url"),
             "source_posted_at": item.pop("source_posted_at"),
         }
@@ -522,7 +542,9 @@ def saved_jobs(database_path: Path) -> list[dict[str, Any]]:
         result = [dict(row) for row in rows]
         for job in result:
             sources = db.execute(
-                """SELECT s.name, s.attribution, js.source_url, js.last_seen_at
+                """SELECT s.name, s.attribution, s.state, s.last_state,
+                          s.last_checked_at AS source_checked_at,
+                          js.source_url, js.last_seen_at
                    FROM job_sources js JOIN sources s ON s.id = js.source_id
                    WHERE js.job_id = ? ORDER BY js.last_seen_at DESC""",
                 (job["id"],),
@@ -540,7 +562,9 @@ def hidden_jobs(database_path: Path) -> list[dict[str, Any]]:
         result = [dict(row) for row in rows]
         for job in result:
             sources = db.execute(
-                """SELECT s.name, s.attribution, js.source_url, js.last_seen_at
+                """SELECT s.name, s.attribution, s.state, s.last_state,
+                          s.last_checked_at AS source_checked_at,
+                          js.source_url, js.last_seen_at
                    FROM job_sources js JOIN sources s ON s.id = js.source_id
                    WHERE js.job_id = ? ORDER BY js.last_seen_at DESC""",
                 (job["id"],),

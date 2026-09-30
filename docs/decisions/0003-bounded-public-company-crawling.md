@@ -48,6 +48,7 @@ Reconsider the source set when terms, fees, use conditions, quality, quota, geog
 - [Lever Postings API](https://github.com/lever/postings-api)
 - [SmartRecruiters public Posting API](https://developers.smartrecruiters.com/docs/endpoints)
 - [USAJOBS API terms](https://developer.usajobs.gov/apirequest/index)
+- M2 2026-09-30 pilot: one Prima EU Lever API response and its public JSON-LD page matched on posting ID, canonical URL, title, and Milan location; a YLD Greenhouse page returned HTTP 200 but triggered an ambiguous block signal and was not retried. Detailed metrics and parser differences are in the [source review](../research/source-discovery-and-crawl-review.md).
 - [Remote OK feed guidance](https://remoteok.com/faq)
 - [Jobicy Remote Jobs API](https://jobicy.com/jobs-rss-feed)
 - [RemoteJobs.org API](https://remotejobs.org/api-access)

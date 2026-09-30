@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import re
 import socket
 import time
@@ -32,6 +33,11 @@ class FetchOutcome:
     message: str = ""
     blocked: bool = False
     skipped: bool = False
+    response_bytes: int = 0
+    raw_records: int = 0
+    parse_failures: int = 0
+    not_found_count: int = 0
+    status_counts: dict[str, int] = field(default_factory=dict)
 
 
 SOURCE_HOSTS = {
@@ -41,7 +47,7 @@ SOURCE_HOSTS = {
     "remote_first_rss": {"remotefirstjobs.com"},
     "startup_rss": {"startup.jobs"},
     "greenhouse": {"boards-api.greenhouse.io"},
-    "lever": {"api.lever.co"},
+    "lever": {"api.lever.co", "api.eu.lever.co"},
     "smartrecruiters": {"api.smartrecruiters.com"},
 }
 
@@ -77,12 +83,22 @@ def fetch_source(
     try:
         if kind in {"jobicy_api", "remotejobs_api", "remoteok_json", "greenhouse", "lever", "smartrecruiters"}:
             raw = json.loads(payload.decode("utf-8-sig"))
+            raw_records = _raw_json_record_count(kind, raw)
             jobs = _parse_json_feed(kind, source, raw, settings)
         else:
+            raw_records = _raw_rss_record_count(payload)
             jobs = _parse_rss_feed(source, payload, settings)
     except (UnicodeDecodeError, json.JSONDecodeError, ET.ParseError) as exc:
         raise SourceFetchError("The listing feed could not be parsed.") from exc
-    return FetchOutcome(jobs=jobs, checked=1, message=f"Retrieved {len(jobs)} listing records.")
+    return FetchOutcome(
+        jobs=jobs,
+        checked=1,
+        message=f"Retrieved {len(jobs)} listing records.",
+        response_bytes=len(payload),
+        raw_records=raw_records,
+        parse_failures=max(0, raw_records - len(jobs)),
+        status_counts={"status_200": 1},
+    )
 
 
 def _connector_url(source: dict[str, Any]) -> str:
@@ -93,7 +109,11 @@ def _connector_url(source: dict[str, Any]) -> str:
         return f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
     if kind == "lever":
         site = quote(str(config.get("site") or ""), safe="")
-        return f"https://api.lever.co/v0/postings/{site}?mode=json"
+        region = str(config.get("region") or "global").strip().casefold()
+        if region not in {"global", "eu"}:
+            raise SourceFetchError("Choose a supported Lever site region.")
+        host = "api.eu.lever.co" if region == "eu" else "api.lever.co"
+        return f"https://{host}/v0/postings/{site}?mode=json"
     if kind == "smartrecruiters":
         company_id = quote(str(config.get("company_id") or ""), safe="")
         return f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings?limit=100&offset=0"
@@ -101,6 +121,11 @@ def _connector_url(source: dict[str, Any]) -> str:
 
 
 def _allowed_hosts(source: dict[str, Any], kind: str, url: str) -> set[str]:
+    if kind == "lever":
+        region = str((source.get("config") or {}).get("region") or "global").strip().casefold()
+        if region not in {"global", "eu"}:
+            return set()
+        return {"api.eu.lever.co" if region == "eu" else "api.lever.co"}
     if kind in SOURCE_HOSTS:
         return SOURCE_HOSTS[kind]
     host = (urlsplit(url).hostname or "").lower()
@@ -169,16 +194,41 @@ def _fetch_bytes(url: str, allowed_hosts: set[str], settings: Settings) -> bytes
 def _looks_blocked(payload: bytes) -> bool:
     sample = payload[:120_000].decode("utf-8", errors="ignore").casefold()
     markers = (
-        "captcha",
         "verify you are human",
         "access denied",
         "unusual traffic",
-        "automated requests",
+        "automated requests are not allowed",
+        "automated request detected",
         "bot detection",
+        "complete the captcha to continue",
+        "captcha verification required",
+        "please complete the security check",
         "cf-chl-",
         "cloudflare ray id",
     )
     return any(marker in sample for marker in markers)
+
+
+def _raw_json_record_count(kind: str, raw: Any) -> int:
+    if kind in {"jobicy_api", "greenhouse"}:
+        items = raw.get("jobs", []) if isinstance(raw, dict) else []
+    elif kind == "remotejobs_api":
+        items = raw.get("data", []) if isinstance(raw, dict) else []
+    elif kind == "remoteok_json":
+        items = raw if isinstance(raw, list) else []
+        items = [item for item in items if isinstance(item, dict) and item.get("position")]
+    elif kind == "lever":
+        items = raw if isinstance(raw, list) else []
+    elif kind == "smartrecruiters":
+        items = raw.get("content", []) if isinstance(raw, dict) else []
+    else:
+        items = []
+    return sum(isinstance(item, dict) for item in items)
+
+
+def _raw_rss_record_count(payload: bytes) -> int:
+    root = ET.fromstring(payload)
+    return len(root.findall(".//item")) + len(root.findall(".//{*}entry"))
 
 
 def _parse_json_feed(
@@ -337,6 +387,9 @@ def _fetch_remote_first(
         )
     jobs: list[NormalizedJob] = []
     checked = 0
+    response_bytes = 0
+    raw_records = 0
+    parse_failures = 0
     hosts = {"remotefirstjobs.com"}
     due_roles = [
         role_slug for role_slug in roles[:4]
@@ -357,9 +410,22 @@ def _fetch_remote_first(
             record_role_feed_check(database_path, str(source["id"]), role_slug)
             raise
         record_role_feed_check(database_path, str(source["id"]), role_slug)
-        jobs.extend(_parse_rss_feed(source, payload, settings))
+        raw_count = _raw_rss_record_count(payload)
+        parsed = _parse_rss_feed(source, payload, settings)
+        jobs.extend(parsed)
+        response_bytes += len(payload)
+        raw_records += raw_count
+        parse_failures += max(0, raw_count - len(parsed))
         checked += 1
-    return FetchOutcome(jobs=jobs, checked=checked, message=f"Retrieved {len(jobs)} role-feed records.")
+    return FetchOutcome(
+        jobs=jobs,
+        checked=checked,
+        message=f"Retrieved {len(jobs)} role-feed records.",
+        response_bytes=response_bytes,
+        raw_records=raw_records,
+        parse_failures=parse_failures,
+        status_counts={"status_200": checked},
+    )
 
 
 def _fetch_remotejobs(
@@ -392,6 +458,9 @@ def _fetch_remotejobs(
 
     jobs: list[NormalizedJob] = []
     checked = 0
+    response_bytes = 0
+    raw_records = 0
+    parse_failures = 0
     for index, (query, query_key) in enumerate(due_queries):
         if index:
             time.sleep(2.0)
@@ -403,16 +472,25 @@ def _fetch_remotejobs(
         try:
             payload = _fetch_bytes(url, allowed_hosts, settings)
             raw = json.loads(payload.decode("utf-8-sig"))
-            jobs.extend(_parse_json_feed("remotejobs_api", source, raw, settings))
+            raw_count = _raw_json_record_count("remotejobs_api", raw)
+            parsed = _parse_json_feed("remotejobs_api", source, raw, settings)
+            jobs.extend(parsed)
         except Exception:
             record_role_feed_check(database_path, source_id, query_key)
             raise
         record_role_feed_check(database_path, source_id, query_key)
+        response_bytes += len(payload)
+        raw_records += raw_count
+        parse_failures += max(0, raw_count - len(parsed))
         checked += 1
     return FetchOutcome(
         jobs=jobs,
         checked=checked,
         message=f"Retrieved {len(jobs)} RemoteJobs.org records across {checked} query pages.",
+        response_bytes=response_bytes,
+        raw_records=raw_records,
+        parse_failures=parse_failures,
+        status_counts={"status_200": checked},
     )
 
 
@@ -608,6 +686,7 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
         concurrent_requests_per_domain = 1
         download_delay = 2.0
         max_blocked_retries = 0
+        logging_level = logging.INFO
         start_urls: ClassVar[list[str]] = []
         user_agent: ClassVar[str] = settings.crawler_user_agent
 
@@ -617,6 +696,9 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
             self.allowed_domains = {host}
             self.hit_block = False
             self.page_limit = 25
+            self.raw_records = 0
+            self.parse_failures = 0
+            self.not_found_count = 0
 
         def configure_sessions(self, manager) -> None:
             manager.add(
@@ -658,12 +740,34 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
             if status in {401, 403, 429} or _looks_blocked(body):
                 self.hit_block = True
                 return
+            if status == 404:
+                self.not_found_count += 1
+                return
+            if status < 200 or status >= 300:
+                return
             if len(body) > settings.max_page_bytes:
+                self.parse_failures += 1
                 return
             entries = _extract_jsonld_job_postings(response, source, settings)
+            self.raw_records += len(entries)
             for entry in entries:
                 yield entry
             if entries:
+                return
+            is_job_detail = bool(
+                re.search(
+                    r"/(?:jobs?|positions?|vacancies|openings?)/[^/]+",
+                    urlsplit(response.url).path,
+                    re.IGNORECASE,
+                )
+            )
+            if is_job_detail:
+                entry = _extract_html_job_posting(response, source, settings)
+                if entry:
+                    self.raw_records += 1
+                    yield entry
+                    return
+                self.parse_failures += 1
                 return
             seen: set[str] = set()
             for href in response.css("a::attr(href)").getall():
@@ -695,15 +799,25 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
             if status in {401, 403, 429} or _looks_blocked(body):
                 self.hit_block = True
                 return
+            if status == 404:
+                self.not_found_count += 1
+                return
+            if status < 200 or status >= 300:
+                return
             if len(body) > settings.max_page_bytes:
+                self.parse_failures += 1
                 return
             structured = _extract_jsonld_job_postings(response, source, settings)
+            self.raw_records += len(structured)
             for entry in structured:
                 yield entry
             if not structured:
                 entry = _extract_html_job_posting(response, source, settings)
                 if entry:
+                    self.raw_records += 1
                     yield entry
+                else:
+                    self.parse_failures += 1
 
     try:
         spider = BoundedCareerSpider()
@@ -712,21 +826,40 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
         raise SourceFetchError(f"Scrapling crawl failed: {type(exc).__name__}.") from exc
     stats = getattr(result, "stats", None)
     status_counts = getattr(stats, "response_status_count", {}) if stats else {}
+    not_found_count = max(
+        spider.not_found_count,
+        int((status_counts or {}).get("status_404", 0) or 0),
+    )
     blocked_status = any(
         key in status_counts for key in ("status_401", "status_403", "status_429")
     )
     if blocked_status or getattr(spider, "hit_block", False):
-        return FetchOutcome(message="The source returned an access or bot challenge.", blocked=True)
+        return FetchOutcome(
+            message="The source returned an access or bot challenge.",
+            blocked=True,
+            checked=int(getattr(stats, "requests_count", 1) or 1) if stats else 1,
+            response_bytes=int(getattr(stats, "response_bytes", 0) or 0) if stats else 0,
+            raw_records=spider.raw_records,
+            parse_failures=spider.parse_failures,
+            not_found_count=not_found_count,
+            status_counts=dict(status_counts or {}),
+        )
     jobs = []
     for item in getattr(result, "items", []):
         if isinstance(item, dict):
             job = _normalize_crawled_job(source, item, settings)
             if job:
                 jobs.append(job)
+    parse_failures = spider.parse_failures + max(0, spider.raw_records - len(jobs))
     return FetchOutcome(
         jobs=jobs,
         checked=int(getattr(stats, "requests_count", 1) or 1) if stats else 1,
         message=f"Retrieved {len(jobs)} career-page listings.",
+        response_bytes=int(getattr(stats, "response_bytes", 0) or 0) if stats else 0,
+        raw_records=spider.raw_records,
+        parse_failures=parse_failures,
+        not_found_count=not_found_count,
+        status_counts=dict(status_counts or {}),
     )
 
 

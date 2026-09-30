@@ -11,13 +11,15 @@
 
   const sourceType = document.querySelector("#source-kind");
   const identifierField = document.querySelector('[data-source-field="identifier"]');
+  const leverRegionField = document.querySelector('[data-source-field="lever-region"]');
   const careerField = document.querySelector('[data-source-field="career-url"]');
   const identifierLabel = document.querySelector("#source-identifier-label");
   const identifierHelp = document.querySelector("#source-identifier-help");
   const updateSourceFields = () => {
-    if (!sourceType || !identifierField || !careerField) return;
+    if (!sourceType || !identifierField || !leverRegionField || !careerField) return;
     const isCareerPage = sourceType.value === "scrapling";
     identifierField.hidden = isCareerPage;
+    leverRegionField.hidden = sourceType.value !== "lever";
     careerField.hidden = !isCareerPage;
     const labels = {
       greenhouse: ["Greenhouse board token", "Use the token from the company's public Greenhouse board URL."],

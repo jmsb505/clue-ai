@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** M1 pushed to `main`; M2 synthetic Jev acceptance validated — source and ranking evidence remain
+**Status:** PLAN-001 M1 pushed to `main`; M2 source milestone validated locally, `main` checkpoint pending; PLAN-002 M1/M2 already pushed. PLAN-001 M3 and personal-use gates remain.
 **Updated:** 2026-09-30
 
 ## Definition gate
@@ -33,7 +33,7 @@ Proceed after TypeSafe and source conditions in [the definition gate](readiness/
 
 ## Current implementation state
 
-PLAN-002's M1 implementation is pushed to `main`. The 42-test offline suite, Ruff, byte-compilation, no-key startup, and keyboard/responsive review pass. M2's one synthetic live Jev request returned a score using 1,574 input tokens; the local ledger estimated `$0.00006611`. No real CV or live job-source data was sent. Provider terms, live source audits, and a representative relevance benchmark remain open.
+PLAN-002 M1 and M2 are pushed to `main`; the latter used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). No CV or listing was sent to Jev. PLAN-001 M1 is pushed and M2 has passed local validation for its main checkpoint: 50 tests, Ruff, byte-compilation, and diff checks pass. Its transient Lever parser sample was not persisted; Lever and YLD remain disabled in `Review`. Provider terms, the synthetic relevance benchmark, backup/deletion evidence, and accessibility review remain open.
 
 ## Delivery workflow
 
