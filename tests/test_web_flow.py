@@ -8,9 +8,9 @@ from conftest import make_job
 from docx import Document
 from fastapi.testclient import TestClient
 
-from clue_ai.database import get_profile
-from clue_ai.domain import CandidateProfile
-from clue_ai.repository import add_source, get_run_results, get_source, list_sources
+from clue_ai.database import get_profile, save_search_run
+from clue_ai.domain import CandidateProfile, SearchCriteria
+from clue_ai.repository import add_source, get_run_results, get_source, list_sources, update_run
 from clue_ai.sources import FetchOutcome
 from clue_ai.web import create_app
 
@@ -47,6 +47,42 @@ def test_primary_navigation_names_groups_and_marks_current_page(settings, route,
     assert 'aria-label="Your search"' in response.text
     assert 'aria-label="Workspace"' in response.text
     assert f'<a href="{current_href}" class="is-active" aria-current="page">' in response.text
+
+
+def test_result_status_poller_only_runs_for_active_searches(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    save_search_run(settings.database_path, "run-polling", SearchCriteria())
+    active = client.get("/searches/run-polling")
+    assert active.status_code == 200
+    assert '/static/poll.js' in active.text
+
+    update_run(
+        settings.database_path,
+        "run-polling",
+        status="complete",
+        stage="complete",
+        message="Search complete.",
+        completed=True,
+    )
+    complete = client.get("/searches/run-polling")
+    assert complete.status_code == 200
+    assert '/static/poll.js' not in complete.text
+
+
+def test_jev_settings_state_external_data_and_local_budget_limits(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    response = client.get("/settings")
+
+    assert response.status_code == 200
+    assert "Work history and skills can still identify you." in response.text
+    assert "Clue does not inspect your TypeSafe account terms" in response.text
+    assert "it cannot guarantee account-wide charges" in response.text
+    assert "Clue does not read or control account refill settings" in response.text
+    assert "I understand which profile facts and listing details leave this device" in response.text
+    assert "I have reviewed the data disclosure and TypeSafe terms above" not in response.text
+    assert "The five built-in public source definitions remain." in response.text
 
 
 def test_localhost_and_same_origin_boundaries_reject_cross_origin_requests(settings):

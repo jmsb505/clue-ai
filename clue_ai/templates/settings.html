@@ -28,7 +28,7 @@
     <div class="data-disclosure">
       <h3>What gets sent if you enable Jev</h3>
       <p>When you choose “Score with Jev”, Clue sends reviewed profile fields (summary, target roles, skills, experience, education, and languages), the optional preferences entered for that search, and selected listing details (title, company, description, and employment type). It removes email addresses, phone numbers, and web links from profile text; it does not send the original CV file, work authorization, or source URL.</p>
-      <p>Work history and skills can still identify you. TypeSafe processes the request outside this device. Review its current terms, privacy policy, data processing terms, retention, and billing settings before enabling real profile data.</p>
+      <p>Work history and skills can still identify you. TypeSafe processes the request outside this device. Clue does not inspect your TypeSafe account terms, billing or refill settings, or other uses of the same key. The local ledger limits Clue's own reservations to the amount shown here; it cannot guarantee account-wide charges.</p>
       <p>Jev scoring is currently limited to English profile details and listings that Clue can confidently identify as English. Other languages remain visible without a Jev score.</p>
       <div class="official-links">
         <a href="https://docs.typesafe.ai/legal" target="_blank" rel="noreferrer noopener">TypeSafe legal information <span aria-hidden="true">↗</span></a>
@@ -41,13 +41,13 @@
         {% for segment in range(10) %}<i class="{% if usage.budget_usd and usage.used_usd / usage.budget_usd > segment / 10 %}segment-used{% endif %}"></i>{% endfor %}
       </div>
       <div class="budget-labels"><span>{{ "%.2f"|format(usage.remaining_usd) }} USD remaining</span><span>{{ "%.2f"|format(usage.budget_usd) }} USD / 30 days</span></div>
-      <p>TypeSafe input-token reservations use a conservative 80,000-token allowance per request. Timeouts keep their reserve in case a request was processed. Keep provider auto-refills disabled; the app cannot cap charges from other uses of the same key.</p>
+      <p>TypeSafe input-token reservations use a conservative 80,000-token allowance per request. Timeouts keep their reserve in case a request was processed. Clue does not read or control account refill settings, and this reserve does not include other uses of the same key.</p>
     </div>
     <form action="/settings/jev-consent" method="post" class="consent-form">
       <label class="check-field consent-field">
         <input type="checkbox" name="agree" value="on" {% if jev_consented %}checked{% endif %}>
         <span class="check-custom" aria-hidden="true"></span>
-        <span><b>{% if jev_consented %}Jev scoring is enabled{% else %}Enable Jev scoring for listings I explicitly select{% endif %}</b><small>I have reviewed the data disclosure and TypeSafe terms above. I understand profile facts and listing details leave this device only after I choose to score a search.</small></span>
+        <span><b>{% if jev_consented %}Jev scoring is enabled{% else %}Enable Jev scoring for listings I explicitly select{% endif %}</b><small>I understand which profile facts and listing details leave this device, and I choose to send them only when I explicitly score a search.</small></span>
       </label>
       <button class="button button-outline" type="submit">{% if jev_consented %}Save consent setting{% else %}Enable Jev scoring{% endif %} <span aria-hidden="true">→</span></button>
     </form>
@@ -69,7 +69,7 @@
 <section class="panel delete-panel">
   <div class="delete-copy">
     <span class="kicker">A CLEAN START</span><h2>Delete local job-search data</h2>
-    <p>Removes your saved CV and profile, search runs, preferences, indexed listings, saves, fit scores, Jev usage history, and owner-added source definitions from this device. The four built-in public source definitions remain.</p>
+    <p>Removes your saved CV and profile, search runs, preferences, indexed listings, saves, fit scores, Jev usage history, and owner-added source definitions from this device. The five built-in public source definitions remain.</p>
   </div>
   <form action="/data/delete" method="post" class="delete-form">
     <label class="field"><span>Type DELETE to confirm</span><input name="confirmation" autocomplete="off" required pattern="DELETE" placeholder="DELETE"></label>

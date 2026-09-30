@@ -181,5 +181,7 @@
   {% endfor %}
 </section>
 
-<script defer src="/static/poll.js"></script>
+{% if run.status in ['queued', 'running', 'scoring'] %}
+  <script defer src="/static/poll.js"></script>
+{% endif %}
 {% endblock %}
