@@ -1,6 +1,6 @@
 # PLAN-003: X.com manual job leads
 
-**Status:** M1 locally validated; main push pending
+**Status:** M1 pushed to `main` and remote-verified (`bdcf5c970b605cf90d9e9904002f6b56f39de608`)
 **Created:** 2026-09-30
 **Last updated:** 2026-10-01
 
@@ -117,7 +117,7 @@ Validation:
 - [x] `conda run -n gen python -m compileall -q clue_ai` — passed.
 - [x] Local TestClient route flow built an X search link, rejected `t.co`, stored a lead locally, exposed it in filtered results with separate employer and X links, and made no external/TypeSafe calls.
 - [x] `git diff --check` — passed (Git reported expected CRLF-normalization notices for working files).
-- [ ] Commit and push the validated milestone directly to `main` under the owner's standing instruction; verify remote `main`.
+- [x] Commit and push the validated milestone directly to `main` under the owner's standing instruction; verify remote `main` at `bdcf5c970b605cf90d9e9904002f6b56f39de608`.
 
 Documentation updates:
 
@@ -140,7 +140,7 @@ Revert the M1 commit to remove the X route, UI, and migration helper. Preserve t
 ## Progress
 
 - 2026-09-30: Reviewed X's official API pricing, automation rules, link guidance, and search help. Selected a manual-only flow to stay within the $0 source budget and avoid site scripting.
-- 2026-10-01: M1 implemented and locally validated in Conda `gen`; direct main push and remote verification remain.
+- 2026-10-01: M1 implemented, locally validated in Conda `gen`, pushed to `main` as `bdcf5c9`, and verified against `origin/main` at `bdcf5c970b605cf90d9e9904002f6b56f39de608`.
 
 ## Implementation discoveries / decisions
 
@@ -152,4 +152,4 @@ Revert the M1 commit to remove the X route, UI, and migration helper. Preserve t
 
 ## Completion evidence
 
-Local validation passed: 84 pytest cases, Ruff, byte-compilation, diff check, and a TestClient end-to-end lead/search flow. No X, employer URL, or Jev network request was made. Main push and remote verification are pending.
+Local validation passed: 84 pytest cases, Ruff, byte-compilation, diff check, and a TestClient end-to-end lead/search flow. No X, employer URL, or Jev network request was made. `origin/main` was verified at `bdcf5c970b605cf90d9e9904002f6b56f39de608`.

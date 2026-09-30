@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is locally validated; its main push is pending. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration and spoken screen-reader review remain open.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is pushed and remote-verified at `bdcf5c9`. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration and spoken screen-reader review remain open.
 **Updated:** 2026-10-01
 
 ## Owner-set cost ceiling

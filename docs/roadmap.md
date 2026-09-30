@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration and actual spoken screen-reader review remain. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 for manual X leads is locally validated; main push pending.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration and actual spoken screen-reader review remain. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 for manual X leads is pushed and remote-verified at `bdcf5c9`.
 **Updated:** 2026-10-01
 
 ## Definition gate
