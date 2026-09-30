@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — source evidence plan; app implementation tracked in PLAN-002
+Status: ACTIVE — M1 source slice complete locally; PLAN-001 M2/M3 and the M1 main push remain
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -16,8 +16,8 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 
 - Product definition, reference/market research, source discovery policy, and architecture are documented.
 - The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. This source evidence plan remains active for live source review.
-- Scrapling remains the selected crawler; its bounded adapter, JSON-LD parser, and linked-page HTML fallback are wired in PLAN-002. Fixture validation is complete; live-source validation remains pending.
-- No source registry has been runtime-validated; TypeSafe API terms and a safe local API-key arrangement remain open. No real candidate data is in use.
+- Scrapling remains the selected crawler; its bounded adapter, JSON-LD parser, and linked-page HTML fallback are wired in PLAN-002. Fixture validation is complete; live employer-page validation remains pending for M2.
+- The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. TypeSafe account terms and a safe local API-key arrangement remain open. No real candidate data is in use.
 
 ## Desired state
 
@@ -85,10 +85,10 @@ Goal: Produce a source registry slice that gives one person's local remote-from-
 
 Subtasks:
 
-- [ ] Use Milan/Italy with fully remote work as the first validation profile; take role families from the CV/user query. Do not hard-code this profile into the product.
-- [ ] Inventory official employer URLs, documented ATS APIs, feeds with clear personal-use terms, and relevant public employment-service sources for that input.
-- [ ] Mark every source `Approved`, `Review`, or `Blocked`; record the documented access path, cost, quota, attribution, cache window, refresh, and canonical links. Exclude sources whose published rules do not support the planned personal use.
-- [ ] Confirm each approved source costs $0 at expected test volume.
+- [x] Use Milan/Italy with fully remote work as the first validation profile; take role families from the CV/user query. Do not hard-code this profile into the product.
+- [x] Inventory official employer URLs, documented ATS APIs, feeds with clear personal-use terms, and relevant public employment-service sources for that input.
+- [x] Mark every source `Approved`, `Review`, or `Blocked`; record the documented access path, cost, quota, attribution, cache window, refresh, and canonical links. Exclude sources whose published rules do not support the planned personal use.
+- [x] Confirm each approved source costs $0 at expected test volume.
 
 Affected areas: source registry, ingestion connectors, product coverage disclosure.
 
@@ -96,19 +96,19 @@ Dependencies: documented source paths and any free key registration required by 
 
 Acceptance criteria:
 
-- [ ] Every enabled source has a documented personal-use path, $0 cost, attribution, direct-link, local retention, and refresh rules.
-- [ ] Every result preserves location-eligibility evidence and is labeled `Eligible here`, `Needs verification`, `Not eligible`, or `Unknown`; only explicit Italy/EU/EEA/Europe/worldwide eligibility counts as confirmed for the first profile.
-- [ ] The coverage report names excluded/under-review sources and does not claim completeness.
+- [x] Every enabled source has a documented personal-use path, $0 cost, attribution, direct-link, local retention, and refresh rules.
+- [x] Every result preserves location-eligibility evidence and is labeled `Eligible here`, `Needs verification`, `Not eligible`, or `Unknown`; only explicit Italy/EU/EEA/Europe/worldwide eligibility counts as confirmed for the first profile.
+- [x] The coverage report names excluded/under-review sources and does not claim completeness.
 
 Validation:
 
-- [ ] Manual primary-source terms/API review for each enabled source.
-- [ ] Manually inspect representative source listings, Italy/Europe eligibility language, and original URLs.
-- [ ] No automated tests prescribed until a connector is implemented.
+- [x] Manual primary-source terms/API review for each enabled source.
+- [x] Manually inspect representative source listings, Italy/Europe eligibility language, and original URLs.
+- [x] Add offline connector tests for RemoteJobs.org parsing, host confinement, role-query limit/encoding, daily refresh suppression, source attribution, and links. Automated tests make no source network calls.
 
 Documentation updates:
 
-- [ ] Update the source registry, source review, ADR 0003, and gate with the actual geography-specific evidence.
+- [x] Update the source registry, source review, ADR 0003, and gate with the actual geography-specific evidence.
 
 Applicable specialized skills: `context7-mcp` for current library/API documentation; recheck the source and TypeSafe documentation before live use with the owner's CV.
 
@@ -188,7 +188,7 @@ Expected Git checkpoint: implement, validate, commit, and push each Jev/cost mil
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. Remaining PLAN-001 evidence includes source-by-source terms/access checks, approved-source crawl behavior, Italy eligibility labels, stale/delisted handling, original links, accessibility, Jev cost stop, and source coverage. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. M1 source selection and feed/API smoke evidence are complete locally. Remaining PLAN-001 evidence includes approved employer-page crawl behavior, stale/delisted handling, duplicate/link checks, the Jev benchmark and cost ledger, backups/deletion, and measured source coverage. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -197,14 +197,22 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 ## Progress
 
 - Research, crawler constraints, candidate table, and gate definition were initially prepared on 2026-09-30.
-- Official feed documentation was revisited on 2026-09-30. Jobicy, Remote OK, Remote First Jobs, and Startup Jobs RSS/API paths are the initial private-app feed set with attribution/link/refresh conditions recorded in `source-discovery-and-crawl-review.md`.
-- Application, connector, and validation work is tracked in [PLAN-002](PLAN-002-local-first-job-search-app.md); no runtime source validation has been performed yet.
+- The initial approved set is Jobicy, RemoteJobs.org, Remote OK, Remote First Jobs, and Startup Jobs. M1 records terms, costs, limits, direct links, attribution, app refresh/retention, exclusions, and geography evidence in `docs/research/source-discovery-and-crawl-review.md`.
+- One live request per existing feed was made through the bounded production fetcher: 200 Jobicy, 99 Remote OK, 100 Remote First Jobs role-feed, and 50 Startup Jobs records parsed. No jobs or CV data were persisted or sent to Jev.
+- One RemoteJobs.org API page returned 50 records with pagination total 5,728: 13 were explicitly eligible by current location-language rules, 28 needed verification, and 9 were not eligible. The sample “Anywhere in the World” was linked directly; that detail page could not be fetched by the web research viewer.
+- A second, synthetic `software engineer` request through the new production connector returned 50 listings: 8 explicitly eligible, 24 needing verification, and 18 not eligible. All 50 canonical links stayed on `remotejobs.org`; the temporary database recorded the query hash but no listing rows and was deleted after the smoke check.
+- Representative official listings were reviewed: Jobicy Nash EAE UK/Europe (explicit Europe), Remote OK Sofia role (contradictory broad remote label and Bulgaria/relocation text), and Startup Jobs Smartcat EMEA (London and customer travel; not confirmed from Italy). No remote/EMEA label alone was promoted to confirmed eligibility.
+- `remotejobs_api` was added with one daily 50-record request per role query, up to four queries, 14-day retention, exact visible credit, and direct listing links. Offline connector and UI attribution tests were added; full results are recorded below after validation.
+- M1 validation in Conda `gen`: 44 tests passed, Ruff passed, and `compileall` passed. The one Starlette/AnyIO deprecation warning originates upstream and did not fail the run.
+- PLAN-001 M1 is complete locally; its direct-to-`main` commit and push are the next operation. No API key, CV, listing data, or local database entered Git.
+- Application, crawler, and Jev work remains tracked in [PLAN-002](PLAN-002-local-first-job-search-app.md) and PLAN-001 M2/M3; source-page live crawling has not yet been performed.
 
 ## Implementation discoveries / decisions
 
 - Scrapling is selected. Its documented robots behavior is optional and off by default; set it on explicitly. The Spider also needs explicit global/per-domain concurrency and download-delay settings.
 - Scrapling's README advertises anti-bot bypass and proxy rotation. Those features are excluded from the product policy.
-- Candidate feeds/APIs with promising $0 paths include Jobicy, Remote OK, Remote First Jobs, Startup Jobs, Adzuna, and a bounded Jooble trial; verify current limits and Italy eligibility before enabling them.
+- The five enabled sources are the only currently approved app feeds/APIs. Adzuna and Jooble need owner-supplied registration keys; Remote Landers lacks descriptions for Jev and is metadata-only; EURES remains manual-only until an official vacancy API/reuse path is documented.
+- Remote First Jobs' JSON API overlaps its RSS corpus and delays publication by 24 hours, so it is not enabled alongside the fresher RSS.
 - We Work Remotely and Himalayas have public feed/API guidance that conflicts with broader terms; hold them while using clear alternatives.
 - Remotive's public-feed page and general Terms have different apparent scopes; use other free feeds unless that ambiguity is resolved.
 - USAJOBS is U.S.-specific and is not a priority for the Milan/Italy pilot.

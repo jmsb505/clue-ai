@@ -51,9 +51,10 @@ def sources_due(database_path: Path, force: bool = False) -> list[dict[str, Any]
     for source in list_sources(database_path):
         if source["state"] != "approved" or not source["enabled"]:
             continue
-        if source["kind"] in {"remote_first_rss"}:
-            # These feeds are role-specific; the refresh service builds one URL per role.
-            source["endpoint"] = "https://remotefirstjobs.com/rss/jobs/{role_slug}.rss"
+        if source["kind"] in {"remote_first_rss", "remotejobs_api"}:
+            # These sources track refreshes per requested role/query, not per source endpoint.
+            if source["kind"] == "remote_first_rss":
+                source["endpoint"] = "https://remotefirstjobs.com/rss/jobs/{role_slug}.rss"
             due.append(source)
             continue
         checked = _parse_time(source.get("last_checked_at"))

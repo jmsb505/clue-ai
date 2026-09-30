@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urljoin, urlsplit
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from clue_ai.config import Settings
@@ -36,6 +36,7 @@ class FetchOutcome:
 
 SOURCE_HOSTS = {
     "jobicy_api": {"jobicy.com"},
+    "remotejobs_api": {"remotejobs.org"},
     "remoteok_json": {"remoteok.com"},
     "remote_first_rss": {"remotefirstjobs.com"},
     "startup_rss": {"startup.jobs"},
@@ -63,6 +64,10 @@ def fetch_source(
         if database_path is None:
             raise SourceFetchError("The role-feed refresh ledger is unavailable.")
         return _fetch_remote_first(source, criteria, settings, database_path)
+    if kind == "remotejobs_api":
+        if database_path is None:
+            raise SourceFetchError("The role-query refresh ledger is unavailable.")
+        return _fetch_remotejobs(source, criteria, settings, database_path)
 
     url = _connector_url(source)
     allowed_hosts = _allowed_hosts(source, kind, url)
@@ -70,7 +75,7 @@ def fetch_source(
         raise SourceFetchError("The source endpoint is outside its registered host.", blocked=True)
     payload = _fetch_bytes(url, allowed_hosts, settings)
     try:
-        if kind in {"jobicy_api", "remoteok_json", "greenhouse", "lever", "smartrecruiters"}:
+        if kind in {"jobicy_api", "remotejobs_api", "remoteok_json", "greenhouse", "lever", "smartrecruiters"}:
             raw = json.loads(payload.decode("utf-8-sig"))
             jobs = _parse_json_feed(kind, source, raw, settings)
         else:
@@ -185,6 +190,8 @@ def _parse_json_feed(
     items: list[dict[str, Any]] = []
     if kind == "jobicy_api":
         items = raw.get("jobs", []) if isinstance(raw, dict) else []
+    elif kind == "remotejobs_api":
+        items = raw.get("data", []) if isinstance(raw, dict) else []
     elif kind == "remoteok_json":
         items = raw if isinstance(raw, list) else []
         items = [item for item in items if isinstance(item, dict) and item.get("position")]
@@ -222,6 +229,22 @@ def _normalize_api_job(
         salary_min, salary_max = _number(item.get("salaryMin")), _number(item.get("salaryMax"))
         currency = item.get("salaryCurrency") or ""
         period = item.get("salaryPeriod") or ""
+    elif kind == "remotejobs_api":
+        title = item.get("title")
+        company_obj = item.get("company") or {}
+        company = company_obj.get("name", "") if isinstance(company_obj, dict) else company_obj
+        description = item.get("description") or ""
+        location = item.get("location") or ""
+        url = item.get("url") or item.get("apply_url")
+        ext = item.get("id") or url
+        posted = item.get("posted_at")
+        employment = item.get("type") or ""
+        salary_min, salary_max = _number(item.get("salary_min")), _number(item.get("salary_max"))
+        salary_text = str(item.get("salary_text") or "")
+        currency = item.get("salary_currency") or _salary_currency_from_text(salary_text)
+        if not currency:
+            salary_min = salary_max = None
+        period = item.get("salary_period") or ""
     elif kind == "remoteok_json":
         title = item.get("position")
         company = item.get("company")
@@ -339,6 +362,69 @@ def _fetch_remote_first(
     return FetchOutcome(jobs=jobs, checked=checked, message=f"Retrieved {len(jobs)} role-feed records.")
 
 
+def _fetch_remotejobs(
+    source: dict[str, Any],
+    criteria: SearchCriteria,
+    settings: Settings,
+    database_path,
+) -> FetchOutcome:
+    queries = _role_queries(criteria.roles)
+    if not queries:
+        queries = [""]
+    interval = int(source.get("interval_seconds") or 86_400)
+    source_id = str(source["id"])
+    query_keys = [(query, query or "latest-50") for query in queries[:4]]
+    due_queries = [
+        (query, query_key)
+        for query, query_key in query_keys
+        if role_feed_due(database_path, source_id, query_key, interval)
+    ]
+    if not due_queries:
+        return FetchOutcome(
+            message="The selected RemoteJobs.org queries are still inside their daily refresh interval.",
+            skipped=True,
+        )
+
+    endpoint = str(source.get("endpoint") or "https://remotejobs.org/api/v1/jobs")
+    allowed_hosts = SOURCE_HOSTS["remotejobs_api"]
+    if not _url_is_allowed(endpoint, allowed_hosts):
+        raise SourceFetchError("The source endpoint is outside its registered host.", blocked=True)
+
+    jobs: list[NormalizedJob] = []
+    checked = 0
+    for index, (query, query_key) in enumerate(due_queries):
+        if index:
+            time.sleep(2.0)
+        params = {"limit": 50, "offset": 0}
+        if query:
+            params["q"] = query
+        separator = "&" if "?" in endpoint else "?"
+        url = f"{endpoint}{separator}{urlencode(params)}"
+        try:
+            payload = _fetch_bytes(url, allowed_hosts, settings)
+            raw = json.loads(payload.decode("utf-8-sig"))
+            jobs.extend(_parse_json_feed("remotejobs_api", source, raw, settings))
+        except Exception:
+            record_role_feed_check(database_path, source_id, query_key)
+            raise
+        record_role_feed_check(database_path, source_id, query_key)
+        checked += 1
+    return FetchOutcome(
+        jobs=jobs,
+        checked=checked,
+        message=f"Retrieved {len(jobs)} RemoteJobs.org records across {checked} query pages.",
+    )
+
+
+def _role_queries(raw_roles: str) -> list[str]:
+    queries: list[str] = []
+    for raw in re.split(r"[,;\n]+", raw_roles or ""):
+        query = " ".join(re.sub(r"[\r\t]+", " ", raw).split())[:80]
+        if len(query) >= 2 and query.casefold() not in {value.casefold() for value in queries}:
+            queries.append(query)
+    return queries
+
+
 def _role_slugs(raw_roles: str) -> list[str]:
     slugs = []
     for role in re.split(r"[,;\n]+", raw_roles or ""):
@@ -414,6 +500,31 @@ def _number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if 0 <= number <= 1_000_000_000 else None
+
+
+def _salary_currency_from_text(value: str) -> str:
+    text = value.upper()
+    for marker, currency in (
+        ("USD", "USD"),
+        ("EUR", "EUR"),
+        ("GBP", "GBP"),
+        ("CAD", "CAD"),
+        ("AUD", "AUD"),
+    ):
+        if marker in text:
+            return currency
+    for marker, currency in (
+        ("CA$", "CAD"),
+        ("C$", "CAD"),
+        ("AU$", "AUD"),
+        ("A$", "AUD"),
+        ("US$", "USD"),
+        ("€", "EUR"),
+        ("£", "GBP"),
+    ):
+        if marker in value:
+            return currency
+    return ""
 
 
 def _normalize_employment(value: Any) -> str:

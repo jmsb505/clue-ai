@@ -50,6 +50,7 @@ Reconsider the source set when terms, fees, use conditions, quality, quota, geog
 - [USAJOBS API terms](https://developer.usajobs.gov/apirequest/index)
 - [Remote OK feed guidance](https://remoteok.com/faq)
 - [Jobicy Remote Jobs API](https://jobicy.com/jobs-rss-feed)
+- [RemoteJobs.org API](https://remotejobs.org/api-access)
 - [Remote First Jobs RSS guidance](https://remotefirstjobs.com/rss)
 - [Startup Jobs API](https://startup.jobs/api)
 - [Adzuna API terms](https://developer.adzuna.com/docs/terms_of_service)

@@ -129,7 +129,8 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     assert "Software Engineer" in results.text
     assert 'href="https://jobs.example.org/openings/software-engineer"' in results.text
     assert "Fit not evaluated" in results.text or "not evaluated" in results.text.casefold()
-    assert set(calls) == {"jobicy", "remoteok", "remotefirstjobs", "startupjobs"}
+    assert set(calls) == {"jobicy", "remotejobs", "remoteok", "remotefirstjobs", "startupjobs"}
+    assert "Powered by RemoteJobs.org" in results.text
     assert not any(call.startswith("user-") for call in calls)
     row = get_run_results(settings.database_path, run_id)[0]
     assert row["eligibility_status"] == "eligible"
@@ -143,7 +144,9 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
         follow_redirects=False,
     )
     assert saved.status_code == 303
-    assert "Software Engineer" in client.get("/saved").text
+    saved_page = client.get("/saved")
+    assert "Software Engineer" in saved_page.text
+    assert "Powered by RemoteJobs.org" in saved_page.text
     hidden = client.post(
         f"/jobs/{row['id']}/hide",
         data={"return_to": results_url},
@@ -151,7 +154,9 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
         follow_redirects=False,
     )
     assert hidden.status_code == 303
-    assert "Software Engineer" in client.get("/hidden").text
+    hidden_page = client.get("/hidden")
+    assert "Software Engineer" in hidden_page.text
+    assert "Powered by RemoteJobs.org" in hidden_page.text
 
     deleted = client.post(
         "/data/delete",

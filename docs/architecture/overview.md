@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** M1 pushed to `main`; synthetic live Jev acceptance validated — provider terms, source audit, and ranking benchmark remain
+**Status:** PLAN-001 M1 source slice implemented and locally validated; milestone push and PLAN-001 M2/M3 remain. PLAN-002 M1/M2 are pushed; TypeSafe account terms and ranking benchmark remain.
 **Updated:** 2026-09-30
 
 ## Owner-set cost ceiling
@@ -73,7 +73,7 @@ The default freshness target is a source check within 24 hours for a “recently
 
 Scrapling is the selected crawler for registered public HTML job and career pages, including employer and ATS pages. Use its `Spider` with `robots_txt_obey = True`, `concurrent_requests = 4`, `concurrent_requests_per_domain = 1`, and a base `download_delay = 2.0`; Scrapling applies stricter `Crawl-delay` and `Request-rate` directives by increasing the delay. Set an identifying project User-Agent through ordinary request headers, use static HTTP fetching first, and use browser rendering only when necessary and allowed by the source's published rules. Do not use stealth fetchers, proxy rotation, impersonation, anti-bot bypass, or CAPTCHA automation. Keep the crawler behind the connector boundary so it can be replaced if local validation finds a concrete problem. See the [source discovery review](../research/source-discovery-and-crawl-review.md) and [ADR 0003](../decisions/0003-bounded-public-company-crawling.md).
 
-Scrapling automatically retries blocked requests unless configured otherwise. Set `max_blocked_retries = 0`: a `401`, `403`, `429`, challenge, or explicit block stops that source without retry. The initial private-app feed set and attribution/refresh constraints are recorded in the [source review](../research/source-discovery-and-crawl-review.md).
+Scrapling automatically retries blocked requests unless configured otherwise. Set `max_blocked_retries = 0`: a `401`, `403`, `429`, challenge, or explicit block stops that source without retry. The five enabled private-app feeds/APIs and their attribution/refresh/retention constraints are recorded in the [source review](../research/source-discovery-and-crawl-review.md). RemoteJobs.org is limited to one page per role query per day, at most four role queries, and its requested “Powered by RemoteJobs.org” attribution is displayed on result, saved, and hidden listing cards.
 
 ## Chosen local implementation stack
 
@@ -85,7 +85,7 @@ The local implementation includes profile/CV review, source management, feed/ATS
 
 ## Provider and deployment choices still open
 
-- Geography-specific source coverage beyond the initial Jobicy, Remote OK, Remote First Jobs, and Startup Jobs feeds; track additional sources in the registry.
+- Geography-specific source coverage beyond the initial Jobicy, RemoteJobs.org, Remote OK, Remote First Jobs, and Startup Jobs feeds; track additional sources in the registry.
 - Per-company review and enablement for Greenhouse, Lever, SmartRecruiters, and Scrapling career-page connectors.
 - Source-specific Scrapling parsers and request schedules after bounded local crawl validation.
 - Local deletion and backup behavior; TypeSafe telemetry, retention, deletion, and international transfer terms.

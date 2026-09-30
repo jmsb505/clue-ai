@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import socket
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from conftest import make_job
@@ -69,6 +70,75 @@ def test_rss_parser_keeps_direct_link_and_credit(settings, database):
     assert jobs[0].source_url == "https://jobs.example.org/openings/1"
     assert jobs[0].source_credit == "Startup Jobs"
     assert jobs[0].company == "Example Labs"
+
+
+def test_remotejobs_api_normalizes_direct_link_and_refreshes_up_to_four_roles(
+    settings, database, monkeypatch
+):
+    payload = json.dumps(
+        {
+            "data": [
+                {
+                    "id": "remotejobs-1",
+                    "title": "Senior Data Engineer",
+                    "company": {"name": "Example Labs"},
+                    "location": "Remote (Worldwide)",
+                    "description": "Remote data engineering role open to candidates anywhere in the world.",
+                    "url": "https://remotejobs.org/remote-jobs/senior-data-engineer-example",
+                    "apply_url": "https://remotejobs.org/remote-jobs/senior-data-engineer-example",
+                    "salary_min": 120000,
+                    "salary_max": 160000,
+                    "salary_text": "USD 120,000 - USD 160,000",
+                    "type": "Full-time",
+                    "posted_at": "2026-09-29T12:00:00Z",
+                }
+            ],
+            "pagination": {"total": 1, "limit": 50, "offset": 0, "has_more": False},
+        }
+    ).encode()
+    calls = []
+
+    def fake_fetch(url, *_args):
+        calls.append(url)
+        return payload
+
+    monkeypatch.setattr("clue_ai.sources._fetch_bytes", fake_fetch)
+    monkeypatch.setattr("clue_ai.sources.time.sleep", lambda _seconds: None)
+    source = get_source(database, "remotejobs")
+    criteria = SearchCriteria(
+        roles="Data Engineer, Product Manager, Data Engineer; C++ Engineer, UX Researcher"
+    )
+
+    outcome = fetch_source(source, criteria, settings, database)
+
+    assert outcome.checked == 4
+    assert len(calls) == 4
+    assert [parse_qs(urlsplit(url).query)["q"][0] for url in calls] == [
+        "Data Engineer", "Product Manager", "C++ Engineer", "UX Researcher"
+    ]
+    assert all(urlsplit(url).hostname == "remotejobs.org" for url in calls)
+    assert all(parse_qs(urlsplit(url).query)["limit"] == ["50"] for url in calls)
+    assert len(outcome.jobs) == 4
+    job = outcome.jobs[0]
+    assert job.source_id == "remotejobs"
+    assert job.company == "Example Labs"
+    assert job.location_raw == "Remote (Worldwide)"
+    assert job.canonical_url == "https://remotejobs.org/remote-jobs/senior-data-engineer-example"
+    assert job.source_credit == "Powered by RemoteJobs.org"
+    assert job.salary_min == 120000
+    assert job.salary_currency == "USD"
+    assert job.posted_at.startswith("2026-09-29")
+
+    repeated = fetch_source(source, criteria, settings, database)
+    assert repeated.skipped
+    assert len(calls) == 4
+
+    new_role = fetch_source(
+        source, SearchCriteria(roles="Platform Engineer"), settings, database
+    )
+    assert new_role.checked == 1
+    assert len(calls) == 5
+    assert parse_qs(urlsplit(calls[-1]).query)["q"] == ["Platform Engineer"]
 
 
 def test_review_source_is_skipped_without_fetching(settings, monkeypatch):

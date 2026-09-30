@@ -155,7 +155,7 @@
           <span class="source-trail-mark" aria-hidden="true">⌁</span>
           <span class="source-trail-links">
             {% for source in job.sources %}
-              <a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.name }}</a>{% if not loop.last %}<span aria-hidden="true"> · </span>{% endif %}
+              <a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.attribution or source.name }}</a>{% if not loop.last %}<span aria-hidden="true"> · </span>{% endif %}
             {% endfor %}
           </span>
           <span class="source-trail-meta">

@@ -22,7 +22,7 @@ To enable Jev later, add your key to .env and restart Clue. Review TypeSafe's te
 ## What is wired
 
 - Local PDF/DOCX extraction and editable profile review.
-- Jobicy and Remote OK feeds, role-specific Remote First Jobs RSS, and Startup Jobs RSS.
+- Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
 - Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. They start disabled in Review.
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
 - Optional Jev batches with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.

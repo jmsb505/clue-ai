@@ -18,26 +18,33 @@ from clue_ai.repository import (
     get_source,
     list_sources,
     monthly_jev_usage,
+    record_source_state,
     reserve_jev_budget,
     save_jobs,
     save_run_results,
     saved_jobs,
     set_job_user_state,
     settle_jev_usage,
+    sources_due,
 )
 
 
-def test_default_source_registry_has_only_the_four_approved_free_feeds(database):
+def test_default_source_registry_has_only_the_five_approved_free_feeds(database):
     sources = list_sources(database)
 
     assert {item["kind"] for item in sources} == {
         "jobicy_api",
+        "remotejobs_api",
         "remoteok_json",
         "remote_first_rss",
         "startup_rss",
     }
     assert all(item["state"] == "approved" and item["enabled"] for item in sources)
     assert all(item["attribution"] and item["endpoint"].startswith("https://") for item in sources)
+    remotejobs = next(item for item in sources if item["id"] == "remotejobs")
+    assert remotejobs["attribution"] == "Powered by RemoteJobs.org"
+    assert remotejobs["interval_seconds"] == 86_400
+    assert remotejobs["retention_days"] == 14
 
 
 def test_owner_added_source_starts_disabled_in_review(database):
@@ -54,6 +61,14 @@ def test_owner_added_source_starts_disabled_in_review(database):
     assert source["state"] == "review"
     assert source["enabled"] == 0
     assert source["config"]["career_url"].startswith("https://")
+
+
+def test_remotejobs_source_is_considered_for_new_daily_role_queries(database):
+    record_source_state(database, "remotejobs", "ok")
+
+    due_source_ids = {source["id"] for source in sources_due(database)}
+
+    assert "remotejobs" in due_source_ids
 
 
 def test_search_result_keeps_per_run_location_and_freshness_evidence(database):
@@ -142,7 +157,7 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     assert get_profile(database) == CandidateProfile()
     assert get_run(database, "run-delete") is None
     assert all_active_jobs(database) == []
-    assert len(list_sources(database)) == 4
+    assert len(list_sources(database)) == 5
     assert monthly_jev_usage(database, 4.0)["requests"] == 0
     assert get_source(database, "jobicy")["state"] == "approved"
     from clue_ai.database import get_settings

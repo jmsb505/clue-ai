@@ -36,7 +36,7 @@
           <details class="job-description"><summary>Read listing details</summary><div class="description-copy">{{ job.description or 'The source did not provide a description.' }}</div></details>
         </div>
         <div class="job-card-footer">
-          <div class="source-trail"><span class="source-trail-mark" aria-hidden="true">⌁</span><span class="source-trail-links">{% for source in job.sources %}<a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</span><span class="source-trail-meta">Checked {{ job.last_checked_at[:10] }}</span></div>
+          <div class="source-trail"><span class="source-trail-mark" aria-hidden="true">⌁</span><span class="source-trail-links">{% for source in job.sources %}<a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.attribution or source.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</span><span class="source-trail-meta">Checked {{ job.last_checked_at[:10] }}</span></div>
           <div class="job-actions"><form action="/jobs/{{ job.id }}/unsave" method="post"><input type="hidden" name="return_to" value="/saved"><button class="quiet-button" type="submit">Remove saved</button></form></div>
         </div>
       </article>
