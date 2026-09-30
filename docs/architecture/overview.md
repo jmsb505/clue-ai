@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1 is pushed; M2 is validated locally and its `main` checkpoint is pending; M3 remains active. PLAN-002 M1/M2 are pushed; TypeSafe account terms, real-CV choice, accessibility review, and ranking benchmark remain.
+**Status:** PLAN-001 M1 and M2 are pushed and remote-verified on `main` (M2 `0ee104bd699645025980ee8874ebb590846ca3da`); M3 remains active. PLAN-002 M1/M2 are pushed; TypeSafe account terms, real-CV choice, accessibility review, and ranking benchmark remain.
 **Updated:** 2026-09-30
 
 ## Owner-set cost ceiling

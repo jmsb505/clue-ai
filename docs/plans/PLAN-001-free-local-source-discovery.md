@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1 pushed and remote-verified; M2 validated locally, main checkpoint pending; M3 remains
+Status: ACTIVE — M1 and M2 pushed and remote-verified on `main`; M3 remains
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -15,7 +15,7 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 ## Current state
 
 - Product definition, reference/market research, source discovery policy, and architecture are documented.
-- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. PLAN-001 M1 is separately pushed and verified at `69f536ee00e3eadc50fd877d99c87371add387d5`; PLAN-001 M2 has passed local validation and is pending its separate checkpoint.
+- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. PLAN-001 M1 is separately pushed and verified at `69f536ee00e3eadc50fd877d99c87371add387d5`; PLAN-001 M2 was pushed separately and remote-verified at `0ee104bd699645025980ee8874ebb590846ca3da`.
 - Scrapling remains the selected crawler. Its robots-aware, bounded Spider now covers direct job pages through JSON-LD or static HTML fallback, and M2 compared one Lever EU API listing with its public page. Other individual employer/ATS sources remain `Review` until approved per board.
 - The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. M2 validates an EU Lever API/page comparison as a transient parser experiment; that employer board remains disabled in `Review`, as do other ATS sources, until ongoing-use conditions are checked. TypeSafe account terms and a safe local API-key arrangement remain open. No real candidate data is in use.
 
@@ -188,7 +188,7 @@ Expected Git checkpoint: implement, validate, commit, and push each Jev/cost mil
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection is pushed; M2's one-source API/page comparison and offline validation have passed locally, with its separate `main` checkpoint pending. M3 still requires the synthetic Jev benchmark, coverage/relevance measures, and zero-cost backup/deletion operations. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3 still requires the synthetic Jev benchmark, coverage/relevance measures, and zero-cost backup/deletion operations. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -206,7 +206,7 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - M1 validation in Conda `gen`: 44 tests passed, Ruff passed, and `compileall` passed. The one Starlette/AnyIO deprecation warning originates upstream and did not fail the run.
 - PLAN-001 M1 was committed and pushed directly to `main` as `69f536ee00e3eadc50fd877d99c87371add387d5`; `git ls-remote` matched that SHA. No API key, CV, listing data, or local database entered Git.
 - M2 live evidence is recorded in `docs/research/source-discovery-and-crawl-review.md`. The Prima EU API returned 90/90 parsed records in one request; its public page returned one JSON-LD posting with the same canonical URL, and the host's `robots.txt` allowed the request. YLD's API returned five postings; its public page returned HTTP 200 but Scrapling signaled a block, so it was not retried.
-- M2 validation in Conda `gen`: 50 tests passed, Ruff passed after an import-order correction, byte-compilation passed, and `git diff --check` passed. The M2 main checkpoint and remote SHA are pending.
+- M2 validation in Conda `gen`: 50 tests passed, Ruff passed after an import-order correction, byte-compilation passed, and `git diff --check` passed. Separate milestone commit `0ee104bd699645025980ee8874ebb590846ca3da` was pushed to `main`; `git ls-remote origin refs/heads/main` matched that SHA.
 - No real CV, Jev request, app database, or job listing was persisted or sent to Jev during PLAN-001 M2. The public-source checks cost `$0`.
 - PLAN-001 M3 and the account/privacy gates in [PLAN-002](PLAN-002-local-first-job-search-app.md) remain active.
 
