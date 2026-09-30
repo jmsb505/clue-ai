@@ -17,7 +17,7 @@ python -m clue_ai
 
 Then open http://127.0.0.1:8000. The server binds to this computer only. A fresh copy of `.env.example` starts with a blank key; the app works without one. This local checkout's ignored `.env` is owner-configured and is never committed.
 
-To enable Jev later, add your key to .env and restart Clue. Review TypeSafe's terms and the disclosure in Settings first. Scoring happens only after you explicitly choose Score with Jev. The app reserves at most USD 4 over 30 days, leaving USD 1 as a buffer inside the USD 5 owner ceiling. Keep TypeSafe auto-refills off; the app cannot limit other uses of the same key.
+To enable Jev later, add your key to .env and restart Clue. Read the data disclosure in Settings; Clue does not inspect TypeSafe account terms, billing/refill settings, or other uses of the key. Scoring requires your opt-in and an explicit Score with Jev action. The app reserves at most USD 4 over 30 days toward your USD 5 owner ceiling; that local limit does not guarantee account-wide charges.
 
 ## What is wired
 
@@ -33,7 +33,7 @@ The initial feeds do not cover the whole internet. Open the original listing and
 
 The `.env` file, `.data/`, CV uploads, databases, and development caches are ignored by Git. Do not commit your key, CV, or `.data/` folder. Deletion cannot remove data already processed by TypeSafe. PLAN-002 M1/M2 and PLAN-001 M3a used synthetic candidate data only. M3a scored five synthetic listings in one Jev request; Jev and a simple keyword baseline both achieved `nDCG@5 = 1.0` on assistant-authored grades. This validates the scoring/evaluation path, not personal relevance or Jev superiority. Its methodology, result, and cost limitations are recorded in [the M3a evaluation](docs/evaluations/PLAN-001-M3-synthetic-jev.md). PLAN-001 M2 separately fetched one public Lever API and job page into process memory for parser comparison; no source listing was persisted to `.data/`.
 
-A synthetic backup/restore check confirms that the local profile and CV can be restored from a copy of `.data/`. Backups are manual, should go to an offline destination protected by encryption, and do not include `.env`; see the [backup and deletion guide](docs/operations/local-data-backup-and-deletion.md).
+A synthetic backup/restore check confirms that the local profile and CV can be restored from a copy of `.data/`. Backups are manual and local; encryption is optional under the owner's scope decision. Backups do not include `.env`; see the [backup and deletion guide](docs/operations/local-data-backup-and-deletion.md).
 
 ## Project documents
 

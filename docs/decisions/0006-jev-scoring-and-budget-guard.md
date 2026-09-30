@@ -16,7 +16,7 @@ Jev is the required candidate-to-listing evaluator. Its answers are typed decisi
 - Exclude candidate name, contact details, street address, original file, and unreviewed extracted text from Jev state. Send only reviewed job-relevant profile fields and the bounded listing snapshot needed for the requested judgment.
 - Set SDK `RetryPolicy(max_retries=0)` so paid calls are never repeated automatically. A failed call remains an explicit unscored state; the user may retry manually.
 - Score at most five listings in a request. Only attempt scoring when the reviewed profile is marked English and each listing is confidently identified as English; keep other listings visible and unscored.
-- Before each call, reserve an 80,000-token allowance at the current published input price. This deliberately exceeds the documented 64,000-token context as a conservative accounting allowance. Settle successful responses to `usage.input_tokens`; retain the full reserve if the outcome is ambiguous. Do not start a request that would exceed the app's $4.00 rolling 30-day inference cap. The remaining $1.00 is a buffer toward the owner's $5 per 30-day ceiling; automatic provider credit refills must remain off.
+- Before each call, reserve an 80,000-token allowance at the current published input price. This deliberately exceeds the documented 64,000-token context as a conservative accounting allowance. Settle successful responses to `usage.input_tokens`; retain the full reserve if the outcome is ambiguous. Do not start a request that would exceed the app's $4.00 rolling 30-day inference cap. The remaining $1.00 is a planned buffer toward the owner's $5 per 30-day ceiling. Provider refill settings and account-wide charges are unverified under the owner's 2026-09-30 waiver.
 - Record request count, model version, input tokens, estimated USD, and reserve state without storing an API key or full request payload in the usage ledger.
 - When a key is missing, or the cap is reached, show jobs without fit scores and explain why; do not substitute another model.
 
@@ -31,7 +31,7 @@ Jev is the required candidate-to-listing evaluator. Its answers are typed decisi
 ## Consequences and limitations
 
 - The 80k-token reserve is deliberately conservative and can stop scoring while actual usage remains low. The UI displays the rolling reserve total; ambiguous requests remain reserved.
-- The guard covers requests sent by this app, not other software using the same account/key, provider-side taxes, or account billing settings. The owner must disable auto-refills and confirm TypeSafe's terms and billing before real CV use.
+- The guard covers requests sent by this app, not other software using the same account/key, provider-side taxes, or account billing settings. On 2026-09-30 the owner waived TypeSafe account/terms/billing checks for personal local use. This waiver does not verify an account-wide cap. Clue still discloses the fields sent and requires opt-in plus an explicit score action.
 - TypeSafe currently publishes $42 per billion input tokens, zero output-token price, a 64k total context, and a response usage field. Limits and aliases can change; record the answering model ID and review official docs when upgrading.
 - Fit labels, language detection, and weights require a representative synthetic benchmark before personal reliance; score levels do not imply an interview or hiring probability.
 - Even minimized work history may identify the candidate; the app must disclose that it is personal data sent to TypeSafe before a score call.

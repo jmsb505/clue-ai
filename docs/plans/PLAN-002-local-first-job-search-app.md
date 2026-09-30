@@ -1,6 +1,6 @@
 # PLAN-002 — First local job-search application
 
-**Status:** M1 implementation and M2 synthetic integration are pushed and remote-verified on `main`; manual accessibility and owner/account gates remain open
+**Status:** M1/M2 and follow-up accessibility/privacy fixes are pushed to `main`; the owner waived TypeSafe account checks, device-encryption confirmation, and 200% zoom. Browser accessibility-tree and keyboard review passed; actual speech-reader playback and personal relevance calibration remain open.
 **Created:** 2026-09-30
 **Last updated:** 2026-09-30
 
@@ -20,13 +20,13 @@ The product definition and source research support a local feasibility increment
 - One authorized live Jev request used only synthetic candidate and job facts. It returned Jev 1.13.0 / `fit-v1.1.0`, 1,574 input tokens, fit score `0.9904`, confidence `0.9475`, and an app-ledger cost estimate of `$0.00006611`. No real CV or job listing was sent to Jev. Separately, PLAN-001 M2 fetched a public Lever API response and page into process memory for a transient comparison; no listing was persisted to `.data/`.
 - Each later milestone will be validated and pushed directly to `main` before work advances. Required protections/checks will be honored; a remote rejection will be reported without bypass.
 - A local ignored `.env` exists with the owner's TypeSafe key configured; its value has not been displayed or staged. `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder. `.gitignore` excludes `.env`, `.data`, local uploads, databases, virtual environments, and test caches.
-- The selected runtime is FastAPI/Uvicorn, Jinja, Python SQLite, pypdf/python-docx, Scrapling 0.4.15 with its `fetchers` extra, and the TypeSafe SDK. Scrapling's Python dependencies are installed; no browser binaries are used. TypeSafe documents the System One endpoint and Jev model; its legal page links to the account agreement, privacy policy, and DPA. Real-CV use remains gated until those applicable terms are reviewed.
-- Current public TypeSafe documents and the M3a evaluation note were reviewed. The official API reference documents the evaluation endpoint but no account billing, credit-balance, or refill-settings API; account-specific facts require the owner's TypeSafe console/Order.
+- The selected runtime is FastAPI/Uvicorn, Jinja, Python SQLite, pypdf/python-docx, Scrapling 0.4.15 with its `fetchers` extra, and the TypeSafe SDK. Scrapling's Python dependencies are installed; no browser binaries are used. TypeSafe public docs were researched, but the owner waived further account/terms checks. Real-CV-derived fields are only sent after the local disclosure/opt-in and an explicit per-search scoring action.
+- Current public TypeSafe documents and the M3a evaluation note were reviewed. The official API reference documents the evaluation endpoint but no account billing, credit-balance, or refill-settings API. On 2026-09-30 the owner waived provider-account/terms verification for personal local use; account-specific charges and settings remain unverified and were not inspected.
 - Current source review establishes four promising no-key discovery paths: Jobicy public API, Remote OK public JSON/RSS, Remote First Jobs RSS, and Startup Jobs RSS. Each requires source credit and original links; only the documented RSS/public paths are in scope. Company-specific ATS endpoints and career-page crawls remain per-source review items.
 
 ## Desired state
 
-A browser-based app bound to localhost stores the CV, edited candidate profile, searches, job index, and saved/hidden state in a local SQLite database and local data directory. Its initial search defaults to fully remote work from Milan/Italy but keeps search geography editable. It fetches only approved sources whose refresh interval has elapsed, identifies every source checked, preserves canonical job links, and pauses a connector on denials, rate limits, or challenges. Jev remains optional until `TYPESAFE_API_KEY` is supplied, evaluates a bounded batch using typed questions, and does not receive direct contacts or the raw CV. An in-app rolling 30-day reserve stops app-initiated usage at $4.00, leaving $1.00 of the owner's $5 ceiling as a buffer; provider-side automatic refills must remain off. The UI supports profile review, search, transparent results, save/hide/open-source actions, source management, and local deletion.
+A browser-based app bound to localhost stores the CV, edited candidate profile, searches, job index, and saved/hidden state in a local SQLite database and local data directory. Its initial search defaults to fully remote work from Milan/Italy but keeps search geography editable. It fetches only approved sources whose refresh interval has elapsed, identifies every source checked, preserves canonical job links, and pauses a connector on denials, rate limits, or challenges. Jev remains optional until `TYPESAFE_API_KEY` is supplied, evaluates a bounded batch using typed questions, and does not receive direct contacts or the raw CV. An in-app rolling 30-day reserve stops app-initiated usage at $4.00, leaving $1.00 toward the owner's $5 ceiling; the owner waived provider-side account checks, so account-wide charges and refill settings remain unverified. The UI supports profile review, search, transparent results, save/hide/open-source actions, source management, and local deletion.
 
 ## Scope
 
@@ -45,7 +45,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - Public hosting, accounts, multi-user use, cloud data storage, analytics, email, or paid services.
 - Automated applications, form filling, employer contact, or candidate-side inference of protected/sensitive traits.
 - Scraping logged-in boards, search-engine results, LinkedIn, or a source in `Review`/`Blocked`; anti-bot bypass, proxies, stealth, browser impersonation, CAPTCHA handling, and retries around denials.
-- Sending the owner's real CV or profile to Jev before the owner has reviewed the applicable TypeSafe account/DPA/privacy terms and the app's minimization and deletion behavior.
+- Sending reviewed profile fields to Jev without the in-app opt-in and an explicit per-search Score with Jev action.
 - Claims of complete internet-wide coverage or calibrated hiring probability.
 - A live Jev request or live cost/accuracy claim before the owner supplies the key and approves a synthetic-only integration check.
 
@@ -64,7 +64,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - Single-user, local-first app; no login or public service.
 - User-selectable geography; first validation search is fully remote and explicitly Italy/EU/Europe/worldwide eligible from Milan.
 - TypeSafe Jev is the required fit evaluator; the user supplies the API key.
-- Recurring cost ceiling is $0 for every source/service except Jev, with a hard $5 per rolling 30-day owner ceiling. The app's $4.00 rolling inference reservation leaves a $1.00 margin for price/tax/account variation; automatic provider refills stay off.
+- Recurring cost ceiling is $0 for every source/service except Jev, with an owner-set $5 per rolling 30-day ceiling. The app's $4.00 rolling inference reservation leaves a $1.00 margin, but only limits Clue's requests. Provider terms, refill settings, and account-wide charges are unverified by owner decision.
 - CVs and profile data remain local until an explicit Jev action. Contact fields and raw CV files are excluded from request payloads. Work history can still identify the candidate, so it remains personal data.
 - Source use is per connector, not inferred from public access or `robots.txt` alone. Stop on block signals; no circumvention.
 - No automatic application behavior.
@@ -83,7 +83,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - Local packages: FastAPI, Uvicorn, Jinja2, `python-multipart`, Scrapling, `typesafe-sdk`, `pypdf`, and `python-docx`.
 - No startup secret is required. Live Jev requires the owner to add a TypeSafe API key to the local ignored `.env` after implementation.
 - ATS sources require the owner to identify company board tokens/IDs and finish their per-source review before activation. The initial four remote-job sources require no key on the documented paths.
-- TypeSafe account terms and billing settings remain a gate before real CV use.
+- The owner waived TypeSafe account, terms, billing, and refill verification on 2026-09-30. These facts remain unverified; the app's disclosure, $4 local reservation cap, and explicit scoring controls remain in place.
 
 ## Risks and unknowns
 
@@ -93,7 +93,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - The TypeSafe key may be unable to bill or the API may change. Missing key and API errors must leave results visible as unscored.
 - API-reported token usage is known only after a successful response. Reserve 80,000 input tokens at current list price before each request, settle to actual input usage after success, and retain the reservation after ambiguous failures. The 80k accounting reserve exceeds the documented 64k model context and may stop scoring early.
 - A local source refresh can take time or lose network access. Run it as a background operation with a visible state and preserve already indexed results.
-- Locale, taxes, TypeSafe terms, retention, and account refills can affect total cost; application accounting cannot control unrelated calls using the same key.
+- Locale, taxes, TypeSafe terms, retention, and account refills can affect total cost; the owner waived provider-side verification. Application accounting cannot control unrelated calls using the same key.
 - The selected Conda `gen` environment provides Python 3.10.21. Launch the app with `python -m clue_ai`; the app does not require Node or `uv`.
 
 ## Milestones
@@ -128,7 +128,9 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - [x] With no Jev key, results remain visible with “fit not evaluated.” With a key, the SDK uses versioned typed questions, bounded batches, disabled retries, and a monthly reserve that stops before the $4.00 app inference cap.
 - [x] Save/hide/open-source actions work; the delete flow removes CV, profile, searches/preferences, indexed/saved results, and usage history while preserving nonpersonal source definitions.
 - [x] UI has visible keyboard focus, two named navigation groups with an announced current page, responsive forms/results, understandable empty/error states, and reduced-motion rules without third-party fonts or analytics. Keyboard focus and 320/640/651px layouts were manually inspected.
-- [ ] Complete manual verification at 200% browser zoom and a full screen-reader review of onboarding, profile, search, results, and settings.
+- [x] Owner waived the 200% browser-zoom check on 2026-09-30.
+- [x] Review the browser accessibility tree and keyboard focus order for onboarding, profile, search, synthetic results, and settings. Named navigation, labeled controls, result actions, skip navigation, and visible focus were observed; the completed-results auto-reload found during review was fixed and regression-tested.
+- [ ] Review actual spoken output with a system screen reader. The available browser exposed its accessibility tree but no speech-reader playback control.
 - [x] `.env` remains ignored; `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder; no key or CV is committed.
 - [x] The offline validation suite passed with synthetic documents, fixtures, and a mocked Jev service. No live Jev/source call occurred during tests.
 
@@ -147,15 +149,15 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 **Subtasks:**
 
 - [x] Review current public TypeSafe model, Master Customer Agreement, DPA, and privacy documentation; record data-use, telemetry, retention, and transfer conditions in the M3a evaluation note.
-- [ ] Owner reviews the applicable Order and account-specific credit/refill settings, confirms the all-in $5 limit, and decides whether the public and account-specific terms are acceptable before any real CV-derived data is sent.
+- [x] Owner waived provider-side Order, account credit/refill, and terms verification for this local personal project on 2026-09-30. Account-level charges and settings remain unknown; no authenticated console was inspected.
 - [x] The owner-configured key is present in the ignored `.env` and is untracked.
 - [x] After M1 offline checks pass, make one synthetic matching request and record usage and score output.
 - [x] Record token usage, app-ledger cost settlement, score response version/confidence, simulated error handling, and a monthly-cap stop demonstration. The separate TypeSafe account billing conversion remains unverified.
-- [ ] Only after terms and local deletion/key controls are accepted should the owner decide whether to use their real CV.
+- [x] No real CV or profile was sent during implementation. The owner controls later use through the local disclosure/opt-in and the explicit per-search scoring action.
 
 **Affected areas:** local `.env` (never commit), live Jev client, readiness evidence, and operating instructions.
 
-**Dependencies:** M1 implementation complete; owner-supplied API key for synthetic technical validation. The M1 manual accessibility review and M2 owner/account gates remain open for overall readiness.
+**Dependencies:** M1 implementation complete; owner-supplied API key for synthetic technical validation. Spoken screen-reader output and personal relevance calibration remain open for overall readiness.
 
 **Acceptance criteria:**
 
@@ -171,7 +173,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 
 ## Final integration validation
 
-After M1 wiring, validate the local end-to-end flow with synthetic files and source/API fixtures, a mocked TypeSafe response, no external network in automated tests, localhost-only listening, and deletion of the isolated temporary data directory. Inspect UI keyboard flow, responsive layout, errors and empty states, source attribution, location evidence, stale/unscored labels, cost reservation, and the Git diff. The 200% zoom and full screen-reader review remain unverified because the available browser cannot open the running localhost app and no native screen-reader interaction is available in this session. After M2, validate live Jev only with synthetic data and the owner's configured key. Real-CV use remains a distinct owner decision after the applicable TypeSafe terms and local controls are accepted.
+After M1 wiring, validate the local end-to-end flow with synthetic files and source/API fixtures, a mocked TypeSafe response, no external network in automated tests, localhost-only listening, and deletion of the isolated temporary data directory. Inspect UI keyboard flow, responsive layout, errors and empty states, source attribution, location evidence, stale/unscored labels, cost reservation, and the Git diff. The owner waived 200% zoom and TypeSafe account checks. Browser accessibility-tree and keyboard review now cover onboarding, profile, search, synthetic results, and settings; actual speech-reader playback remains unverified because no screen-reader control is available in the browser session. After M2, validate live Jev only with synthetic data and the owner's configured key. No real CV was sent during implementation; later real-CV use requires the owner's explicit in-app opt-in and per-search scoring action.
 
 ## Rollback / recovery
 
@@ -191,14 +193,16 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Re-run all checks in Conda `gen`: 42 tests passed (one upstream deprecation warning), Ruff passed, and byte-compilation passed.
 - [x] Commit and push M2 synthetic Jev evidence and tests as a separate checkpoint on `main`; `git ls-remote` verified `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.
 - [x] Improve sidebar semantics with accessible names for both navigation groups and `aria-current="page"` on the active route; a parameterized regression check covers all seven primary routes. The final full suite passed 63 tests, Ruff, and byte-compilation. Follow-up commit `1b7752f0c20e57486d1b665a20cf3c78ba392133` was pushed to and verified on `main`.
-- [x] Re-check official TypeSafe API docs for an account billing/credit/refill endpoint; none is documented. Do not inspect the authenticated console or undocumented endpoints without the owner.
-- [ ] Complete the actual 200% zoom and full screen-reader review once the app can be opened in a supported local browser/accessibility setup.
-- [ ] Obtain the owner's account-specific TypeSafe spend/refill/Order evidence and real-CV terms decision before sending any personal candidate data.
+- [x] Re-check official TypeSafe API docs for an account billing/credit/refill endpoint; none is documented. The owner waived account-side verification, so no authenticated console or undocumented endpoint was inspected.
+- [x] Record owner waivers of account checks, device-encryption confirmation, and the 200% zoom check.
+- [x] Inspect browser accessibility trees and keyboard paths for onboarding, profile, search, synthetic results, and settings; fix and test the terminal results-page reload loop.
+- [x] Correct the Jev data-consent language and source-count copy. In Conda `gen`, the full suite passed 65 tests (one upstream Starlette/AnyIO deprecation warning), Ruff passed, byte-compilation passed, and `git diff --check` passed. Commit `063ec584e5eae70e411aa255a8dd699097b76663` was pushed directly to `main` and matched `git ls-remote`.
+- [ ] Verify actual spoken output with a system screen reader when an available screen-reader control can be used.
 
 ## Implementation discoveries / decisions
 
 - TypeSafe's current official model page identifies Jev 1.13.0 (`jev-1.13.0`), $42 per billion input tokens, free output, a 64k total request context, 32k state-plus-longest-question, and dynamic rate limits. The API returns input token usage. Pin the model and reserve 80,000 tokens for app-side cost accounting before each request (the reserve is not the request size); disable SDK retries to prevent automatic repeat charges.
-- TypeSafe's official legal index says the DPA, Master Customer Agreement, and Privacy Policy govern processing and that zero-data-retention is offered to enterprise customers. A key alone does not clear the existing real-CV privacy gate.
+- TypeSafe's official legal index lists the DPA, Master Customer Agreement, and Privacy Policy; zero-data-retention is offered to enterprise customers. The owner waived account/terms verification. A configured key alone does not send data; Clue still requires in-app opt-in and a per-search score action.
 - Scrapling Spider retries blocked requests by default. The implementation must set `max_blocked_retries=0`, `robots_txt_obey=True`, four concurrent requests overall, one per domain, and a two-second base delay.
 - Jobicy's free public endpoint permits job-discovery products, requires attribution/canonical listing URLs, allows at most hourly polling, and has an optional direct ATS URL path that costs $0.01 per job; never call that paid path.
 - Remote OK, Remote First Jobs, and Startup Jobs document free feeds and attribution/link requirements. Startup Jobs terms allow noncommercial reuse; the personal local app uses only its RSS feed and keeps the source link.
@@ -210,7 +214,7 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - Main diff and verified M1 commit/push SHA: `00e8398d8a0d73082bb3d9217633f169b92a339c`.
 - Passing local offline test/lint/startup output after all wiring is complete.
 - Mocked integration evidence for feeds, ATS/page policy, Jev typed responses, monthly reservations, local persistence and deletion.
-- Manual notes for visible focus, Italy default, reduced-motion rule, and no page overflow at 320/640/651px. Actual 200% browser zoom and full screen-reader review remain open.
+- Manual notes confirm visible focus, Italy default, reduced-motion rule, and no page overflow at 320/640/651px. The owner waived 200% zoom; browser accessibility-tree and keyboard review passed. Actual screen-reader speech output and personal relevance calibration remain open.
 - Updated README, source-of-truth docs, and this plan's progress/acceptance evidence.
 - Verified M1 `main` SHA before starting M2: `00e8398d8a0d73082bb3d9217633f169b92a339c`.
 - M2 live-call and offline failure/cap evidence; verified remote commit/push SHA: `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.

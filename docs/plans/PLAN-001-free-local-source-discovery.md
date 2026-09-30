@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: ACTIVE — M1/M2, M3a, and M3b pushed and remote-verified on `main`; M3b SHA `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`; M3c remains
+Status: ACTIVE — M1/M2, M3a, and M3b pushed and remote-verified on `main`; owner waived TypeSafe account/terms and device-encryption checks; personal relevance calibration remains open
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -17,7 +17,7 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 - Product definition, reference/market research, source discovery policy, and architecture are documented.
 - The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. PLAN-001 M1 is separately pushed and verified at `69f536ee00e3eadc50fd877d99c87371add387d5`; PLAN-001 M2 was pushed separately and remote-verified at `0ee104bd699645025980ee8874ebb590846ca3da`.
 - Scrapling remains the selected crawler. Its robots-aware, bounded Spider now covers direct job pages through JSON-LD or static HTML fallback, and M2 compared one Lever EU API listing with its public page. Other individual employer/ATS sources remain `Review` until approved per board.
-- The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. M2 validates an EU Lever API/page comparison as a transient parser experiment; that employer board remains disabled in `Review`, as do other ATS sources, until ongoing-use conditions are checked. TypeSafe account terms and a safe local API-key arrangement remain open. No real candidate data is in use.
+- The five-source feed/API registry was smoke-validated through the app's host-restricted fetcher. M2 validates an EU Lever API/page comparison as a transient parser experiment; that employer board remains disabled in `Review`, as do other ATS sources, until ongoing-use conditions are checked. On 2026-09-30 the owner waived TypeSafe account/terms verification and local device-encryption confirmation. Account-level details remain unverified; no real candidate data was sent during implementation.
 
 ## Desired state
 
@@ -33,7 +33,7 @@ A single-user local build can retrieve postings only from source-registry entrie
 ## Out of scope
 
 - A public or multi-user service, claims of internet-wide completeness, paid job data, paid infrastructure, proxies, hosted scraping services, search-engine-result scraping, or closed-board scraping.
-- Logged-in access, applying, submitting applications, scraping applicant portals, anti-bot/CAPTCHA bypass, or sending real CVs before privacy and TypeSafe gates pass.
+- Logged-in access, applying, submitting applications, scraping applicant portals, anti-bot/CAPTCHA bypass, or sending real CV-derived fields without the local disclosure/opt-in and an explicit scoring action.
 - Final selection of all source providers before their terms and $0 cost are confirmed.
 
 ## Source-of-truth impact
@@ -65,7 +65,7 @@ A single-user local build can retrieve postings only from source-registry entrie
 - The first test location is Milan/Italy with fully remote work; role query comes from the user's CV or search input. Product geography remains selectable.
 - Source/API terms and any free key registration required for a candidate connector.
 - A secure local runtime, local database/file storage, and protected local Jev API-key configuration.
-- TypeSafe's applicable Order, DPA, usage accounting, and a hard spend-stop design.
+- A local Jev spend-stop design. The owner later waived checking TypeSafe account/terms details; those remain unverified, while the app-side rolling reserve remains in force.
 - Synthetic CV/listing pairs for fit evaluation.
 
 ## Risks and unknowns
@@ -152,7 +152,7 @@ Expected Git checkpoint: implement, validate, commit, and push each crawler mile
 
 ### M3 — Jev ranking validation and zero-cost local operation
 
-Goal: Validate the scorer on synthetic job data, verify local controls, and make account-level spend and personal-data gates explicit. Deliver M3a and M3b as separate validated `main` checkpoints. M3c requires owner account evidence and remains a use-readiness gate.
+Goal: Validate the scorer on synthetic job data, verify local controls, and record owner decisions about account-level spend and personal data. Deliver M3a and M3b as separate validated `main` checkpoints. M3c records the owner's account-check waiver; personal relevance calibration remains open.
 
 #### M3a — Synthetic ranking benchmark
 
@@ -204,23 +204,28 @@ Acceptance criteria:
 
 Expected Git checkpoint: separate validated M3b commit pushed directly to `main`.
 
-#### M3c — Account-level cost and owner relevance gates
+#### M3c — Owner gate reconciliation and relevance follow-up
 
-Goal: Confirm the accepted TypeSafe Order/account settings and the owner's relevance judgments before relying on results or sending real CV-derived profile data.
+Goal: Record the owner's explicit scope choices without treating an unverified provider fact as validated evidence.
 
-Open owner evidence:
+Owner decisions recorded on 2026-09-30:
 
-- [ ] Check the account's applicable Order and credit conversion; verify automatic paid-credit refill is off and all-in TypeSafe charges stay below `$5` per month. The app's hard rolling reserve is `$4`, but it cannot observe other account use, taxes, or account credits.
-- [ ] The owner reviews the synthetic relevance examples and supplies personal judgments, or elects to defer personal calibration.
-- [ ] The owner decides whether the current TypeSafe DPA, U.S. processing/transfer, retention, and telemetry terms are acceptable for any reviewed CV-derived fields. Until then, no real CV-derived data is sent.
+- [x] Waive verification of the applicable TypeSafe Order, account credit conversion, refill toggle, account-wide spend, and provider terms for this single-user local project. No authenticated account or undocumented endpoint was inspected. These facts remain unknown, not confirmed.
+- [x] Waive confirmation of device encryption for the local `.data/` directory and local backups. The project does not claim encryption or Windows permission evidence.
+- [x] Keep the application-side Jev reserve at `$4` per rolling 30 days toward the owner's `$5` ceiling, with `$0` allocated to all other services. This controls only requests sent by Clue and does not prove an account-wide cap.
+- [x] Keep raw CV files and direct contact fields out of Jev payloads. The app retains its data disclosure, opt-in, and explicit per-search scoring action; no real CV was sent during implementation.
 
-Public terms research is recorded in the synthetic evaluation note and definition gate; account-specific billing and consent cannot be inferred from public documentation.
+Open owner choice:
 
-Expected Git progression: do not mark this gate complete until owner evidence is supplied. No workaround or alternate model is permitted.
+- [ ] Review the synthetic relevance examples and provide personal judgments, or explicitly defer calibration. Until then, the benchmark remains integration evidence, not proof of personal usefulness or ranking quality.
+
+The public model/API/legal research remains historical context in the M3a evaluation. The user waived further TypeSafe-side verification; this is a scope decision, not acceptance or validation of account-specific terms.
+
+Expected Git progression: push this decision record with the current validated milestone checkpoint. Personal calibration can be closed by a later owner decision; no alternate model is permitted.
 
 ## Final integration validation
 
-Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`. M3b's manual backup/restore behavior is pushed and remote-verified at `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. M3c keeps account billing, terms, and personal relevance as owner gates. Do not fetch after an explicit denial or through a restricted access path.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. PLAN-001 M1 feed/API selection and M2's one-source API/page comparison are separately pushed and remote-verified on `main`; M2 SHA is `0ee104bd699645025980ee8874ebb590846ca3da`. M3a's synthetic Jev benchmark is pushed and remote-verified at `31c2479a593795f67a4cb67e6afebaefcb71f9b8`. M3b's manual backup/restore behavior is pushed and remote-verified at `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. M3c records the owner's waiver of TypeSafe account checks and device-encryption confirmation; account facts remain unverified, and personal relevance calibration is open. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -242,7 +247,7 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 - No real CV, Jev request, app database, or job listing was persisted or sent to Jev during PLAN-001 M2. The public-source checks cost `$0`.
 - PLAN-001 M3a adds a repeatable synthetic-only runner and records its one-request/five-listing results, comparison with the keyword baseline, methodology defects corrected during the run, and known cost uncertainty in `docs/evaluations/PLAN-001-M3-synthetic-jev.md`. The result is an integration check, not evidence of personal relevance or Jev superiority.
 - PLAN-001 M3b's synthetic backup/restore and deletion tests passed in Conda `gen`; `.env` and `.data/` remain ignored. Operating limits are documented in `docs/operations/local-data-backup-and-deletion.md`. Refresh and score orchestration use request-triggered in-process tasks, with no recurring scheduler or extra hosted compute. Commit `9399ad81e0cd34ed244045d4ab52e70d0e4a7245` is pushed to and verified on `main`.
-- PLAN-001 M3 and the account/privacy gates in [PLAN-002](PLAN-002-local-first-job-search-app.md) remain active.
+- PLAN-001 M3c records the owner waiver; personal relevance calibration remains open. PLAN-002 tracks spoken screen-reader review and the app's per-search Jev controls.
 
 ## Implementation discoveries / decisions
 

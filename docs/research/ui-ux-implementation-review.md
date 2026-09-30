@@ -36,11 +36,11 @@ The main job of the interface is to help one person move from CV review to a cur
 ## Validation requirements
 
 - Keyboard-only traversal through upload, profile edits, search filters, results, save/hide, sources, and deletion confirmation; visible focus at each stop.
-- Responsive layout at narrow phone widths, desktop widths, and 200% zoom without horizontal page scrolling.
+- Responsive layout at narrow phone widths and desktop widths without horizontal page scrolling. The owner waived the 200% zoom check on 2026-09-30.
 - Semantic headings, labels, form validation associations, status announcements, link names, and adequate contrast; aim for WCAG 2.2 AA.
 - Loading, no sources, no matches, unscored, stale, source blocked, invalid CV, key missing, spend limit, and retryable network-error states.
 - Reduced-motion preference; no remote font, image, tracker, or component dependency in the product UI.
 
 ## Implementation state
 
-The FastAPI/Jinja interface has profile review, search criteria and weights, ranked results, saved/hidden listings, source controls, settings, and privacy/deletion views. Manual review confirmed visible keyboard focus on the skip link, the default Italy search input, and no page-width overflow at 320px, 640px, or 651px. The reduced-motion rule is present and disables transitions/animations. Full screen-reader review and actual browser zoom at 200% remain unverified.
+The FastAPI/Jinja interface has profile review, search criteria and weights, ranked results, saved/hidden listings, source controls, settings, and privacy/deletion views. On 2026-09-30 the browser accessibility tree and keyboard focus order were reviewed for onboarding, profile, search, synthetic results, and settings. Named navigation, current-page state, labeled form controls, descriptive Save/Hide actions, skip navigation, and visible focus were observed. The completed-results page was reloading after each status poll; the poll script is now included only while a search is active, with a route regression test. The five-source deletion copy was corrected. Reduced motion disables transitions/animations; layouts had no horizontal page overflow at 320px, 640px, or 651px. The owner waived the 200% zoom check. Actual spoken output was not verified because this browser session exposes the accessibility tree but has no system screen-reader playback control.

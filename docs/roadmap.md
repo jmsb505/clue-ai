@@ -1,11 +1,11 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2, M3a, and M3b pushed and remote-verified on `main`; M3b SHA `9399ad81e0cd34ed244045d4ab52e70d0e4a7245`. M3c and personal-use gates remain. PLAN-002 M1/M2 are pushed.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration and actual spoken screen-reader review remain. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed.
 **Updated:** 2026-09-30
 
 ## Definition gate
 
-The project definition passes for a single-user local feasibility build. Before real CV use, verify TypeSafe's applicable data/billing terms, local file and backup controls, and the approved $0 source set. The owner-set spend cap is $5/month for TypeSafe Jev and $0 for every other element. There is no public deployment or scale target.
+The project definition passes for a single-user local feasibility build. The owner waived TypeSafe account/terms checks and local device-encryption confirmation; account facts remain unverified, not proven safe or capped. The app reserves at most $4 per rolling 30 days for Jev toward the $5 owner ceiling and spends $0 on every other element. Source-specific terms still gate optional employer/ATS connectors. There is no public deployment or scale target.
 
 ## 1. Select a free source set for remote work from Italy
 
@@ -21,19 +21,19 @@ On approved sources only, compare documented API/feed retrieval with sitemaps, `
 
 ## 3. Validate Jev ranking and free-tier operation
 
-Use synthetic CV/listing pairs. Compare Jev's bounded criteria and user-weighted rank to owner judgments and a keyword baseline. Verify the $5/month all-in hard stop and disable automatic paid-credit refills. Check local save, delete, and backup behavior with synthetic data. PLAN-001 M3a completed a five-item synthetic benchmark; M3b validated manual backup, restore, and deletion; M3c requires account-level evidence and owner decisions.
+Use synthetic CV/listing pairs. Compare Jev's bounded criteria and user-weighted rank to owner judgments and a keyword baseline. The app's $4 request reserve is tested; provider-side refills and account-wide charges are unverified under the owner's waiver. Check local save, delete, and backup behavior with synthetic data. PLAN-001 M3a completed a five-item synthetic benchmark; M3b validated manual backup, restore, and deletion; M3c records the owner waiver and leaves personal relevance calibration open.
 
 **Acceptance:** A written evaluation supports score labels and confidence display; hard constraints behave deterministically; all displayed jobs have source evidence; low-confidence/unvalidated-language results stay unscored; all non-TypeSafe recurring costs stay $0.
 
 ## 4. First local personal-use increment
 
-Proceed after TypeSafe and source conditions in [the definition gate](readiness/definition-gate.md) are checked. Build local profile persistence, PDF/DOCX review, approved $0 source connectors, a local listing index, Jev scoring, accessible results, saved/hidden jobs, local deletion, and direct links. Keep applications external to the app.
+Proceed for the single-user local scope with the app-side Jev reserve, in-app disclosure/opt-in, and approved $0 source connectors. The owner waived TypeSafe account checks and device-encryption confirmation; they remain unverified. Build local profile persistence, PDF/DOCX review, a local listing index, Jev scoring, accessible results, saved/hidden jobs, local deletion, and direct links. Keep applications external to the app.
 
-**Acceptance:** Personal-use source terms, TypeSafe terms and cap, local storage/key handling, score evaluation, accessibility, deletion, and freshness checks pass. Record evidence; no hosted account or service is required.
+**Acceptance:** Personal-use terms are reviewed per enabled source; local storage/key handling, app-side score accounting, scoring controls, accessibility, deletion, and freshness checks pass. The owner's TypeSafe account and encryption waivers are recorded as unverified scope decisions. No hosted account or service is required.
 
 ## Current implementation state
 
-PLAN-002 M1 and M2 are pushed to `main`; the latter used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). PLAN-001 M1/M2, M3a, and M3b are pushed and remote-verified; M3b `9399ad81e0cd34ed244045d4ab52e70d0e4a7245` contains the backup/restore guide and synthetic validation. The full 56-test suite, Ruff, byte-compilation, and diff checks passed. M3a's five-item synthetic benchmark used one Jev request; Jev and the keyword baseline both had `nDCG@5 = 1.0` against assistant-authored labels. This is integration evidence, not personal calibration. No real CV or live listing was sent to Jev. Account-level TypeSafe terms and charges, owner relevance judgments, source approvals, local device protections, and accessibility review remain open.
+PLAN-002 M1 and M2 are pushed to `main`; M2 used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). Accessibility/privacy fix `063ec584e5eae70e411aa255a8dd699097b76663` is on `main`; the full 65-test suite, Ruff, byte-compilation, and diff checks passed. PLAN-001 M1/M2, M3a/M3b, and M3c owner-waiver decisions are recorded on `main`; M3b `9399ad81e0cd34ed244045d4ab52e70d0e4a7245` contains backup/restore guidance and synthetic validation. M3a's five-item synthetic benchmark used one Jev request; Jev and the keyword baseline both achieved `nDCG@5 = 1.0` against assistant-authored labels, which is integration evidence rather than personal calibration. No real CV or live listing was sent to Jev. Personal relevance judgments, optional source-specific approvals, and spoken screen-reader review remain open. TypeSafe account charges and device encryption were waived as checks and remain unverified.
 
 ## Delivery workflow
 

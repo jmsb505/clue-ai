@@ -50,3 +50,7 @@ Reviewed 2026-09-30:
 - The [DPA](https://typesafe.ai/legal/data-processing), updated 2026-04-24, is incorporated into the agreement; it describes TypeSafe as processor, provides EU transfer clauses, and retains data as long as necessary for the stated purposes. The [Privacy Policy](https://typesafe.ai/legal/privacy-policy) says the services are hosted in the U.S. and input is not used to train models.
 
 These public documents do not reveal the owner's accepted Order, current account credit rate, tax treatment, actual refill toggle, account-wide spend, or an individual deletion request outcome. TypeSafe documents zero-data retention for enterprise customers; no such option was verified for this account. No real CV or owner-derived profile was sent in these benchmark runs.
+
+## Owner scope decision — 2026-09-30
+
+The owner waived further TypeSafe account, terms, billing/refill, and device-encryption checks for this single-user local project. Those account and device facts remain unverified; no authenticated account was inspected. The app's `$4.00` rolling reservation still limits only Clue-initiated requests toward the owner's `$5.00` allocation, and the interface discloses what leaves the device before explicit scoring. The benchmark contains synthetic data only and does not validate an account-wide cap or personal relevance.

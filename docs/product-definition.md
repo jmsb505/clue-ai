@@ -30,7 +30,7 @@ The product helps a person find and compare available jobs. It does not choose c
 - Use a friendly interface with the directness and visual approach of [Jobbie](https://jobbie.bot/), while keeping the product focused on search and review.
 - Keep recurring spend at **$0 for every component and data source except TypeSafe Jev, capped at $5/month**. Run the app and store data locally; no paid hosting, authentication, email, analytics, or other services are needed.
 
-**Budget constraint:** TypeSafe currently advertises Jev at $42 per billion input tokens and says output tokens are free; at that listed input rate, $5 is about 119 million input tokens before taxes and account-specific credit mechanics. TypeSafe describes Jev as early access and says it cannot establish that the current price is not subsidized. Confirm the applicable Order, request limits, and an all-in hard usage control before integrating. Keep automatic paid-credit refills disabled and add an application-side spend guard. If the cap is reached, pause Jev evaluation and label affected listings “fit not evaluated”; do not incur overage or silently substitute another model. Use no-cost feeds, APIs, and public employer pages for the local personal workflow.
+**Budget constraint:** The owner caps Jev allocation at $5 per rolling 30 days and requires $0 for other services. The app reserves up to $4 for its own Jev requests. On 2026-09-30 the owner waived provider-side account, terms, and refill verification for this local personal use; account-wide billing, credits, and charges remain unverified, not guaranteed by the local ledger. If the app-side cap is reached, pause Jev evaluation and label affected listings “fit not evaluated”; do not silently substitute another model. Use no-cost feeds, APIs, and public employer pages for the local workflow.
 
 ## Recommended search inputs
 
@@ -136,7 +136,7 @@ Scrapling is the selected crawler for registered public HTML job and career page
 
 **WORKING recommendation:** Do CV parsing and job indexing locally. Do not send name, email, phone number, or exact home address to Jev when those fields are not needed for job-fit scoring. Send only the minimum relevant profile and listing text for fit evaluation. The work and education history can still identify someone and remains personal data. Explain which fields leave the device, where Jev processes them, and any retention/telemetry behavior.
 
-Define local file permissions, backups, export, and deletion before using the app with a real CV. Deletion must include the original CV, extracted profile, search criteria, saved jobs, and fit results. Confirm TypeSafe's applicable Order, data-processing terms, retention, telemetry, and deletion behavior before sending CV-derived data.
+Keep the original CV, extracted profile, search criteria, saved jobs, and fit results under user-controlled local deletion. The owner waived confirmation of device encryption for local data and backups on 2026-09-30; the project does not claim encryption or Windows permission evidence. TypeSafe receives reviewed profile and listing fields only after the in-app disclosure/opt-in and an explicit score action. The owner waived account/terms verification; account-specific provider retention, telemetry, and deletion behavior remain unverified.
 
 ## Quality and validation direction
 
@@ -146,9 +146,9 @@ Measure personal usefulness through save/open/dismiss actions and explicit “wh
 
 ## Decisions still open
 
-The personal app's product behavior and source policy are defined. The following are evidence tasks before using real CV data or relying on scores, rather than unanswered product goals:
+The personal app's product behavior and source policy are defined. The following are remaining evidence tasks or owner choices, rather than unanswered product goals:
 
 - Confirm each source's personal-use terms, free limits, and geographic coverage; see the [source discovery review](research/source-discovery-and-crawl-review.md).
-- Verify TypeSafe's applicable Order, credit conversion, $5 all-in cap, DPA, telemetry, and deletion behavior before using real CV-derived data.
-- Verify local storage, local file permissions, and backup/deletion behavior.
-- Build and evaluate the Jev rubric on synthetic pairs; set score and confidence thresholds from evidence.
+- Provider account/terms and device-encryption checks were waived by the owner on 2026-09-30; the app's $4 request reserve and explicit score action remain, but provider-wide limits are not verified.
+- The synthetic backup/restore and deletion path is tested; Windows file permissions and encryption are not verified or required by owner decision.
+- Review the synthetic relevance examples and provide judgments or defer personal calibration before treating scores as personally validated.
