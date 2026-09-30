@@ -361,6 +361,29 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
 .source-policy-icon { display: grid; flex: 0 0 auto; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #d1e3d6; color: #45745d; font-size: 12px; font-weight: 750; }
 .source-policy-note b { font-size: 10px; }
 .source-policy-note p { margin: 5px 0 0; color: #71827a; font-size: 9px; line-height: 1.6; }
+.x-lead-panel { margin: 0 0 18px; padding: 25px 28px; }
+.x-lead-panel > .panel-muted { max-width: 760px; margin: 13px 0 18px; }
+.x-lead-form { margin-top: 19px; }
+.x-lead-form .form-grid { gap: 15px 19px; }
+.x-lead-form .field textarea { min-height: 130px; }
+.x-search-ready { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 20px; padding: 15px 17px; border: 1px solid #dce8e0; border-radius: 14px; background: #f4f8f4; }
+.x-search-ready b { font-size: 11px; }
+.x-search-ready p { margin: 5px 0 0; color: #788781; font-size: 9px; line-height: 1.55; }
+.x-search-hint { margin-top: 14px; }
+.x-link-safety { margin: 20px 0 10px; padding: 15px 18px; border: 1px solid #ecdfbd; border-radius: 13px; background: #fffaf0; color: #56605a; font-size: 9px; line-height: 1.65; }
+.x-link-safety b { color: var(--ink); font-size: 10px; }
+.x-link-safety ul { margin: 9px 0; padding-left: 18px; }
+.x-link-safety p { margin: 7px 0 0; color: #7d8177; }
+.x-review-confirmation { display: flex; align-items: flex-start; gap: 9px; margin: 17px 0 6px; color: #52635c; font-size: 9px; line-height: 1.6; }
+.x-review-confirmation input { flex: 0 0 auto; margin: 2px 0 0; accent-color: var(--teal); }
+.x-lead-list-heading { margin-top: 35px; }
+.x-lead-list { display: grid; gap: 11px; }
+.x-lead-card { display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 19px 22px; }
+.x-lead-card h3 { margin: 6px 0; font-size: 15px; letter-spacing: -.025em; }
+.x-lead-card p { margin: 0; color: #788781; font-size: 9px; }
+.x-lead-card-actions { display: grid; justify-items: end; gap: 7px; }
+.x-lead-card-actions small { color: #8a9690; font-size: 8px; }
+.x-lead-empty { margin-top: 12px; padding: 30px; }
 .source-list-section { margin-bottom: 34px; }
 .source-list-section .section-heading { margin-bottom: 15px; }
 .source-list-section .section-heading h2 { font-size: 20px; }
@@ -589,6 +612,9 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
   .job-card-footer { align-items: flex-start; flex-direction: column; padding: 9px 13px; gap: 3px; }
   .source-trail { gap: 5px; }
   .job-actions { align-self: flex-end; }
+  .x-lead-panel { padding: 20px 17px; }
+  .x-search-ready, .x-lead-card { align-items: flex-start; flex-direction: column; }
+  .x-lead-card-actions { justify-items: start; }
   .dimension-grid { grid-template-columns: repeat(2, 1fr); }
   .source-card { padding: 14px; }
   .source-card-title { flex-direction: column; align-items: flex-start; gap: 3px; }

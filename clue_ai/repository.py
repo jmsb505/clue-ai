@@ -52,6 +52,8 @@ def sources_due(database_path: Path, force: bool = False) -> list[dict[str, Any]
     for source in list_sources(database_path):
         if source["state"] != "approved" or not source["enabled"]:
             continue
+        if source["kind"] == "manual_x":
+            continue
         if source["kind"] in {"remote_first_rss", "remotejobs_api"}:
             # These sources track refreshes per requested role/query, not per source endpoint.
             if source["kind"] == "remote_first_rss":
@@ -152,7 +154,7 @@ def set_source_enabled(database_path: Path, source_id: str, enabled: bool) -> No
         if enabled:
             db.execute(
                 """UPDATE sources SET state = 'approved', enabled = 1, last_error = ''
-                   WHERE id = ? AND state IN ('review', 'approved')""",
+                   WHERE id = ? AND state IN ('review', 'approved') AND kind != 'manual_x'""",
                 (source_id,),
             )
         else:
@@ -279,9 +281,14 @@ def save_jobs_with_report(database_path: Path, jobs: list[NormalizedJob]) -> Sav
         for job in jobs:
             url = canonical_url(job.canonical_url or job.source_url)
             source_url = canonical_url(job.source_url)
+            context_url = canonical_url(job.context_url) if job.context_url else ""
             if not url or not source_url or not job.title.strip():
                 continue
-            fingerprint = job_fingerprint(job.title, job.company, job.location_raw, job.posted_at)
+            fingerprint = (
+                ""
+                if job.source_id == "x_manual"
+                else job_fingerprint(job.title, job.company, job.location_raw, job.posted_at)
+            )
             row = db.execute(
                 "SELECT id, canonical_url FROM jobs WHERE canonical_url = ?",
                 (url,),
@@ -346,16 +353,18 @@ def save_jobs_with_report(database_path: Path, jobs: list[NormalizedJob]) -> Sav
             )
             db.execute(
                 """INSERT INTO job_sources
-                   (job_id, source_id, external_id, source_url, source_posted_at, last_seen_at)
-                   VALUES (?, ?, ?, ?, ?, ?)
+                   (job_id, source_id, external_id, source_url, context_url, source_posted_at, last_seen_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(job_id, source_id) DO UPDATE SET
                     external_id=excluded.external_id, source_url=excluded.source_url,
+                    context_url=excluded.context_url,
                     source_posted_at=excluded.source_posted_at, last_seen_at=excluded.last_seen_at""",
                 (
                     job_id,
                     job.source_id,
                     job.external_id or job_id,
                     source_url,
+                    context_url,
                     job.posted_at,
                     now,
                 ),
@@ -455,7 +464,7 @@ def get_run_results(database_path: Path, run_id: str) -> list[dict[str, Any]]:
             job["eligibility_evidence"] = job.pop("result_eligibility_evidence")
             sources = db.execute(
                 """SELECT s.id, s.name, s.attribution, s.state, s.last_state,
-                          s.last_checked_at AS source_checked_at, js.source_url,
+                          s.last_checked_at AS source_checked_at, js.source_url, js.context_url,
                           js.source_posted_at, js.last_seen_at
                    FROM job_sources js JOIN sources s ON s.id = js.source_id
                    WHERE js.job_id = ? ORDER BY js.last_seen_at DESC""",
@@ -476,7 +485,7 @@ def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
             """SELECT j.*, s.id AS source_id, s.name AS source_name, s.attribution,
                       s.state AS source_state, s.last_state AS source_last_state,
                       s.last_checked_at AS source_checked_at,
-                      js.source_url, js.source_posted_at,
+                      js.source_url, js.context_url, js.source_posted_at,
                       COALESCE(u.hidden, 0) AS hidden, COALESCE(u.saved, 0) AS saved
                FROM jobs j
                JOIN job_sources js ON js.job_id = j.id
@@ -497,6 +506,7 @@ def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
             "last_state": item.pop("source_last_state"),
             "source_checked_at": item.pop("source_checked_at"),
             "source_url": item.pop("source_url"),
+            "context_url": item.pop("context_url"),
             "source_posted_at": item.pop("source_posted_at"),
         }
         if entry is None:
@@ -512,6 +522,22 @@ def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
         entry["source_url"] = primary["source_url"]
         entry["source_posted_at"] = primary["source_posted_at"]
     return list(grouped.values())
+
+
+def manual_x_leads(database_path: Path, limit: int = 100) -> list[dict[str, Any]]:
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT j.id, j.title, j.company, j.location_raw, j.workplace_type,
+                      j.description, j.canonical_url AS job_url, j.last_checked_at AS added_at,
+                      js.context_url AS post_url, COALESCE(u.hidden, 0) AS hidden
+               FROM job_sources js
+               JOIN jobs j ON j.id = js.job_id
+               LEFT JOIN job_user_state u ON u.job_id = j.id
+               WHERE js.source_id = 'x_manual' AND j.is_active = 1
+               ORDER BY js.last_seen_at DESC LIMIT ?""",
+            (max(1, min(int(limit), 250)),),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def set_job_user_state(database_path: Path, job_id: str, action: str) -> None:

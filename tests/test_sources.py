@@ -231,6 +231,28 @@ def test_career_url_rejects_private_dns_and_accepts_public_dns(monkeypatch):
     assert validate_career_url("http://careers.example.org/jobs")[0] is False
 
 
+@pytest.mark.parametrize(
+    "url",
+    (
+        "https://x.com/search?q=jobs",
+        "https://www.x.com/jobs",
+        "https://api.x.com/2/tweets/search/recent",
+        "https://help.twitter.com/en/rules",
+        "https://t.co/short",
+    ),
+)
+def test_scrapling_source_rejects_x_hosts_before_dns_lookup(monkeypatch, url):
+    monkeypatch.setattr(
+        "clue_ai.sources.socket.getaddrinfo",
+        lambda *_args, **_kwargs: pytest.fail("X domains must not be resolved by Clue"),
+    )
+
+    valid, message = validate_career_url(url)
+
+    assert valid is False
+    assert "manual-only" in message
+
+
 def test_scrapling_spider_uses_robots_and_bounded_ordinary_crawl(
     settings, monkeypatch
 ):

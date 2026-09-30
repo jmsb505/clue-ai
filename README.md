@@ -35,6 +35,7 @@ To enable Jev later, add your key to .env and restart Clue. Read the data disclo
 - Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. They start disabled in Review.
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
 - Optional Jev batches with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
+- Manual X.com search links and owner-reviewed job leads. Clue does not scrape X, call its API, or open/resolve pasted links; see [the X lead decision](docs/decisions/0007-x-manual-lead-discovery.md).
 
 The initial feeds do not cover the whole internet. Open the original listing and verify it is still available and the employer can hire where you live.
 

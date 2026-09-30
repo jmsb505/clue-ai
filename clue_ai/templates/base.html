@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>{% block title %}Clue AI{% endblock %}</title>
-    <link rel="stylesheet" href="/static/app.css?v=4">
+    <link rel="stylesheet" href="/static/app.css?v=5">
   <script src="/static/app.js" defer></script>
 </head>
 <body {% if status_url %}data-status-url="{{ status_url }}"{% endif %}>
@@ -26,6 +26,9 @@
         </a>
         <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}" {% if active_page == 'search' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⌕</span><span>Find roles</span>
+        </a>
+        <a href="/x-leads" class="{% if active_page == 'x_leads' %}is-active{% endif %}" {% if active_page == 'x_leads' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">↗</span><span>X leads</span>
         </a>
         <a href="/saved" class="{% if active_page == 'saved' %}is-active{% endif %}" {% if active_page == 'saved' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">♡</span><span>Saved roles</span>

@@ -62,12 +62,16 @@ def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[di
         job["eligibility_status"] = eligibility
         job["eligibility_evidence"] = evidence
         job["workplace_label"] = _workplace_label(str(job.get("workplace_type") or "unknown"))
-        checked_at = _parse_datetime(job.get("last_checked_at"))
-        fresh_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        job["freshness_status"] = "recent" if checked_at and checked_at >= fresh_cutoff else "stale"
-        job["freshness_age_days"] = (
-            max(0, (datetime.now(timezone.utc) - checked_at).days) if checked_at else None
-        )
+        if job.get("source_id") == "x_manual":
+            job["freshness_status"] = "manual"
+            job["freshness_age_days"] = None
+        else:
+            checked_at = _parse_datetime(job.get("last_checked_at"))
+            fresh_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            job["freshness_status"] = "recent" if checked_at and checked_at >= fresh_cutoff else "stale"
+            job["freshness_age_days"] = (
+                max(0, (datetime.now(timezone.utc) - checked_at).days) if checked_at else None
+            )
         if minimum_salary is not None:
             salary_max = job.get("salary_max")
             salary_min = job.get("salary_min")

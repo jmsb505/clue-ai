@@ -1,6 +1,6 @@
 # UI/UX implementation review
 
-**Reviewed:** 2026-09-30
+**Reviewed:** 2026-10-01
 **Decision scope:** First single-user local search/review interface
 
 ## Product fit
@@ -44,3 +44,5 @@ The main job of the interface is to help one person move from CV review to a cur
 ## Implementation state
 
 The FastAPI/Jinja interface has profile review, search criteria and weights, ranked results, saved/hidden listings, source controls, settings, and privacy/deletion views. On 2026-09-30 the browser accessibility tree and keyboard focus order were reviewed for onboarding, profile, search, synthetic results, and settings. Named navigation, current-page state, labeled form controls, descriptive Save/Hide actions, skip navigation, and visible focus were observed. The completed-results page was reloading after each status poll; the poll script is now included only while a search is active, with a route regression test. The five-source deletion copy was corrected. Reduced motion disables transitions/animations; layouts had no horizontal page overflow at 320px, 640px, or 651px. The owner waived the 200% zoom check. Actual spoken output was not verified because this browser session exposes the accessibility tree but has no system screen-reader playback control.
+
+PLAN-003 adds an X-lead page in the existing Jinja/CSS system with labeled role/location controls, explicit external-link actions, a manual verification checklist, and a separate lead form. M1 route tests cover navigation and the link/import flow. The page does not automatically open X or a submitted job URL; a separate visual or spoken screen-reader review has not been recorded for this page.

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}X leads · Clue AI{% endblock %}
+{% block eyebrow %}MANUAL JOB-LEAD DISCOVERY{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">FIND A POST · CHECK THE LISTING · SAVE A LEAD</span>
+    <h1>Search X.<br><em>Keep the proof.</em></h1>
+    <p>Clue prepares a search link, then you search and inspect posts in your own browser. It never scrapes X or opens a pasted link for you.</p>
+  </div>
+  <div class="intro-mark intro-mark-sources" aria-hidden="true"><span>𝕏</span><i>↗</i></div>
+</section>
+
+<section class="source-policy-note" aria-label="X source policy">
+  <span class="source-policy-icon" aria-hidden="true">i</span>
+  <div><b>Manual by design</b><p>X API reads cost money, and X warns against scripting its website. Clue sends no X request. Search coverage comes from the X search you open yourself, not an automated Clue connector.</p></div>
+</section>
+
+<section class="panel x-lead-panel">
+  <div class="panel-header">
+    <div><span class="kicker kicker-muted">01 · BUILD A SEARCH</span><h2>What roles should you look for?</h2></div>
+    <span class="mini-badge">Opens X only on click</span>
+  </div>
+  <p class="panel-muted">Role and location terms start from your saved search. For Italy, the query also looks for Europe, EU, or worldwide wording. You can edit the search after X opens.</p>
+  <form action="/x-leads" method="get" class="x-lead-form">
+    <div class="form-grid">
+      <label class="field">
+        <span>Role titles</span>
+        <small>Separate titles with commas, for example product designer, UX designer.</small>
+        <input name="roles" maxlength="500" required value="{{ roles }}" placeholder="Product designer, UX designer">
+      </label>
+      <label class="field">
+        <span>Work from</span>
+        <small>For Italy, Clue includes Europe, EU, and worldwide search terms.</small>
+        <input name="work_from" maxlength="100" value="{{ work_from }}" placeholder="Italy">
+      </label>
+      <label class="field">
+        <span>Work arrangement</span>
+        <select name="workplace">
+          <option value="remote" {% if workplace == 'remote' %}selected{% endif %}>Remote</option>
+          <option value="hybrid" {% if workplace == 'hybrid' %}selected{% endif %}>Hybrid</option>
+          <option value="onsite" {% if workplace == 'onsite' %}selected{% endif %}>On-site</option>
+          <option value="any" {% if workplace == 'any' %}selected{% endif %}>Any</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-end"><span class="tiny-note">Only the search terms in this form are included in the X link.</span><button class="button button-outline" type="submit">Build X search <span aria-hidden="true">→</span></button></div>
+  </form>
+  {% if x_search_url %}
+    <div class="x-search-ready">
+      <div><b>Your search is ready</b><p>Open X, then choose the Latest results tab. Clue does not read the results.</p></div>
+      <a class="button button-dark" href="{{ x_search_url }}" target="_blank" rel="noopener noreferrer">Open X search <span aria-hidden="true">↗</span></a>
+    </div>
+  {% else %}
+    <p class="tiny-note x-search-hint">Add one or more role titles to build your X search link.</p>
+  {% endif %}
+</section>
+
+<section class="panel x-lead-panel">
+  <div class="panel-header">
+    <div><span class="kicker kicker-muted">02 · ADD A REVIEWED LEAD</span><h2>Save the employer's job page</h2></div>
+    <span class="mini-badge">Saved on this device</span>
+  </div>
+  <p class="panel-muted">Open the X post and follow the lead in your browser. When you find the original employer or ATS vacancy, copy its direct page URL and the job details here. Clue will not test either link.</p>
+
+  <div class="x-link-safety">
+    <b>Before saving a link</b>
+    <ul>
+      <li>Check the address bar and confirm the final page belongs to the employer or a recognizable recruiting system.</li>
+      <li>Confirm the role is a real vacancy and read where the employer can hire, especially whether Italy is allowed.</li>
+      <li>Do not download files, pay a fee, or enter account credentials because an X post asks you to.</li>
+    </ul>
+    <p>Clue rejects non-HTTPS, local/IP, credential-bearing, and common shortened job URLs. A valid-looking URL can still be misleading.</p>
+  </div>
+
+  <form action="/x-leads/add" method="post" class="x-lead-form">
+    <div class="form-grid">
+      <label class="field field-wide">
+        <span>Employer or ATS job page URL</span>
+        <small>Use the final HTTPS vacancy page, not the X post's t.co or another short link.</small>
+        <input type="url" name="job_url" maxlength="2000" required placeholder="https://careers.company.com/jobs/123">
+      </label>
+      <label class="field field-wide">
+        <span>X post permalink</span>
+        <small>Keep the X post as provenance; Clue accepts a specific post link only.</small>
+        <input type="url" name="post_url" maxlength="2000" required placeholder="https://x.com/account/status/123456789">
+      </label>
+      <label class="field">
+        <span>Job title</span>
+        <input name="title" maxlength="300" required placeholder="Senior Product Designer">
+      </label>
+      <label class="field">
+        <span>Company</span>
+        <input name="company" maxlength="250" placeholder="Company name">
+      </label>
+      <label class="field">
+        <span>Location or eligibility wording</span>
+        <small>Copy the employer's wording. Use “Not stated” if unclear.</small>
+        <input name="location" maxlength="1000" placeholder="Remote in Italy and EU">
+      </label>
+      <label class="field">
+        <span>Work arrangement</span>
+        <select name="workplace_type">
+          <option value="unknown" selected>Not stated / unsure</option>
+          <option value="remote">Remote</option>
+          <option value="hybrid">Hybrid</option>
+          <option value="onsite">On-site</option>
+        </select>
+      </label>
+      <label class="field field-wide">
+        <span>Job details from the employer listing</span>
+        <small>Paste the vacancy details you reviewed. Do not paste the X post or personal information.</small>
+        <textarea name="description" rows="7" maxlength="20000" required placeholder="Responsibilities, required skills, work location, and other job details"></textarea>
+      </label>
+    </div>
+    <label class="x-review-confirmation"><input type="checkbox" name="reviewed" value="on" required><span>I opened and reviewed the X post and the original employer or ATS job page. I understand Clue has not checked whether the vacancy is still open.</span></label>
+    <div class="form-end"><span class="tiny-note">Clue saves the two links and job details locally. It makes no Jev request during import.</span><button class="button button-dark" type="submit">Save lead locally <span aria-hidden="true">→</span></button></div>
+  </form>
+</section>
+
+<section class="section-heading x-lead-list-heading">
+  <div><span class="kicker kicker-muted">YOUR LOCAL LEADS</span><h2>{{ leads|length }} X lead{% if leads|length != 1 %}s{% endif %} saved</h2></div>
+  {% if leads %}<a class="text-link" href="/search">Filter and rank with my search <span aria-hidden="true">→</span></a>{% endif %}
+</section>
+{% if leads %}
+  <div class="x-lead-list">
+    {% for lead in leads %}
+      <article class="panel x-lead-card">
+        <div><span class="kicker kicker-muted">MANUAL LEAD{% if lead.hidden %} · HIDDEN{% endif %}</span><h3>{{ lead.title }}</h3><p>{{ lead.company or 'Company not listed' }}{% if lead.location_raw %} · {{ lead.location_raw }}{% endif %}</p></div>
+        <div class="x-lead-card-actions">
+          <a class="text-link" href="{{ lead.job_url }}" target="_blank" rel="noopener noreferrer">Open listing · {{ lead.job_host }} <span aria-hidden="true">↗</span></a>
+          <a class="text-link" href="{{ lead.post_url }}" target="_blank" rel="noopener noreferrer">Open X post <span aria-hidden="true">↗</span></a>
+          <small>Added {{ lead.added_at[:10] }} · live status not rechecked</small>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <section class="empty-state panel x-lead-empty">
+    <span class="empty-illustration" aria-hidden="true">⌕</span>
+    <h2>No X leads saved yet.</h2>
+    <p>Search X in your browser, inspect the original listing, and save a lead here when the employer page checks out.</p>
+  </section>
+{% endif %}
+{% endblock %}

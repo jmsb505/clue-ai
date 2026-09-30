@@ -1,7 +1,7 @@
 # Source discovery and crawl review
 
-**Status:** M1 five-feed/API set validated; M2's transient EU Lever API/page comparison validated the adapter; all employer/ATS sources remain `Review` until their specific ongoing-use terms are checked
-**Reviewed:** 2026-09-30  
+**Status:** M1 five-feed/API set validated; M2's transient EU Lever API/page comparison validated the adapter; all employer/ATS sources remain `Review` until their specific ongoing-use terms are checked; X is manual-only under PLAN-003
+**Reviewed:** 2026-10-01
 **Scope:** A single-user local job-search tool using $0 data sources and company career pages. The first search focus is fully remote work from Milan/Italy, including listings explicitly open to Europe or worldwide; no automated applying or public redistribution.
 
 ## Executive decision
@@ -52,6 +52,14 @@ Eligibility requires both a $0 price at expected volume and terms that allow the
 - Public job APIs that expressly invite embedding in an app, such as RemoteJobs.org, with provider credit and bounded daily query volume.
 - Public employment-service search pages such as EURES as manual links when no documented data API and reuse basis are available.
 - Employer-submitted career URLs and user-curated company watchlists, which provide a transparent source seed without brute-forcing board identifiers.
+
+### X.com: manual discovery only
+
+X is useful for leads because people and companies post vacancy announcements with links. It is **not an automated connector** in this app. X's [automation rules](https://help.x.com/en/rules-and-policies/x-automation) say not to use non-API automation such as scripting the X website. Its current [API pricing](https://docs.x.com/x-api/getting-started/pricing) charges `$0.005` for each post returned by a read operation. The X API therefore does not fit the owner's `$0` non-TypeSafe source budget, and Scrapling must not be pointed at X.
+
+Clue can construct a user-clicked X search URL from selected role/location terms. The owner opens X directly, reviews the post, and opens the original employer/ATS job page in their browser. To save a lead, they provide the X status permalink, the final employer/ATS HTTPS page URL, and job facts copied from that posting. Clue stores the post and listing links separately and never calls the X API, scrapes X, expands `t.co`, fetches or previews a submitted URL, follows redirects, or opens links by itself. The exact host is shown before the user chooses to open an external page.
+
+X's [link guidance](https://help.x.com/en/using-x/how-to-post-a-link) notes that X shortens URLs and advises users to check the destination site before sharing sensitive information or downloading files. Clue rejects common shortened job URLs and malformed/non-HTTPS destinations, but those checks do not certify a legitimate employer. The owner should confirm the employer or ATS domain, the real vacancy, and its Italy/Europe work eligibility before saving. Clue labels the record as a manual lead and does not claim a fresh vacancy check. The copied job description is untrusted text and is considered by Jev only after the normal explicit scoring action.
 
 ### Italy/Europe remote eligibility model
 

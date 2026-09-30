@@ -121,7 +121,8 @@
           {% else %}
             <span class="tag tag-muted">Location unclear</span>
           {% endif %}
-          {% if job.freshness_status == 'recent' %}<span class="tag tag-green">Checked within 24 hours</span>
+          {% if job.freshness_status == 'manual' %}<span class="tag tag-amber">Manual lead · live status unverified</span>
+          {% elif job.freshness_status == 'recent' %}<span class="tag tag-green">Checked within 24 hours</span>
           {% elif job.freshness_age_days is not none %}<span class="tag tag-warning">Last checked {{ job.freshness_age_days }} days ago</span>
           {% else %}<span class="tag tag-muted">Check date unknown</span>{% endif %}
         </div>
@@ -155,13 +156,17 @@
           <span class="source-trail-mark" aria-hidden="true">⌁</span>
           <span class="source-trail-links">
             {% for source in job.sources %}
-              <a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.attribution or source.name }}</a>{% if not loop.last %}<span aria-hidden="true"> · </span>{% endif %}
+              {% if source.id == 'x_manual' %}
+                <a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">Employer listing · {{ source.display_host }}</a>
+                {% if source.context_url %}<span aria-hidden="true"> · </span><a href="{{ source.context_url }}" target="_blank" rel="noreferrer noopener">X post</a>{% endif %}
+              {% else %}<a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.attribution or source.name }}</a>{% endif %}{% if not loop.last %}<span aria-hidden="true"> · </span>{% endif %}
             {% endfor %}
           </span>
           <span class="source-trail-meta">
             {% if job.posted_at %}Posted {{ job.posted_at[:10] }} · {% endif %}
-            Checked {{ job.last_checked_at[:16].replace('T', ' ') if job.last_checked_at else 'date unknown' }} UTC
-            {% for source in job.sources %} · {{ source.name }} {{ source.state }}{% if source.last_state and source.last_state != 'ok' %} ({{ source.last_state }}){% endif %}{% endfor %}
+            {% if job.freshness_status == 'manual' %}Added by you {{ job.last_checked_at[:16].replace('T', ' ') if job.last_checked_at else '' }} UTC · availability not rechecked
+            {% else %}Checked {{ job.last_checked_at[:16].replace('T', ' ') if job.last_checked_at else 'date unknown' }} UTC{% endif %}
+            {% for source in job.sources %}{% if source.id != 'x_manual' %} · {{ source.name }} {{ source.state }}{% if source.last_state and source.last_state != 'ok' %} ({{ source.last_state }}){% endif %}{% endif %}{% endfor %}
           </span>
         </div>
         <div class="job-actions">

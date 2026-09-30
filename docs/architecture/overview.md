@@ -1,7 +1,7 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration and spoken screen-reader review remain open.
-**Updated:** 2026-09-30
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is locally validated; its main push is pending. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration and spoken screen-reader review remain open.
+**Updated:** 2026-10-01
 
 ## Owner-set cost ceiling
 
@@ -16,11 +16,14 @@ flowchart LR
     U[Owner] --> A[Local profile and preferences]
     A --> P[Local CV extraction and review]
     U --> Q[Search preferences]
+    U --> X[Manual X search and review in owner's browser]
+    X --> M[Owner-entered listing and post provenance]
     P --> S[Candidate profile]
     Q --> F[Search and hard filters]
     C[Free public job sources] --> I[Local ingestion and normalization]
     I --> D[Deduplication and freshness]
     D --> F
+    M --> D
     S --> E[Jev fit evaluator]
     F --> E
     E --> R[Weighted rank and evidence]
@@ -28,7 +31,7 @@ flowchart LR
     V --> O[Original job source]
 ```
 
-The diagram describes the current local workflow. The implementation remains subject to offline validation and source-specific review.
+The diagram describes the connector-fed local workflow. X leads use a separate manual handoff: the user opens X, reviews an employer listing, and adds it locally. The implementation remains subject to offline validation and source-specific review.
 
 ## Component responsibilities
 
@@ -36,7 +39,8 @@ The diagram describes the current local workflow. The implementation remains sub
 |---|---|---|
 | Local profile and preferences | Save the owner's CV/profile, edits, search preferences, and delete controls on device | No login, account service, or multi-user access. Keep direct identifiers out of Jev payloads. |
 | CV extraction | Read PDF and DOCX documents and produce a structured profile the user can review | The user reviews extraction before use. Do not treat a parser's omission as proof of missing capability. |
-| Source registry and connectors | Fetch listings through $0 APIs, public feeds, public ATS boards, or ordinary public employer career pages | Each source records access/terms notes, geography, refresh rules, attribution, local cache/retention, limits, and data expiry. No blanket employer-by-employer opt-in; do not bypass login or access controls. |
+| Source registry and connectors | Fetch listings through $0 APIs, public feeds, public ATS boards, or ordinary public employer career pages | Each connector records access/terms notes, geography, refresh rules, attribution, local cache/retention, limits, and data expiry. No blanket employer-by-employer opt-in; do not bypass login or access controls. X is manual-only and is never scheduled or fetched. |
+| Manual X lead handoff | Build a role/location search link and accept an owner-reviewed X post permalink, employer/ATS URL, and job details | The app makes no X API/site request and never fetches, expands, previews, or automatically opens submitted URLs. Display the destination host and preserve the post URL separately from the job URL. |
 | Listing normalization | Map different source fields to a common job record | Preserve original values and provenance; do not invent salary, remote, authorization, or posted-date data. |
 | Quality and deduplication | Detect duplicates, expired/closed signals, invalid source URLs, and stale records | Preserve source IDs and canonical application pages so results can be traced. |
 | Search filters | Apply exact user-controlled conditions and retrieve likely candidates | Missing values are `unknown`; only exclude unknowns when the user requested that behavior. |
@@ -50,16 +54,18 @@ The diagram describes the current local workflow. The implementation remains sub
 2. Keep direct contact details out of the fit request. For matching, send only relevant candidate qualifications/preferences and the normalized job description needed for evaluation.
 3. A work history can identify a person even without name or contact details. The app discloses the exact fields sent and requires opt-in plus an explicit score action. The owner waived provider-side terms and retention verification for this personal local scope; those details remain unverified.
 4. Keep source provenance and freshness in the local listing index. Preserve the employer's posted date separately from first-seen and last-checked dates.
-5. Make the local delete control cover profile, original CV, extracted data, preferences, saved/hidden jobs, fit results, search history, and owner-added sources. Preserve built-in source definitions, but clear personal role-feed cache hashes and refresh timestamps. Manual backup/restore and local deletion are tested; the owner waived device-encryption confirmation. Deletion cannot affect data already processed by TypeSafe.
-6. Keep an audit trail for the scoring version and input snapshot without retaining more personal data than evaluation and support need.
+5. For X, keep discovery in the owner's browser. Add only a user-reviewed lead to the local index; label it manually added and do not present the entry time as a live availability check. Do not send X post text to Jev.
+6. Make the local delete control cover profile, original CV, extracted data, preferences, saved/hidden jobs, fit results, search history, and owner-added sources. Preserve built-in source definitions, but clear personal role-feed cache hashes and refresh timestamps. Manual backup/restore and local deletion are tested; the owner waived device-encryption confirmation. Deletion cannot affect data already processed by TypeSafe.
+7. Keep an audit trail for the scoring version and input snapshot without retaining more personal data than evaluation and support need.
 
 ## Search and scoring pipeline
 
 1. Select connectors based on the user's country, query, enabled source rights, and zero-recurring-cost requirement.
 2. Fetch from the local listing index and $0 feeds/APIs; do not launch an unbounded crawl for each individual search.
 3. Normalize, filter obvious stale/closed records, deduplicate, and keep a direct source URL.
+   For a manual X lead, the owner supplies the direct listing URL and the separate X post URL. Clue validates their shape, displays the job-link hostname, and does not make any request to either URL.
 4. Apply hard user filters in deterministic code. Keep workplace type, where the person can work from, and work authorization separate. Preserve exact location-eligibility evidence; for the first Milan/Italy search, a generic “remote” label does not confirm the job can be done from Italy.
-5. Send up to five filtered listings per Jev request with four versioned categorical `Choice` questions per listing: role alignment, skills evidence, experience/scope, and optional preferences. Each question can return `unknown`; missing evidence is not treated as a mismatch. Jev scoring is currently limited to reviewed profile text marked English and listings confidently identified as English.
+5. Send up to five filtered listings per Jev request with four versioned categorical `Choice` questions per listing: role alignment, skills evidence, experience/scope, and optional preferences. Each question can return `unknown`; missing evidence is not treated as a mismatch. Treat profile and listing fields as untrusted evidence, never as instructions. Jev scoring is currently limited to reviewed profile text marked English and listings confidently identified as English.
 6. Convert the returned 0–4 choice probabilities to a 0–1 fit signal and combine dimensions with the user's weights in code, renormalizing over dimensions with evidence. This is not a calibrated hiring probability.
 7. Build reasons from matched profile facts and exact listing text; label absent evidence as unknown. Sort and display the best results and include the sources searched.
 

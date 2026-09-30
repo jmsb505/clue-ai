@@ -33,22 +33,51 @@ from clue_ai.repository import (
 )
 
 
-def test_default_source_registry_has_only_the_five_approved_free_feeds(database):
+def test_default_source_registry_has_five_feeds_and_manual_x_marker(database):
     sources = list_sources(database)
+    connectors = [item for item in sources if item["kind"] != "manual_x"]
+    manual_x = next(item for item in sources if item["kind"] == "manual_x")
 
-    assert {item["kind"] for item in sources} == {
+    assert {item["kind"] for item in connectors} == {
         "jobicy_api",
         "remotejobs_api",
         "remoteok_json",
         "remote_first_rss",
         "startup_rss",
     }
-    assert all(item["state"] == "approved" and item["enabled"] for item in sources)
-    assert all(item["attribution"] and item["endpoint"].startswith("https://") for item in sources)
+    assert all(item["state"] == "approved" and item["enabled"] for item in connectors)
+    assert all(item["attribution"] and item["endpoint"].startswith("https://") for item in connectors)
+    assert manual_x["state"] == "approved"
+    assert manual_x["enabled"] == 0
+    assert "never" in manual_x["policy_note"].casefold()
     remotejobs = next(item for item in sources if item["id"] == "remotejobs")
     assert remotejobs["attribution"] == "Powered by RemoteJobs.org"
     assert remotejobs["interval_seconds"] == 86_400
     assert remotejobs["retention_days"] == 14
+
+
+def test_distinct_manual_x_urls_are_not_fuzzy_merged_by_role_and_company(database):
+    first = make_job(
+        source_id="x_manual",
+        url="https://careers.example.com/jobs/first",
+        title="Product Designer",
+        company="Example Studio",
+        location="Remote in Italy",
+    )
+    second = make_job(
+        source_id="x_manual",
+        url="https://jobs.example.org/openings/second",
+        title="Product Designer",
+        company="Example Studio",
+        location="Remote in Italy",
+    )
+    first.external_id = "x-post-1"
+    second.external_id = "x-post-2"
+    first.posted_at = ""
+    second.posted_at = ""
+
+    assert save_jobs(database, [first, second]) == 2
+    assert len(all_active_jobs(database)) == 2
 
 
 def test_owner_added_source_starts_disabled_in_review(database):
@@ -184,7 +213,8 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     assert get_profile(database) == CandidateProfile()
     assert get_run(database, "run-delete") is None
     assert all_active_jobs(database) == []
-    assert len(list_sources(database)) == 5
+    assert len(list_sources(database)) == 6
+    assert get_source(database, "x_manual")["enabled"] == 0
     assert monthly_jev_usage(database, 4.0)["requests"] == 0
     assert get_source(database, "jobicy")["state"] == "approved"
     from clue_ai.database import get_settings

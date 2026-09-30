@@ -85,6 +85,7 @@ class NormalizedJob:
     eligibility_evidence: str = ""
     source_credit: str = ""
     last_checked_at: str = field(default_factory=utc_now)
+    context_url: str = ""
 
 
 @dataclass

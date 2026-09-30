@@ -79,6 +79,20 @@ DEFAULT_SOURCES = (
         "config_json": "{}",
         "is_builtin": 1,
     },
+    {
+        "id": "x_manual",
+        "name": "X.com · manual lead",
+        "kind": "manual_x",
+        "endpoint": "https://x.com/search",
+        "state": "approved",
+        "enabled": 0,
+        "attribution": "X.com post",
+        "interval_seconds": 86_400,
+        "retention_days": 365,
+        "policy_note": "Manual only. Clue never searches, scrapes, fetches, expands, or previews X links. Add owner-reviewed leads from the X leads page.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
 )
 
 
@@ -158,6 +172,7 @@ CREATE TABLE IF NOT EXISTS job_sources (
   source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
   external_id TEXT NOT NULL DEFAULT '',
   source_url TEXT NOT NULL,
+  context_url TEXT NOT NULL DEFAULT '',
   source_posted_at TEXT NOT NULL DEFAULT '',
   last_seen_at TEXT NOT NULL,
   UNIQUE (source_id, external_id),
@@ -247,6 +262,7 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "jobs", "fingerprint", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "jobs", "visa_sponsorship", "TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(db, "profile", "profile_language", "TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(db, "job_sources", "context_url", "TEXT NOT NULL DEFAULT ''")
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
         now = utc_now()
         db.execute("INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES (1, ?)", (now,))

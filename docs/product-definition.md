@@ -2,7 +2,7 @@
 
 **Status:** DEFINED FOR SINGLE-USER LOCAL FEASIBILITY BUILD; explicit requirements are marked NORMATIVE  
 **Owner:** project owner  
-**Updated:** 2026-09-30
+**Updated:** 2026-10-01
 
 ## Purpose
 
@@ -70,10 +70,10 @@ These are working defaults that complete the pilot definition; they can be revis
 
 1. The user opens the local app, uploads a CV, and reviews the extracted candidate profile before saving it on the device. A saved work-authorization list is local reference; the app does not infer legal eligibility from it.
 2. The user starts a search, chooses where they will work from and a role target, and labels must-haves and preferences. The first pilot profile starts from Milan, Italy and fully remote work; the user can change it.
-3. An out-of-band ingestion process fetches from geography-relevant `Approved` sources in the source registry, normalizes fields, removes duplicates, and records source and freshness information. A user search never starts an unbounded crawl.
+3. An out-of-band ingestion process fetches from geography-relevant `Approved` connector sources in the source registry, normalizes fields, removes duplicates, and records source and freshness information. A user search never starts an unbounded crawl. X is a separate manual lead path: the user opens an X search link, checks the post and final employer/ATS page in their browser, then enters the lead in Clue.
 4. Ordinary software applies exact user-defined constraints. Missing listing data remains “unknown” unless the user chooses to treat it as a hard exclusion.
 5. Jev evaluates bounded, job-related fit questions using the candidate profile and listing. The system ranks the evaluated results using the user's weights.
-6. The user reviews match details, saves or dismisses jobs, and opens the original source page. They can manually record that they applied outside the platform.
+6. The user reviews match details, saves or dismisses jobs, and opens the original source page. For a manual X lead, Clue preserves the post permalink and a separate employer/ATS listing link, labels the lead as manually added, and does not claim to have rechecked the job. The user can manually record that they applied outside the platform.
 7. The user can revise their local profile or search and delete the saved CV, profile, preferences, indexed jobs, and results through product controls.
 
 ## Jev's role in matching
@@ -108,6 +108,8 @@ The M1 pilot registry enables five no-key feeds/APIs: Jobicy, RemoteJobs.org, Re
 
 The source registry states are `Approved`, `Review`, and `Blocked`. Approve a source after confirming $0 cost at expected personal use and recording its public path, attribution, geography, and local caching/refresh rules. Employer-by-employer opt-in is not a default step; if published source rules conflict with the planned local use, mark it `Review` or use another source. A public page or permissive `robots.txt` alone is not approval. On access denial, rate limit, CAPTCHA, bot challenge, or explicit block, stop that connector. Do not bypass the restriction with stealth mode, proxy rotation, browser impersonation, authentication, or search-result scraping.
 
+X is manual-only. Clue may build a user-clicked X search URL from role and location terms, and the owner may add a lead after inspecting both the X post and final employer/ATS listing. Clue must not use Scrapling or another method to scrape or script X, call the X API, resolve `t.co` or other shortened links, fetch or preview a user-supplied URL, or open links automatically. Store the X status permalink and direct HTTPS listing URL separately, display the destination host, treat the listing text as untrusted data, and tell the user that Clue did not verify that the vacancy remains open. Manual X leads are not counted as an X search or source refresh in connector coverage.
+
 Scrapling is the selected crawler for registered public HTML job and career pages, including employer and ATS pages. Use its ordinary Spider/static-fetching path behind the source connector boundary. Enable `robots_txt_obey` explicitly, cap the Spider at four concurrent requests overall and one per domain, and use a two-second base `download_delay` that increases when source rules require it. Keep documented feeds and APIs as source-specific connectors. Never use stealth, proxy rotation, browser impersonation, CAPTCHA solving, or anti-bot bypass.
 
 ## Product boundary
@@ -117,12 +119,14 @@ Scrapling is the selected crawler for registered public HTML job and career page
 - Local candidate profile and PDF/DOCX CV upload with an edit/review step.
 - Per-search role, geography, must-have, and preference inputs.
 - A source registry, approved source connectors, normalized listing records, duplicate handling, and freshness checks.
+- A manually controlled X search handoff and owner-reviewed lead intake; no X API or X site automation.
 - Jev-based fit scoring and a transparent ranked-results view.
 - Saving, dismissing, revising search criteria, and opening the employer or job-board source.
 
 ### Out of scope
 
 - Automated applications, application-form filling, screening-question answers, or employer contact.
+- Automated X API searches, scraping or browser automation on X, server-side URL expansion/preview, or automatic external-link opening.
 - Employer-side recruiting, candidate selection, or workforce-management decisions.
 - A claim that every public or private job board is covered.
 - Resume rewriting or generated application materials in the first increment.

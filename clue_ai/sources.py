@@ -15,6 +15,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from clue_ai.config import Settings
 from clue_ai.domain import NormalizedJob, SearchCriteria
+from clue_ai.external_links import is_x_host
 from clue_ai.jobs import canonical_url, infer_workplace, parse_date, plain_text
 from clue_ai.repository import record_role_feed_check, role_feed_due
 
@@ -59,6 +60,8 @@ def fetch_source(
     database_path=None,
 ) -> FetchOutcome:
     """Fetch only an enabled, already-approved source supplied by the registry."""
+    if source.get("kind") == "manual_x":
+        return FetchOutcome(message="X is a manual-only lead source and is never fetched.", skipped=True)
     if source.get("state") != "approved" or not source.get("enabled"):
         return FetchOutcome(message="This source is not approved and enabled.", skipped=True)
     kind = str(source.get("kind") or "")
@@ -650,6 +653,8 @@ def validate_career_url(url: str) -> tuple[bool, str]:
     try:
         parts = urlsplit(url.strip())
         host = (parts.hostname or "").lower()
+        if is_x_host(host):
+            return False, "X and its short-link domains are manual-only; use the X leads page."
         if parts.scheme != "https" or not host or parts.username or parts.password:
             return False, "Use an HTTPS careers or public job URL without embedded credentials."
         if parts.port not in (None, 443):

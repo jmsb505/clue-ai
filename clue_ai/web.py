@@ -23,7 +23,12 @@ from clue_ai.database import (
     save_search_run,
     set_jev_consent,
 )
-from clue_ai.domain import CandidateProfile, SearchCriteria
+from clue_ai.domain import CandidateProfile, NormalizedJob, SearchCriteria, utc_now
+from clue_ai.external_links import (
+    build_x_search_url,
+    normalize_public_job_url,
+    normalize_x_status_url,
+)
 from clue_ai.filters import criteria_from_form
 from clue_ai.repository import (
     add_source,
@@ -36,9 +41,11 @@ from clue_ai.repository import (
     has_active_runs,
     hidden_jobs,
     list_sources,
+    manual_x_leads,
     mark_source_for_review,
     monthly_jev_usage,
     remove_user_source,
+    save_jobs,
     saved_jobs,
     set_job_user_state,
     set_source_enabled,
@@ -366,12 +373,126 @@ def create_app(
         background_tasks.add_task(run_search_serialized, run_id)
         return RedirectResponse(f"/searches/{run_id}", status_code=303)
 
+    @app.get("/x-leads", response_class=HTMLResponse)
+    async def x_leads_page(request: Request):
+        profile = get_profile(db_path)
+        latest = get_latest_run(db_path)
+        saved_criteria = (
+            latest.get("criteria")
+            if latest and latest.get("criteria")
+            else {"roles": profile.target_roles, "work_from": "Italy", "workplace": "remote"}
+        )
+        if not str(saved_criteria.get("roles") or "").strip():
+            saved_criteria["roles"] = profile.target_roles
+        roles = str(request.query_params.get("roles", saved_criteria.get("roles", "")))[:500]
+        work_from = str(request.query_params.get("work_from", saved_criteria.get("work_from", "Italy")))[:100]
+        workplace = _choice(
+            request.query_params.get("workplace", saved_criteria.get("workplace", "remote")),
+            {"remote", "hybrid", "onsite", "any"},
+        )
+        leads = manual_x_leads(db_path)
+        for lead in leads:
+            normalized = normalize_public_job_url(lead["job_url"])
+            lead["job_host"] = normalized[1] if normalized else "Unknown host"
+        return render(
+            request,
+            "x_leads.html",
+            {
+                "active_page": "x_leads",
+                "roles": roles,
+                "work_from": work_from,
+                "workplace": workplace,
+                "x_search_url": build_x_search_url(roles, work_from, workplace),
+                "leads": leads,
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.post("/x-leads/add")
+    async def add_x_lead_route(request: Request):
+        form = dict(await request.form())
+        title = _form_text(form, "title", 300)
+        company = _form_text(form, "company", 250)
+        location = _form_text(form, "location", 1_000)
+        description = _form_text(form, "description", 20_000)
+        x_post = normalize_x_status_url(_form_text(form, "post_url", 2_000))
+        job_page = normalize_public_job_url(_form_text(form, "job_url", 2_000))
+        workplace = _choice(form.get("workplace_type"), {"remote", "hybrid", "onsite", "unknown"})
+        if not title or not description:
+            return RedirectResponse(
+                "/x-leads?notice=Add+a+job+title+and+details+copied+from+the+original+listing.",
+                status_code=303,
+            )
+        if not _checked(form.get("reviewed")):
+            return RedirectResponse(
+                "/x-leads?notice=Confirm+that+you+reviewed+the+X+post+and+the+original+job+listing.",
+                status_code=303,
+            )
+        if x_post is None:
+            return RedirectResponse(
+                "/x-leads?notice=Use+an+HTTPS+X.com+or+Twitter.com+post+permalink.",
+                status_code=303,
+            )
+        if job_page is None:
+            return RedirectResponse(
+                "/x-leads?notice=Use+the+final+HTTPS+employer+or+ATS+listing+URL,+not+a+shortened+link.",
+                status_code=303,
+            )
+        post_url, status_id = x_post
+        job_url, _ = job_page
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                "/x-leads?notice=Wait+for+the+current+search+or+Jev+operation+to+finish+before+saving+a+lead.",
+                status_code=303,
+            )
+        try:
+            if has_active_runs(db_path):
+                return RedirectResponse(
+                    "/x-leads?notice=Wait+for+the+current+search+or+Jev+operation+to+finish+before+saving+a+lead.",
+                    status_code=303,
+                )
+            saved = save_jobs(
+                db_path,
+                [
+                    NormalizedJob(
+                        source_id="x_manual",
+                        source_name="X.com · manual lead",
+                        external_id=f"{status_id}-{uuid.uuid5(uuid.NAMESPACE_URL, job_url).hex[:12]}",
+                        title=title,
+                        company=company,
+                        description=description,
+                        source_url=job_url,
+                        canonical_url=job_url,
+                        location_raw=location,
+                        workplace_type=workplace,
+                        context_url=post_url,
+                        last_checked_at=utc_now(),
+                    )
+                ],
+            )
+        finally:
+            operation_lock.release()
+        if saved != 1:
+            return RedirectResponse(
+                "/x-leads?notice=Clue+could+not+save+that+link.+Check+the+URL+and+try+again.",
+                status_code=303,
+            )
+        return RedirectResponse(
+            "/x-leads?notice=Lead+saved+locally.+Run+your+search+to+filter+it,+then+choose+Score+with+Jev+if+you+want+fit+signals.",
+            status_code=303,
+        )
+
     @app.get("/searches/{run_id}", response_class=HTMLResponse)
     async def search_results(request: Request, run_id: str):
         run = get_run(db_path, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Search not found.")
         jobs = [job for job in get_run_results(db_path, run_id) if not job.get("hidden")]
+        for job in jobs:
+            for source in job.get("sources", []):
+                if source.get("id") == "x_manual":
+                    normalized = normalize_public_job_url(source.get("source_url", ""))
+                    source["display_host"] = normalized[1] if normalized else "Unknown host"
         sources = list_sources(db_path)
         usage = monthly_jev_usage(db_path, current_settings.monthly_jev_budget_usd)
         settings_row = get_settings(db_path)
@@ -586,7 +707,12 @@ def create_app(
     @app.post("/sources/{source_id}/enable")
     async def enable_builtin_source(source_id: str):
         source = get_source(db_path, source_id)
-        if source is None or not source.get("is_builtin") or source.get("state") != "approved":
+        if (
+            source is None
+            or not source.get("is_builtin")
+            or source.get("state") != "approved"
+            or source.get("kind") == "manual_x"
+        ):
             raise HTTPException(status_code=404, detail="This source cannot be directly enabled.")
         set_source_enabled(db_path, source_id, True)
         return RedirectResponse("/sources?notice=Source+enabled.", status_code=303)

@@ -20,7 +20,7 @@ ORIGIN = {"Origin": "http://127.0.0.1"}
 def test_local_views_render_without_a_jev_key(settings):
     client = TestClient(create_app(settings), base_url="http://127.0.0.1")
 
-    for route in ("/", "/profile", "/search", "/saved", "/hidden", "/sources", "/settings", "/privacy", "/health"):
+    for route in ("/", "/profile", "/search", "/x-leads", "/saved", "/hidden", "/sources", "/settings", "/privacy", "/health"):
         response = client.get(route)
         assert response.status_code == 200, route
     assert client.get("/health").json() == {"status": "ok", "storage": "local"}
@@ -32,6 +32,7 @@ def test_local_views_render_without_a_jev_key(settings):
         ("/", "/"),
         ("/profile", "/profile"),
         ("/search", "/search"),
+        ("/x-leads", "/x-leads"),
         ("/saved", "/saved"),
         ("/hidden", "/hidden"),
         ("/sources", "/sources"),
@@ -82,7 +83,7 @@ def test_jev_settings_state_external_data_and_local_budget_limits(settings):
     assert "Clue does not read or control account refill settings" in response.text
     assert "I understand which profile facts and listing details leave this device" in response.text
     assert "I have reviewed the data disclosure and TypeSafe terms above" not in response.text
-    assert "The five built-in public source definitions remain." in response.text
+    assert "The built-in connector definitions and manual X lead marker remain." in response.text
 
 
 def test_localhost_and_same_origin_boundaries_reject_cross_origin_requests(settings):
@@ -140,6 +141,86 @@ def test_source_management_requires_review_before_enabling(settings):
     assert reviewed.status_code == 303
     assert get_source(settings.database_path, source_id)["state"] == "approved"
     assert get_source(settings.database_path, source_id)["enabled"] == 1
+
+
+def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings, monkeypatch):
+    from clue_ai import services
+    from clue_ai.filters import filter_jobs
+    from clue_ai.repository import all_active_jobs, manual_x_leads, set_source_enabled, sources_due
+    from clue_ai.sources import fetch_source
+
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    built = client.get(
+        "/x-leads",
+        params={"roles": "Product Designer, UX Designer", "work_from": "Milan, Italy"},
+    )
+    assert built.status_code == 200
+    assert "https://x.com/search?q=" in built.text
+    assert "choose the Latest results tab" in built.text
+
+    base_form = {
+        "post_url": "https://twitter.com/hiring/status/123456789?ref=post",
+        "job_url": "https://careers.example.com/jobs/123?utm_source=x",
+        "title": "Product Designer",
+        "company": "Example Studio",
+        "location": "Remote in Italy and Europe",
+        "workplace_type": "remote",
+        "description": "Design product workflows for customers in Italy. Required: prototyping and research.",
+        "reviewed": "on",
+    }
+    unsafe = dict(base_form, job_url="https://t.co/short")
+    rejected = client.post(
+        "/x-leads/add", data=unsafe, headers=ORIGIN, follow_redirects=False
+    )
+    assert rejected.status_code == 303
+    assert "shortened" in rejected.headers["location"]
+    assert manual_x_leads(settings.database_path) == []
+
+    saved = client.post(
+        "/x-leads/add", data=base_form, headers=ORIGIN, follow_redirects=False
+    )
+    assert saved.status_code == 303
+    lead = manual_x_leads(settings.database_path)[0]
+    assert lead["post_url"] == "https://x.com/hiring/status/123456789"
+    assert lead["job_url"] == "https://careers.example.com/jobs/123"
+    page = client.get("/x-leads")
+    assert "Open listing · careers.example.com" in page.text
+    assert "Open X post" in page.text
+    indexed = filter_jobs(
+        all_active_jobs(settings.database_path),
+        SearchCriteria(roles="Product Designer", work_from="Italy", workplace="remote"),
+    )
+    assert len(indexed) == 1
+    assert indexed[0]["freshness_status"] == "manual"
+
+    set_source_enabled(settings.database_path, "x_manual", True)
+    assert get_source(settings.database_path, "x_manual")["enabled"] == 0
+    assert "x_manual" not in {source["id"] for source in sources_due(settings.database_path)}
+    outcome = fetch_source(get_source(settings.database_path, "x_manual"), SearchCriteria(), settings)
+    assert outcome.skipped
+    assert "never fetched" in outcome.message
+
+    cannot_enable = client.post("/sources/x_manual/enable", headers=ORIGIN, follow_redirects=False)
+    assert cannot_enable.status_code == 404
+
+    monkeypatch.setattr(
+        services,
+        "fetch_source",
+        lambda *_args, **_kwargs: FetchOutcome(message="Fixture; no network request.", skipped=True),
+    )
+    searched = client.post(
+        "/search",
+        data={"roles": "Product Designer", "work_from": "Italy", "workplace": "remote"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert searched.status_code == 303
+    results = client.get(searched.headers["location"])
+    assert results.status_code == 200
+    assert "Manual lead · live status unverified" in results.text
+    assert "Employer listing · careers.example.com" in results.text
+    assert "X post" in results.text
+    assert "availability not rechecked" in results.text
 
 
 def test_lever_source_form_records_the_selected_region(settings):
