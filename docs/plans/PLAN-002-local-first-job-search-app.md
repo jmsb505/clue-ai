@@ -1,6 +1,6 @@
 # PLAN-002 — First local job-search application
 
-**Status:** M1 PUSHED AND REMOTE-VERIFIED — M2 synthetic Jev acceptance validated locally; evidence push pending
+**Status:** M1 and M2 PUSHED AND REMOTE-VERIFIED on `main`
 **Created:** 2026-09-30
 **Last updated:** 2026-09-30
 
@@ -16,6 +16,7 @@ The product definition and source research support a local feasibility increment
 
 - `main` contains the product, architecture, source-policy, and research baseline at `617f5c8`; `origin` points to `https://github.com/jmsb505/clue-ai.git`.
 - M1 implementation, documentation, and offline validation were pushed to `main` as `00e8398d8a0d73082bb3d9217633f169b92a339c`; `git ls-remote` confirmed that exact remote head.
+- M2 synthetic Jev acceptance, failure-path tests, and updated gate documentation were pushed as `0d5ed33369934ab330f7eca20c28d0d27c5063cf`; `git ls-remote` confirmed that exact remote head.
 - One authorized live Jev request used only synthetic candidate and job facts. It returned Jev 1.13.0 / `fit-v1.1.0`, 1,574 input tokens, fit score `0.9904`, confidence `0.9475`, and an app-ledger cost estimate of `$0.00006611`. No real CV or live job-source listing was sent.
 - Each later milestone will be validated and pushed directly to `main` before work advances. Required protections/checks will be honored; a remote rejection will be reported without bypass.
 - A local ignored `.env` exists with the owner's TypeSafe key configured; its value has not been displayed or staged. `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder. `.gitignore` excludes `.env`, `.data`, local uploads, databases, virtual environments, and test caches.
@@ -185,7 +186,7 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Run one live Jev request with synthetic candidate/listing facts only; record model, rubric, input tokens, app-ledger estimate, score, and confidence.
 - [x] Verify synthetic error and exhausted-budget paths locally: no automatic retries/fallbacks, safe unscored results, and no client creation after the cap.
 - [x] Re-run all checks in Conda `gen`: 42 tests passed (one upstream deprecation warning), Ruff passed, and byte-compilation passed.
-- [ ] Commit and push the validated M2 synthetic Jev evidence and tests as a separate checkpoint on `main`.
+- [x] Commit and push M2 synthetic Jev evidence and tests as a separate checkpoint on `main`; `git ls-remote` verified `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.
 
 ## Implementation discoveries / decisions
 
@@ -205,4 +206,4 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - Manual notes for visible focus, Italy default, reduced-motion rule, and no page overflow at 320/640/651px. Actual 200% browser zoom and full screen-reader review remain open.
 - Updated README, source-of-truth docs, and this plan's progress/acceptance evidence.
 - Verified M1 `main` SHA before starting M2: `00e8398d8a0d73082bb3d9217633f169b92a339c`.
-- M2 live-call and offline failure/cap evidence; direct `main` push is pending.
+- M2 live-call and offline failure/cap evidence; verified remote commit/push SHA: `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.

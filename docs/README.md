@@ -1,9 +1,9 @@
 # Project documentation
 
-**Status:** M1 pushed and remote-verified; M2 synthetic Jev acceptance validated locally, direct push pending
+**Status:** M1 and M2 pushed to and remote-verified on `main`; M2 SHA `0d5ed33369934ab330f7eca20c28d0d27c5063cf`
 **Research snapshot:** 2026-09-30
 
-This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. M1 is pushed to `main`; M2's single synthetic Jev request and local failure/budget checks have passed, with its evidence awaiting a separate push. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
+This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. M1 and the separate M2 synthetic Jev acceptance checkpoint are pushed to `main`. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
 
 ## Authority map
 
