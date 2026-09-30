@@ -1,6 +1,6 @@
 # PLAN-002 — First local job-search application
 
-**Status:** M1 VALIDATED LOCALLY — direct push to `main` pending; M2 synthetic Jev check remains
+**Status:** M1 PUSHED AND REMOTE-VERIFIED — M2 synthetic Jev check remains
 **Created:** 2026-09-30
 **Last updated:** 2026-09-30
 
@@ -15,7 +15,7 @@ The product definition and source research support a local feasibility increment
 ## Current state
 
 - `main` contains the product, architecture, source-policy, and research baseline at `617f5c8`; `origin` points to `https://github.com/jmsb505/clue-ai.git`.
-- The local checkout is on `main`, based on `617f5c8`. M1 implementation, docs, and offline tests pass; the main commit and push are the next delivery action.
+- M1 implementation, documentation, and offline validation were pushed to `main` as `00e8398d8a0d73082bb3d9217633f169b92a339c`; `git ls-remote` confirmed that exact remote head.
 - Each later milestone will be validated and pushed directly to `main` before work advances. Required protections/checks will be honored; a remote rejection will be reported without bypass.
 - A local ignored `.env` exists with the owner's TypeSafe key configured; its value has not been displayed or staged. `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder. `.gitignore` excludes `.env`, `.data`, local uploads, databases, virtual environments, and test caches.
 - The selected runtime is FastAPI/Uvicorn, Jinja, Python SQLite, pypdf/python-docx, Scrapling 0.4.15 with its `fetchers` extra, and the TypeSafe SDK. Scrapling's Python dependencies are installed; no browser binaries are used. TypeSafe documents the System One endpoint and Jev model; its legal page links to the account agreement, privacy policy, and DPA. Real-CV use remains gated until those applicable terms are reviewed.
@@ -180,7 +180,7 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Record stack, privacy, ranking, UI, and source decisions and update source-of-truth docs.
 - [x] Wire M1 application paths, including local profile/CV review, four default feeds, reviewed ATS/career sources, deterministic filters, Jev controls, results, saved/hidden views, and local deletion.
 - [x] Run M1 validation after wiring is complete: 36 offline tests, Ruff, byte-compilation, localhost health/startup, no-key flow, and manual keyboard/responsive review passed.
-- [ ] Commit and push the validated M1 milestone to `main`; verify the resulting remote SHA before starting M2.
+- [x] Commit and push the validated M1 milestone to `main`; `git ls-remote` verified remote SHA `00e8398d8a0d73082bb3d9217633f169b92a339c` before starting M2.
 
 ## Implementation discoveries / decisions
 
@@ -194,7 +194,7 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 
 ## Completion evidence
 
-- Main diff and final commit/push SHA.
+- Main diff and verified M1 commit/push SHA: `00e8398d8a0d73082bb3d9217633f169b92a339c`.
 - Passing local offline test/lint/startup output after all wiring is complete.
 - Mocked integration evidence for feeds, ATS/page policy, Jev typed responses, monthly reservations, local persistence and deletion.
 - Manual notes for visible focus, Italy default, reduced-motion rule, and no page overflow at 320/640/651px. Actual 200% browser zoom and full screen-reader review remain open.

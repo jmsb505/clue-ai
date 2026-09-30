@@ -1,6 +1,6 @@
 # Project documentation
 
-**Status:** M1 VALIDATED LOCALLY — direct push to `main` pending
+**Status:** M1 pushed and remote-verified on `main` (`00e8398d8a0d73082bb3d9217633f169b92a339c`)
 **Research snapshot:** 2026-09-30
 
 This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. PLAN-002's M1 offline validation has passed. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.

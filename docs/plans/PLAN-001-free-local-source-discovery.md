@@ -15,7 +15,7 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 ## Current state
 
 - Product definition, reference/market research, source discovery policy, and architecture are documented.
-- The public GitHub repository exists; `main` contains the planning/research baseline. PLAN-002 M1 is implemented and locally validated on `main`; its direct commit/push is the current delivery step.
+- The public GitHub repository exists; PLAN-002 M1 is implemented, validated, and pushed to `main` at `00e8398d8a0d73082bb3d9217633f169b92a339c`. This source evidence plan remains active for live source review.
 - Scrapling remains the selected crawler; its bounded adapter, JSON-LD parser, and linked-page HTML fallback are wired in PLAN-002. Fixture validation is complete; live-source validation remains pending.
 - No source registry has been runtime-validated; TypeSafe API terms and a safe local API-key arrangement remain open. No real candidate data is in use.
 
