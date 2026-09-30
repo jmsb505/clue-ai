@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Find roles · Clue AI{% endblock %}
+{% block eyebrow %}A SEARCH BUILT AROUND YOU{% endblock %}
+{% block content %}
+<section class="page-intro search-intro">
+  <div>
+    <span class="kicker kicker-muted">STEP 02 · WHAT DOES A GOOD ROLE LOOK LIKE?</span>
+    <h1>Set the search.<br><em>Keep the choice.</em></h1>
+    <p>Hard requirements narrow the listings first. Jev can evaluate fit later, only when you ask it to.</p>
+  </div>
+  <div class="intro-mark intro-mark-search" aria-hidden="true"><span>02</span><i>⌕</i></div>
+</section>
+
+<form action="/search" method="post" class="search-form">
+  <section class="panel search-panel">
+    <div class="panel-header">
+      <div><span class="kicker kicker-muted">01 · ROLE & LOCATION</span><h2>Where should we look?</h2></div>
+      <span class="mini-badge">Choose a starting point</span>
+    </div>
+    <div class="form-grid">
+      <label class="field field-wide">
+        <span>Roles you're interested in</span>
+        <small>Use a few job titles separated by commas. Clue uses these for discovery and filtering.</small>
+        <input name="roles" maxlength="500" value="{{ criteria.roles }}" placeholder="Product designer, UX researcher, service designer">
+      </label>
+      <label class="field">
+        <span>Where must the employer allow you to work from?</span>
+        <small>“Remote” alone does not mean the employer can hire in this location.</small>
+        <input name="work_from" maxlength="100" value="{{ criteria.work_from }}" placeholder="Italy">
+      </label>
+      <label class="field">
+        <span>Workplace style</span>
+        <select name="workplace">
+          <option value="remote" {% if criteria.workplace == 'remote' %}selected{% endif %}>Remote first</option>
+          <option value="hybrid" {% if criteria.workplace == 'hybrid' %}selected{% endif %}>Hybrid or remote</option>
+          <option value="any" {% if criteria.workplace == 'any' %}selected{% endif %}>Any workplace</option>
+        </select>
+        <small>Listings with no workplace details can still appear for review.</small>
+      </label>
+      <label class="field">
+        <span>Will you need visa sponsorship?</span>
+        <select name="requires_sponsorship">
+          <option value="unknown" {% if criteria.requires_sponsorship == 'unknown' %}selected{% endif %}>Not sure / include all</option>
+          <option value="no" {% if criteria.requires_sponsorship == 'no' %}selected{% endif %}>No</option>
+          <option value="yes" {% if criteria.requires_sponsorship == 'yes' %}selected{% endif %}>Yes</option>
+        </select>
+        <small>Only explicit “sponsorship unavailable” text excludes a listing. Unknown stays visible.</small>
+      </label>
+      <label class="field">
+        <span>Employment type</span>
+        <input name="employment_types" maxlength="200" placeholder="Full-time, contract, internship">
+        <small>Leave blank to include all types. Separate with commas.</small>
+      </label>
+      <label class="field">
+        <span>Posted within</span>
+        <div class="input-suffix"><input type="number" name="posted_within_days" min="1" max="365" value="{{ criteria.posted_within_days }}"><span>days</span></div>
+      </label>
+    </div>
+    <div class="check-row check-row-separated">
+      <label class="check-field">
+        <input type="checkbox" name="include_unknown_location" value="on" {% if criteria.include_unknown_location %}checked{% endif %}>
+        <span class="check-custom" aria-hidden="true"></span>
+        <span><b>Include uncertain location listings</b><small>They'll be labeled for you to verify on the original posting.</small></span>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel search-panel">
+    <div class="panel-header">
+      <div><span class="kicker kicker-muted">02 · NON-NEGOTIABLES</span><h2>What should a role include?</h2></div>
+      <span class="mini-badge">Applied before Jev</span>
+    </div>
+    <div class="form-grid">
+      <label class="field">
+        <span>Must-have terms</span>
+        <small>Every term must appear in the listing text.</small>
+        <textarea name="must_have" rows="3" maxlength="1000" placeholder="Figma, accessibility">{{ criteria.must_have }}</textarea>
+      </label>
+      <label class="field">
+        <span>Minimum annual salary</span>
+        <small>Only matching annual amounts are compared; other periods stay unknown.</small>
+        <div class="salary-entry">
+          <input type="number" name="minimum_salary" min="0" step="1000" value="{{ criteria.minimum_salary }}" placeholder="e.g. 45000">
+          <select name="salary_currency" aria-label="Salary currency">
+            <option value="EUR" {% if criteria.salary_currency == 'EUR' %}selected{% endif %}>EUR</option>
+            <option value="USD" {% if criteria.salary_currency == 'USD' %}selected{% endif %}>USD</option>
+            <option value="GBP" {% if criteria.salary_currency == 'GBP' %}selected{% endif %}>GBP</option>
+            <option value="CHF" {% if criteria.salary_currency == 'CHF' %}selected{% endif %}>CHF</option>
+          </select>
+        </div>
+      </label>
+      <label class="field field-wide">
+        <span>Nice-to-have terms</span>
+        <small>Jev can weigh these when you explicitly score a shortlist. Separate a few terms with commas.</small>
+        <input name="nice_to_have" maxlength="1000" value="{{ criteria.nice_to_have }}" placeholder="Climate tech, mentorship, design systems">
+      </label>
+    </div>
+    <div class="check-row">
+      <label class="check-field">
+        <input type="checkbox" name="include_unknown_salary" value="on" {% if criteria.include_unknown_salary %}checked{% endif %}>
+        <span class="check-custom" aria-hidden="true"></span>
+        <span><b>Keep roles with unlisted salary</b><small>Usually useful for a wider search.</small></span>
+      </label>
+      <label class="check-field check-field-secondary">
+        <input type="checkbox" name="include_unknown_sponsorship" value="on" {% if criteria.include_unknown_sponsorship %}checked{% endif %}>
+        <span class="check-custom" aria-hidden="true"></span>
+        <span><b>Keep roles with unclear sponsorship information</b><small>Verify eligibility on the employer's original posting.</small></span>
+      </label>
+    </div>
+  </section>
+
+  <section class="panel search-panel">
+    <div class="panel-header">
+      <div><span class="kicker kicker-muted">03 · JEV RANKING</span><h2>Choose what matters most</h2></div>
+      <span class="mini-badge">Relative weights</span>
+    </div>
+    <p class="panel-muted">These weights apply after hard filters. Each fit dimension is a comparison signal, not the chance of getting hired.</p>
+    <div class="weight-grid">
+      <label class="weight-control"><span>Role alignment</span><input type="number" name="role_weight" min="0" max="100" value="{{ criteria.role_weight }}"><small>Job title and responsibilities</small></label>
+      <label class="weight-control"><span>Skills evidence</span><input type="number" name="skills_weight" min="0" max="100" value="{{ criteria.skills_weight }}"><small>Required skills in the listing</small></label>
+      <label class="weight-control"><span>Experience scope</span><input type="number" name="experience_weight" min="0" max="100" value="{{ criteria.experience_weight }}"><small>Responsibilities and seniority</small></label>
+      <label class="weight-control"><span>Your preferences</span><input type="number" name="preference_weight" min="0" max="100" value="{{ criteria.preference_weight }}"><small>Nice-to-have terms</small></label>
+    </div>
+    <p class="tiny-note">Set all weights to zero to give each fit dimension equal weight. Jev scoring is optional and makes a TypeSafe API request.</p>
+  </section>
+
+  <div class="search-submit-row">
+    <div class="search-source-summary"><span class="privacy-dot"></span><span>Search approved sources on their allowed schedule; reuse the local index between refreshes.</span></div>
+    <button class="button button-dark button-large" type="submit">Find matching roles <span aria-hidden="true">↗</span></button>
+  </div>
+</form>
+{% endblock %}

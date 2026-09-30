@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Saved roles · Clue AI{% endblock %}
+{% block eyebrow %}YOUR PERSONAL SHORTLIST{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">BOOKMARKED BY YOU</span>
+    <h1>Keep the roles<br><em>you want to revisit.</em></h1>
+    <p>Your saved listings stay on this device. Always check the original posting for current availability.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>♡</span><i>↗</i></div>
+</section>
+{% if not jobs %}
+  <section class="empty-state panel">
+    <span class="empty-illustration" aria-hidden="true">♡</span>
+    <span class="kicker kicker-muted">A SHORTLIST STARTS HERE</span>
+    <h2>No saved roles yet.</h2>
+    <p>When a role catches your eye, save it from your search results and come back to it here.</p>
+    <a class="button button-dark" href="/search">Find roles <span aria-hidden="true">→</span></a>
+  </section>
+{% else %}
+  <section class="job-list" aria-label="Saved jobs">
+    {% for job in jobs %}
+      <article class="job-card saved-job-card">
+        <div class="job-card-main">
+          <div class="job-card-heading">
+            <div class="company-avatar" aria-hidden="true">{{ (job.company or '?')[0]|upper }}</div>
+            <div class="job-title-group"><h3>{{ job.title }}</h3><p>{{ job.company or 'Company not listed' }} <span class="dot-separator">·</span> {{ job.location_raw or 'Location not specified' }}</p></div>
+            <span class="saved-heart" aria-label="Saved">♥</span>
+          </div>
+          <div class="job-tags">
+            {% if job.workplace_type == 'remote' %}<span class="tag tag-teal">Remote</span>{% endif %}
+            {% if job.eligibility_status == 'eligible' %}<span class="tag tag-green">Location evidence found</span>{% else %}<span class="tag tag-amber">Verify work location</span>{% endif %}
+            {% if job.posted_at %}<span class="tag">Posted {{ job.posted_at[:10] }}</span>{% endif %}
+          </div>
+          <details class="job-description"><summary>Read listing details</summary><div class="description-copy">{{ job.description or 'The source did not provide a description.' }}</div></details>
+        </div>
+        <div class="job-card-footer">
+          <div class="source-trail"><span class="source-trail-mark" aria-hidden="true">⌁</span><span class="source-trail-links">{% for source in job.sources %}<a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</span><span class="source-trail-meta">Checked {{ job.last_checked_at[:10] }}</span></div>
+          <div class="job-actions"><form action="/jobs/{{ job.id }}/unsave" method="post"><input type="hidden" name="return_to" value="/saved"><button class="quiet-button" type="submit">Remove saved</button></form></div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}

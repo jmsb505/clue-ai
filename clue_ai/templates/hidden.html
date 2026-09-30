@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Hidden roles · Clue AI{% endblock %}
+{% block eyebrow %}LISTINGS YOU SET ASIDE{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">YOUR SEARCH, YOUR FILTERS</span>
+    <h1>Out of sight,<br><em>still in your hands.</em></h1>
+    <p>Hidden listings stay local. Restore a role whenever you want it back in future search results.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>⊘</span><i>↗</i></div>
+</section>
+{% if not jobs %}
+  <section class="empty-state panel"><span class="empty-illustration" aria-hidden="true">⊘</span><span class="kicker kicker-muted">NOTHING SET ASIDE</span><h2>No hidden roles.</h2><p>Use Hide on any result to keep it out of future search shortlists.</p><a class="button button-dark" href="/search">Find roles <span aria-hidden="true">→</span></a></section>
+{% else %}
+  <section class="job-list" aria-label="Hidden jobs">
+    {% for job in jobs %}
+      <article class="job-card">
+        <div class="job-card-main">
+          <div class="job-card-heading"><div class="company-avatar" aria-hidden="true">{{ (job.company or '?')[0]|upper }}</div><div class="job-title-group"><h3>{{ job.title }}</h3><p>{{ job.company or 'Company not listed' }} <span class="dot-separator">·</span> {{ job.location_raw or 'Location not specified' }}</p></div></div>
+          <div class="job-tags">{% if job.workplace_type == 'remote' %}<span class="tag tag-teal">Remote</span>{% endif %}<span class="tag tag-muted">Hidden by you</span>{% if job.eligibility_status == 'eligible' %}<span class="tag tag-green">Location evidence found</span>{% else %}<span class="tag tag-amber">Verify work location</span>{% endif %}</div>
+          <details class="job-description"><summary>Read listing details</summary><div class="description-copy">{{ job.description or 'The source did not provide a description.' }}</div></details>
+        </div>
+        <div class="job-card-footer"><div class="source-trail"><span class="source-trail-mark" aria-hidden="true">⌁</span><span class="source-trail-links">{% for source in job.sources %}<a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</span><span class="source-trail-meta">Checked {{ job.last_checked_at[:10] }}</span></div><div class="job-actions"><form action="/jobs/{{ job.id }}/unhide" method="post"><input type="hidden" name="return_to" value="/hidden"><button class="quiet-button" type="submit">Restore to search</button></form></div></div>
+      </article>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}

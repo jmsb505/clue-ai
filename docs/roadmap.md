@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** WORKING — proposed sequence; no application code has been started  
+**Status:** M1 IMPLEMENTED AND LOCALLY VALIDATED — M2 synthetic Jev acceptance is next
 **Updated:** 2026-09-30
 
 ## Definition gate
@@ -31,6 +31,10 @@ Proceed after TypeSafe and source conditions in [the definition gate](readiness/
 
 **Acceptance:** Personal-use source terms, TypeSafe terms and cap, local storage/key handling, score evaluation, accessibility, deletion, and freshness checks pass. Record evidence; no hosted account or service is required.
 
+## Current implementation state
+
+PLAN-002's M1 implementation is locally validated: the localhost FastAPI/Jinja app, local profile and CV review, SQLite repository, four free feed connectors, approved-only ATS and Scrapling paths, deterministic filters, Jev adapter and reserve, and search/source/settings views. The 36-test offline suite, Ruff, byte-compilation, no-key startup, and keyboard/responsive review passed. One synthetic live Jev acceptance request remains for M2; no real CV is in scope.
+
 ## Delivery workflow
 
-Use the `implementation-plan` and `milestone-delivery` workflows for each code milestone. Pair `ui-ux-research` with a frontend design skill when implementation reaches the interface. Continue using Context7 for current SDK/API documentation. Revisit release-readiness only if public distribution enters scope.
+Use the `implementation-plan` and `milestone-delivery` workflows for each code milestone. Per the owner's explicit instruction, commit and push each validated milestone directly to `main`; do not create branches. Honor required checks and branch protection, and never bypass a rejection. Pair `ui-ux-research` with a frontend design skill for substantial interface work. Continue using Context7 for current SDK/API documentation. Revisit release-readiness only if public distribution enters scope.

@@ -42,7 +42,7 @@ Treat each preference as either a hard constraint, a weighted preference, or an 
 | Geography | Country, region/city, radius, relocation, remote countries, or time-zone overlap |
 | Workplace | Remote, hybrid, on-site, or any; days in office if known |
 | Remote-work eligibility | Where the employer permits the employee or contractor to be physically based (for example Italy, EU/EEA, Europe, EMEA, worldwide); keep separate from the job's remote/hybrid label |
-| Work authorization | Countries where the user can work and whether visa sponsorship is required |
+| Work authorization | User-provided countries where the user can work, stored as local context; sponsorship need is a separate search filter |
 | Compensation | Minimum or range, currency, pay period, and how to handle missing salary data |
 | Employment type | Full time, part time, contract, temporary, internship, or other local categories |
 | Seniority and scope | Level, years as a rough hint, responsibility scope, or people-management preference |
@@ -68,7 +68,7 @@ These are working defaults that complete the pilot definition; they can be revis
 
 ## Core workflow
 
-1. The user opens the local app, uploads a CV, and reviews the extracted candidate profile before saving it on the device.
+1. The user opens the local app, uploads a CV, and reviews the extracted candidate profile before saving it on the device. A saved work-authorization list is local reference; the app does not infer legal eligibility from it.
 2. The user starts a search, chooses where they will work from and a role target, and labels must-haves and preferences. The first pilot profile starts from Milan, Italy and fully remote work; the user can change it.
 3. An out-of-band ingestion process fetches from geography-relevant `Approved` sources in the source registry, normalizes fields, removes duplicates, and records source and freshness information. A user search never starts an unbounded crawl.
 4. Ordinary software applies exact user-defined constraints. Missing listing data remains “unknown” unless the user chooses to treat it as a hard exclusion.
@@ -80,7 +80,7 @@ These are working defaults that complete the pilot definition; they can be revis
 
 **NORMATIVE:** Jev is the required model for fit validation. The user asked for Jev to evaluate candidate fit against each job listing.
 
-**WORKING recommendation:** Use Jev's typed `Score`, `Choice`, or `Noul` questions for bounded judgments. A `Score` rubric should describe ordered levels; the response includes a score, probabilities across levels, and confidence. Combine separate job-related dimensions in ordinary code using the user's stated weights. Keep exact constraints, permissions, sorting, and data handling in ordinary software.
+**WORKING recommendation:** Use typed Jev questions for bounded fit judgments and combine job-related dimensions in ordinary code using the user's stated weights. Exact constraints, permissions, sorting, and data handling remain in ordinary software. The first implementation uses categorical `Choice` questions with five fit levels and a separate `unknown` answer; returned levels are mapped to a normalized 0–1 fit signal and are not calibrated.
 
 Jev returns structured decisions, not explanatory prose. It cannot by itself provide trustworthy CV evidence snippets or explain a score in natural language. Build explanations from the parsed CV facts and the original job text, and show the source passages where possible. Distinguish “not found in the CV/listing” from “does not match.” Show uncertainty where evidence is missing or Jev is unsure.
 

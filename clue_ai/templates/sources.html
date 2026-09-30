@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Sources · Clue AI{% endblock %}
+{% block eyebrow %}WHERE SEARCHES LOOK{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">TRANSPARENT BY DESIGN</span>
+    <h1>Know where each<br><em>listing came from.</em></h1>
+    <p>Clue checks approved free feeds and the public job pages you choose. Publisher links and credit stay with every result.</p>
+  </div>
+  <div class="intro-mark intro-mark-sources" aria-hidden="true"><span>⌁</span><i>↗</i></div>
+</section>
+
+<section class="source-policy-note">
+  <span class="source-policy-icon" aria-hidden="true">i</span>
+  <div><b>Respectful, bounded discovery</b><p>Sources refresh no more than their allowed schedule. If a site blocks an ordinary request, Clue pauses that source. It does not retry around a block, sign in, or use stealth or proxy tools.</p></div>
+</section>
+
+<section class="source-list-section">
+  <div class="section-heading">
+    <div><span class="kicker kicker-muted">YOUR SOURCE REGISTRY</span><h2>{{ sources|length }} sources on this device</h2></div>
+    <span class="mini-badge">Free sources only</span>
+  </div>
+  <div class="source-list">
+    {% for source in sources %}
+      <article class="source-card">
+        <div class="source-card-top">
+          <div class="source-logo-mark" aria-hidden="true">{{ source.name[:1]|upper }}</div>
+          <div class="source-card-title"><h3>{{ source.name }}</h3><span>{{ connector_types.get(source.kind, source.kind|replace('_', ' ')|title) }}</span></div>
+          {% if source.state == 'approved' and source.enabled %}<span class="state-pill state-approved"><span></span> Approved · on</span>
+          {% elif source.state == 'blocked' %}<span class="state-pill state-blocked"><span></span> Blocked · paused</span>
+          {% elif source.state == 'review' %}<span class="state-pill state-review"><span></span> Review · off</span>
+          {% else %}<span class="state-pill state-off"><span></span> Paused</span>{% endif %}
+        </div>
+        <p class="source-policy">{{ source.policy_note or 'Owner-added source. Terms and access conditions require review.' }}</p>
+        <div class="source-metadata">
+          <span><b>Credit</b> {{ source.attribution or source.name }}</span>
+          <span><b>Refresh</b> every {{ (source.interval_seconds // 3600) }} hours or less</span>
+          <span><b>Last check</b> {% if source.last_checked_at %}{{ source.last_checked_at[:16].replace('T', ' ') }} UTC · {{ source.last_state }}{% else %}Not checked yet{% endif %}</span>
+        </div>
+        {% if source.last_error %}<p class="source-error">{{ source.last_error }}</p>{% endif %}
+        {% if source.state == 'review' and not source.is_builtin %}
+          <form class="source-approval-form" action="/sources/{{ source.id }}/approve" method="post">
+            <p class="approval-title">Before enabling, confirm you checked this source:</p>
+            <div class="approval-check-grid">
+              <label><input type="checkbox" name="terms_reviewed" value="on" required><span>I reviewed its current terms for personal use and local caching.</span></label>
+              <label><input type="checkbox" name="zero_cost" value="on" required><span>The connector is free at my expected use.</span></label>
+              <label><input type="checkbox" name="attribution_confirmed" value="on" required><span>Attribution and original listing links are preserved.</span></label>
+              <label><input type="checkbox" name="robots_confirmed" value="on" required><span>Robots rules and refresh limits permit this access.</span></label>
+              <label><input type="checkbox" name="public_access_confirmed" value="on" required><span>The page is public; no login, challenge, or access bypass is used.</span></label>
+            </div>
+            <button class="button button-outline button-small" type="submit">Approve this source <span aria-hidden="true">→</span></button>
+          </form>
+        {% elif source.is_builtin and source.state == 'approved' and source.enabled %}
+          <div class="source-card-actions"><form action="/sources/{{ source.id }}/pause" method="post"><button class="quiet-button" type="submit">Pause source</button></form></div>
+        {% elif source.is_builtin and source.state == 'approved' and not source.enabled %}
+          <div class="source-card-actions"><form action="/sources/{{ source.id }}/enable" method="post"><button class="quiet-button" type="submit">Enable source</button></form></div>
+        {% elif not source.is_builtin and source.state != 'blocked' %}
+          <div class="source-card-actions">
+            <form action="/sources/{{ source.id }}/pause" method="post"><button class="quiet-button" type="submit">Pause and review</button></form>
+            <form action="/sources/{{ source.id }}/remove" method="post" data-confirm="Remove this owner-added source and its listing links?"><button class="quiet-button danger-quiet" type="submit">Remove source</button></form>
+          </div>
+        {% elif source.state == 'blocked' %}
+          <p class="block-explanation">Clue paused this source after a block response. Review its access outside Clue; this connector will not retry automatically.</p>
+          {% if not source.is_builtin %}<div class="source-card-actions"><form action="/sources/{{ source.id }}/remove" method="post" data-confirm="Remove this blocked source and its listing links?"><button class="quiet-button danger-quiet" type="submit">Remove source</button></form></div>{% endif %}
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel add-source-panel">
+  <div class="panel-header">
+    <div><span class="kicker kicker-muted">ADD AN EMPLOYER OR ATS BOARD</span><h2>Look under one more rock</h2></div>
+    <span class="mini-badge">Starts disabled</span>
+  </div>
+  <p class="panel-muted">Add an official company career page or its public ATS board. New entries start in Review and stay off until you check the source's terms, crawl rules, credit, and expected cost.</p>
+  <form action="/sources/add" method="post" class="source-add-form">
+    <div class="form-grid">
+      <label class="field">
+        <span>Source type</span>
+        <select name="kind" id="source-kind">
+          <option value="greenhouse">Greenhouse public board</option>
+          <option value="lever">Lever public board</option>
+          <option value="smartrecruiters">SmartRecruiters public board</option>
+          <option value="scrapling">Employer careers page (Scrapling)</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Company or source name</span>
+        <input name="company" maxlength="120" required placeholder="Acme Studio">
+      </label>
+      <label class="field" data-source-field="identifier">
+        <span id="source-identifier-label">Board token or company identifier</span>
+        <input name="identifier" maxlength="100" placeholder="Find this in the official career link">
+        <small id="source-identifier-help">Use the public board's identifier, not a guessed token.</small>
+      </label>
+      <label class="field" data-source-field="career-url">
+        <span>Official careers page URL</span>
+        <input type="url" name="career_url" maxlength="2000" placeholder="https://company.example/careers">
+        <small>Scrapling follows only same-host career/job links, reading JobPosting data first and linked job pages when needed.</small>
+      </label>
+      <label class="field">
+        <span>Attribution label</span>
+        <input name="attribution" maxlength="120" placeholder="Defaults to company name">
+      </label>
+    </div>
+    <div class="form-end"><span class="tiny-note">One request per host at a time · two-second base delay · robots.txt respected</span><button class="button button-dark" type="submit">Add in Review <span aria-hidden="true">→</span></button></div>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+
+from clue_ai.config import Settings
+from clue_ai.database import get_profile
+from clue_ai.domain import utc_now
+from clue_ai.filters import criteria_from_form, filter_jobs
+from clue_ai.jev import score_run
+from clue_ai.repository import (
+    all_active_jobs,
+    get_run,
+    get_run_results,
+    prune_expired_data,
+    record_source_state,
+    save_jobs,
+    save_run_results,
+    sources_due,
+    update_run,
+)
+from clue_ai.sources import FetchOutcome, SourceFetchError, fetch_source
+
+
+def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
+    run = get_run(database_path, run_id)
+    if run is None:
+        return
+    profile = get_profile(database_path)
+    criteria = criteria_from_form(run.get("criteria") or {})
+    if not criteria.roles.strip() and profile.target_roles.strip():
+        criteria = replace(criteria, roles=profile.target_roles)
+
+    update_run(
+        database_path,
+        run_id,
+        status="running",
+        stage="sources",
+        message="Checking approved sources that are due for refresh.",
+    )
+    due_sources = sources_due(database_path)
+    checked_notes: list[str] = []
+    found_count = 0
+    for index, source in enumerate(due_sources, start=1):
+        update_run(
+            database_path,
+            run_id,
+            stage="sources",
+            message=f"Checking {source['name']} ({index} of {len(due_sources)}).",
+            checked_sources=checked_notes,
+        )
+        try:
+            outcome: FetchOutcome = fetch_source(source, criteria, settings, database_path)
+            if outcome.skipped:
+                checked_notes.append(f"{source['name']}: skipped — {outcome.message}")
+                continue
+            if outcome.blocked:
+                record_source_state(
+                    database_path, source["id"], "blocked", outcome.message
+                )
+                checked_notes.append(f"{source['name']}: paused after a block response.")
+                continue
+            stored = save_jobs(database_path, outcome.jobs)
+            found_count += len(outcome.jobs)
+            record_source_state(
+                database_path,
+                source["id"],
+                "ok",
+                checked_at=utc_now(),
+            )
+            checked_notes.append(
+                f"{source['name']}: checked; {len(outcome.jobs)} listings ({stored} indexed)."
+            )
+        except SourceFetchError as exc:
+            state = "blocked" if exc.blocked else "error"
+            record_source_state(database_path, source["id"], state, str(exc))
+            if exc.blocked:
+                checked_notes.append(f"{source['name']}: paused after a block response.")
+            else:
+                checked_notes.append(
+                    f"{source['name']}: unavailable ({type(exc).__name__}); existing listings kept."
+                )
+        except Exception as exc:  # noqa: BLE001 - connector and parser implementations raise varied errors.
+            record_source_state(
+                database_path,
+                source["id"],
+                "error",
+                f"Connector error: {type(exc).__name__}.",
+            )
+            checked_notes.append(
+                f"{source['name']}: connector error ({type(exc).__name__}); existing listings kept."
+            )
+
+    update_run(
+        database_path,
+        run_id,
+        stage="filtering",
+        message="Filtering the local listing index against your search rules.",
+        checked_sources=checked_notes,
+        found_count=found_count,
+    )
+    prune_expired_data(database_path)
+    indexed = all_active_jobs(database_path)
+    indexed = [job for job in indexed if not job.get("hidden")]
+    matched = filter_jobs(indexed, criteria)
+    save_run_results(
+        database_path,
+        run_id,
+        matched,
+        score_state="unscored",
+        score_reason=(
+            "Fit not evaluated. Select “Score with Jev” to make an explicit TypeSafe request."
+        ),
+    )
+    if not checked_notes:
+        checked_notes.append(
+            "No source needed a refresh; results use the current local index."
+            if due_sources == []
+            else "No source returned a listing."
+        )
+    message = f"Search ready: {len(matched)} listings match your hard filters."
+    update_run(
+        database_path,
+        run_id,
+        status="complete",
+        stage="done",
+        message=message,
+        checked_sources=checked_notes,
+        found_count=found_count,
+        matched_count=len(matched),
+        completed=True,
+    )
+
+
+def run_search_worker(database_path: Path, settings: Settings, run_id: str) -> None:
+    try:
+        run_search(database_path, settings, run_id)
+    except Exception as exc:  # noqa: BLE001 - persist a failed state for any worker failure.
+        update_run(
+            database_path,
+            run_id,
+            status="failed",
+            stage="error",
+            message="The local search could not finish. Existing listings are still available.",
+            error=f"Local search error: {type(exc).__name__}.",
+            completed=True,
+        )
+
+
+def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> None:
+    run = get_run(database_path, run_id)
+    if run is None:
+        return
+    profile = get_profile(database_path)
+    criteria = criteria_from_form(run.get("criteria") or {})
+    jobs = [job for job in get_run_results(database_path, run_id) if not job.get("hidden")]
+    try:
+        result = score_run(
+            database_path,
+            settings,
+            run_id,
+            jobs,
+            profile,
+            criteria,
+        )
+        update_run(
+            database_path,
+            run_id,
+            status="complete",
+            stage="done",
+            message=result.message,
+            scored_count=result.scored_count,
+            completed=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - keep listings usable if Jev processing fails locally.
+        update_run(
+            database_path,
+            run_id,
+            status="complete",
+            stage="done",
+            message=f"Jev scoring failed locally ({type(exc).__name__}); listings remain available.",
+            completed=True,
+        )

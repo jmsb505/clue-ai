@@ -1,6 +1,6 @@
 # PLAN-001 — Free source discovery and local crawl pilot
 
-Status: PROPOSED — definition complete for single-user local feasibility build; no implementation started  
+Status: ACTIVE — source evidence plan; app implementation tracked in PLAN-002
 Created: 2026-09-30  
 Last updated: 2026-09-30
 
@@ -14,9 +14,9 @@ Paid job aggregators and paid infrastructure are outside the owner's budget. Fre
 
 ## Current state
 
-- Product definition, reference/market research, source discovery policy, and proposed architecture are documented.
-- Scrapling is the selected crawler; its adapter and source parsers have not been implemented.
-- The workspace has no application code and is not currently a Git repository.
+- Product definition, reference/market research, source discovery policy, and architecture are documented.
+- The public GitHub repository exists; `main` contains the planning/research baseline. PLAN-002 M1 is implemented and locally validated on `main`; its direct commit/push is the current delivery step.
+- Scrapling remains the selected crawler; its bounded adapter, JSON-LD parser, and linked-page HTML fallback are wired in PLAN-002. Fixture validation is complete; live-source validation remains pending.
 - No source registry has been runtime-validated; TypeSafe API terms and a safe local API-key arrangement remain open. No real candidate data is in use.
 
 ## Desired state
@@ -48,7 +48,7 @@ A single-user local build can retrieve postings only from source-registry entrie
 
 - Geography remains a user input throughout the product. The first personal validation profile is fully remote from Milan/Italy, with explicitly eligible EU/EEA, Europe, and worldwide listings included.
 - The app is candidate-side, single-user, and local; it does not apply for the user.
-- TypeSafe Jev is the fit evaluator; maximum TypeSafe spend is $5/month all-in.
+- TypeSafe Jev is the fit evaluator; maximum TypeSafe spend is $5 per rolling 30 days all-in.
 - Every other recurring source or service cost is $0; run the app and store data locally.
 - User-controlled deletion of the local CV, profile, preferences, job index, and results is required; no account service is planned.
 - Source use terms, robots rules, and rate limits are connector-level requirements.
@@ -112,7 +112,7 @@ Documentation updates:
 
 Applicable specialized skills: `context7-mcp` for current library/API documentation; recheck the source and TypeSafe documentation before live use with the owner's CV.
 
-Expected Git checkpoint: `plan/001-m1-approved-source-set`; create only after a Git repository and branch convention exist.
+Expected Git checkpoint: implement, validate, commit, and push each source milestone directly to `main`. Do not create milestone branches or bypass repository protections; stop and report if a required check or push is rejected.
 
 ### M2 — Implement and validate a controlled Scrapling crawler
 
@@ -148,7 +148,7 @@ Documentation updates:
 
 Applicable specialized skills: `milestone-delivery`; verify local file, key, and source-data handling.
 
-Expected Git checkpoint: `plan/001-m2-controlled-crawl`; create only after a Git repository and branch convention exist.
+Expected Git checkpoint: implement, validate, commit, and push each crawler milestone directly to `main`. Do not create milestone branches or bypass repository protections; stop and report if a required check or push is rejected.
 
 ### M3 — Validate Jev ranking and zero-cost operations
 
@@ -184,11 +184,11 @@ Documentation updates:
 
 Applicable specialized skills: `milestone-delivery`; public release-readiness work is out of scope unless the owner later chooses to distribute or host the app.
 
-Expected Git checkpoint: `plan/001-m3-jev-and-cost-validation`; create only after a Git repository and branch convention exist.
+Expected Git checkpoint: implement, validate, commit, and push each Jev/cost milestone directly to `main`. Do not create milestone branches or bypass repository protections; stop and report if a required check or push is rejected.
 
 ## Final integration validation
 
-For a future local implementation, validate source terms/access behavior, crawler behavior, normalized fields, Italy eligibility labels, stale/delisted handling, original links, local deletion, WCAG 2.2 AA UI behavior, Jev cost stop, and source-by-source coverage. Do not fetch after an explicit denial or through a restricted access path. No application code or tests are part of the present definition update.
+Source discovery and implementation are tracked separately: the local app is in PLAN-002. Remaining PLAN-001 evidence includes source-by-source terms/access checks, approved-source crawl behavior, Italy eligibility labels, stale/delisted handling, original links, accessibility, Jev cost stop, and source coverage. Do not fetch after an explicit denial or through a restricted access path.
 
 ## Rollback / recovery
 
@@ -196,9 +196,9 @@ Disable a connector if terms change, costs appear, rate limits are exceeded, or 
 
 ## Progress
 
-- Research, crawler constraints, source candidate table, and gate definition were prepared on 2026-09-30.
-- No crawler, source connector, application code, dependency, or test was implemented.
-- This workspace is not currently a Git repository, so no branch, commit, or Git checkpoint exists.
+- Research, crawler constraints, candidate table, and gate definition were initially prepared on 2026-09-30.
+- Official feed documentation was revisited on 2026-09-30. Jobicy, Remote OK, Remote First Jobs, and Startup Jobs RSS/API paths are the initial private-app feed set with attribution/link/refresh conditions recorded in `source-discovery-and-crawl-review.md`.
+- Application, connector, and validation work is tracked in [PLAN-002](PLAN-002-local-first-job-search-app.md); no runtime source validation has been performed yet.
 
 ## Implementation discoveries / decisions
 

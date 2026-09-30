@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}My profile · Clue AI{% endblock %}
+{% block eyebrow %}YOUR EXPERIENCE{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">STEP 01 · YOUR STORY, YOUR WORDS</span>
+    <h1>Make your experience<br><em>easy to search.</em></h1>
+    <p>Everything stays on this device. Clue never sends your original CV file to a job source or to TypeSafe Jev.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>01</span><i>✳</i></div>
+</section>
+
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+
+<section class="panel upload-panel">
+  <div class="panel-header">
+    <div><span class="kicker kicker-muted">OPTIONAL · PDF OR DOCX</span><h2>{% if pending_id %}Your CV is ready to review{% else %}Start with your CV{% endif %}</h2></div>
+    {% if profile.cv_filename %}<span class="file-state"><span aria-hidden="true">✓</span> {{ profile.cv_filename }}</span>{% endif %}
+  </div>
+  {% if not pending_id %}
+    <p class="panel-muted">Text extraction happens locally. Scanned PDFs need OCR; Clue does not upload them to an OCR service.</p>
+    <form class="upload-form" action="/profile/extract" method="post" enctype="multipart/form-data">
+      <label class="file-picker" for="cv-file">
+        <span class="file-picker-icon" aria-hidden="true">↥</span>
+        <span><b>Choose your CV</b><small>PDF or DOCX · up to 12 MB</small></span>
+        <input id="cv-file" type="file" name="cv_file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+      </label>
+      <button class="button button-dark" type="submit">Read CV locally <span aria-hidden="true">→</span></button>
+    </form>
+    {% if profile.cv_filename %}
+      <form class="inline-form remove-cv-form" action="/profile/remove-cv" method="post">
+        <button class="quiet-button" type="submit">Remove stored CV and extracted text</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <div class="alert alert-soft"><b>Review before saving.</b> These sections are suggestions from your document. Clue does not send them to Jev unless you enable Jev in Settings and choose to score a search.</div>
+    <div class="upload-file-name"><span class="file-state"><span aria-hidden="true">✓</span> {{ pending_name }}</span><a href="/profile">Cancel this review</a></div>
+  {% endif %}
+</section>
+
+<section class="panel profile-editor-panel">
+  <div class="panel-header">
+    <div><span class="kicker kicker-muted">EDITABLE PROFILE</span><h2>Keep the details that matter</h2></div>
+    <span class="mini-badge">Only you can edit this</span>
+  </div>
+  <form action="/profile/save" method="post" class="profile-form">
+    <input type="hidden" name="pending_id" value="{{ pending_id }}">
+    {% if pending_id %}<input type="hidden" name="cv_filename" value="{{ pending_name }}">{% endif %}
+    <div class="form-grid">
+      <label class="field field-wide">
+        <span>Professional summary</span>
+        <small>A short description of your strengths and the work you want to do.</small>
+        <textarea name="summary" rows="4" maxlength="2500" placeholder="For example: Product designer focused on accessible, data-informed experiences.">{{ suggestions.get('summary', profile.summary) }}</textarea>
+      </label>
+      <label class="field">
+        <span>Target roles</span>
+        <small>Separate a few job titles with commas.</small>
+        <textarea name="target_roles" rows="3" maxlength="2000" placeholder="Product designer, UX researcher">{{ suggestions.get('target_roles', profile.target_roles) }}</textarea>
+      </label>
+      <label class="field">
+        <span>Skills</span>
+        <small>Tools, methods, and areas you know well.</small>
+        <textarea name="skills" rows="3" maxlength="8000" placeholder="Figma, user research, design systems">{{ suggestions.get('skills', profile.skills) }}</textarea>
+      </label>
+      <label class="field field-wide">
+        <span>Relevant experience</span>
+        <small>Keep examples that help you compare responsibilities and seniority.</small>
+        <textarea name="experience" rows="5" maxlength="8000" placeholder="Product design work, research projects, leadership, impact…">{{ suggestions.get('experience', profile.experience) }}</textarea>
+      </label>
+      <label class="field">
+        <span>Education and training <i>optional</i></span>
+        <textarea name="education" rows="3" maxlength="4000">{{ suggestions.get('education', profile.education) }}</textarea>
+      </label>
+      <label class="field">
+        <span>Languages <i>optional</i></span>
+        <textarea name="languages" rows="3" maxlength="2000" placeholder="Italian (native), English (C1)">{{ suggestions.get('languages', profile.languages) }}</textarea>
+      </label>
+      <label class="field">
+        <span>Language of these profile details</span>
+        <select name="profile_language">
+          <option value="unknown" {% if profile.profile_language == 'unknown' %}selected{% endif %}>Not sure / mixed</option>
+          <option value="en" {% if profile.profile_language == 'en' %}selected{% endif %}>English</option>
+          <option value="it" {% if profile.profile_language == 'it' %}selected{% endif %}>Italian</option>
+          <option value="other" {% if profile.profile_language == 'other' %}selected{% endif %}>Another language</option>
+        </select>
+        <small>Jev scoring is currently limited to English profile text and listings.</small>
+      </label>
+      <label class="field">
+        <span>Countries where you can work</span>
+        <small>Optional local reference. Clue does not determine legal work eligibility from this list.</small>
+        <input name="work_authorized_countries" maxlength="500" value="{{ profile.work_authorized_countries }}" placeholder="Italy, EU">
+      </label>
+      <label class="field">
+        <span>Will you need sponsorship?</span>
+        <select name="requires_sponsorship">
+          <option value="unknown" {% if profile.requires_sponsorship == 'unknown' %}selected{% endif %}>Not set</option>
+          <option value="no" {% if profile.requires_sponsorship == 'no' %}selected{% endif %}>No</option>
+          <option value="yes" {% if profile.requires_sponsorship == 'yes' %}selected{% endif %}>Yes</option>
+        </select>
+        <small>This is kept local and is not sent to Jev.</small>
+      </label>
+    </div>
+    {% if pending_id and pending_text %}
+      <details class="extracted-review">
+        <summary>Review the extracted text from {{ pending_name }}</summary>
+        <pre>{{ pending_text }}</pre>
+      </details>
+    {% endif %}
+    <div class="form-end">
+      <span class="tiny-note">Saving confirms you reviewed and edited these profile facts.</span>
+      <button class="button button-dark" type="submit">Save my profile <span aria-hidden="true">→</span></button>
+    </div>
+  </form>
+</section>
+
+<section class="privacy-inline">
+  <span class="privacy-inline-icon" aria-hidden="true">⌂</span>
+  <div><b>Your CV remains yours.</b><p>Profile text and the original file are stored inside the ignored local <code>.data</code> folder. You can remove the file here or erase all local job-search data in Settings.</p></div>
+  <a href="/settings">Data controls <span aria-hidden="true">→</span></a>
+</section>
+{% endblock %}

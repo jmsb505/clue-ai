@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Settings · Clue AI{% endblock %}
+{% block eyebrow %}YOUR LOCAL CONTROLS{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">YOU ARE IN CONTROL</span>
+    <h1>Simple settings.<br><em>Clear boundaries.</em></h1>
+    <p>Clue runs on your computer. The only planned paid service is TypeSafe Jev, and it is never called during a regular search.</p>
+  </div>
+  <div class="intro-mark intro-mark-settings" aria-hidden="true"><span>⚙</span><i>●</i></div>
+</section>
+
+<section class="settings-grid">
+  <article class="panel setting-panel setting-panel-wide">
+    <div class="setting-heading"><span class="setting-icon icon-blue" aria-hidden="true">✳</span><div><span class="kicker kicker-muted">OPTIONAL EXTERNAL FIT REVIEW</span><h2>TypeSafe Jev</h2></div></div>
+    <div class="key-status">
+      <span class="status-light {% if jev_key_configured %}status-light-on{% endif %}"></span>
+      <span><b>{% if jev_key_configured %}API key found in local settings{% else %}API key not configured{% endif %}</b><small>The key value is never shown in the interface.</small></span>
+      <span class="state-pill {% if jev_key_configured %}state-approved{% else %}state-review{% endif %}">{% if jev_key_configured %}Ready when you ask{% else %}No Jev calls{% endif %}</span>
+    </div>
+    {% if not jev_key_configured %}
+      <div class="key-setup">
+        <div><b>When you're ready</b><p>Open the local <code>.env</code> file in the project folder, add your API key after <code>TYPESAFE_API_KEY=</code>, save, then restart Clue.</p></div>
+        <pre>TYPESAFE_API_KEY=your_key_here</pre>
+      </div>
+    {% endif %}
+    <div class="data-disclosure">
+      <h3>What gets sent if you enable Jev</h3>
+      <p>When you choose “Score with Jev”, Clue sends reviewed profile fields (summary, target roles, skills, experience, education, and languages), the optional preferences entered for that search, and selected listing details (title, company, description, and employment type). It removes email addresses, phone numbers, and web links from profile text; it does not send the original CV file, work authorization, or source URL.</p>
+      <p>Work history and skills can still identify you. TypeSafe processes the request outside this device. Review its current terms, privacy policy, data processing terms, retention, and billing settings before enabling real profile data.</p>
+      <p>Jev scoring is currently limited to English profile details and listings that Clue can confidently identify as English. Other languages remain visible without a Jev score.</p>
+      <div class="official-links">
+        <a href="https://docs.typesafe.ai/legal" target="_blank" rel="noreferrer noopener">TypeSafe legal information <span aria-hidden="true">↗</span></a>
+        <a href="https://docs.typesafe.ai/models" target="_blank" rel="noreferrer noopener">Jev model and usage details <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+    <div class="cost-guard">
+      <div><span class="kicker kicker-muted">ROLLING 30-DAY RESERVE</span><b>{{ "%.4f"|format(usage.used_usd) }} <small>USD used or reserved</small></b></div>
+      <div class="budget-track" role="img" aria-label="{{ usage.used_usd|round(4) }} USD of {{ usage.budget_usd|round(2) }} USD reserved">
+        {% for segment in range(10) %}<i class="{% if usage.budget_usd and usage.used_usd / usage.budget_usd > segment / 10 %}segment-used{% endif %}"></i>{% endfor %}
+      </div>
+      <div class="budget-labels"><span>{{ "%.2f"|format(usage.remaining_usd) }} USD remaining</span><span>{{ "%.2f"|format(usage.budget_usd) }} USD / 30 days</span></div>
+      <p>TypeSafe input-token reservations use a conservative 80,000-token allowance per request. Timeouts keep their reserve in case a request was processed. Keep provider auto-refills disabled; the app cannot cap charges from other uses of the same key.</p>
+    </div>
+    <form action="/settings/jev-consent" method="post" class="consent-form">
+      <label class="check-field consent-field">
+        <input type="checkbox" name="agree" value="on" {% if jev_consented %}checked{% endif %}>
+        <span class="check-custom" aria-hidden="true"></span>
+        <span><b>{% if jev_consented %}Jev scoring is enabled{% else %}Enable Jev scoring for listings I explicitly select{% endif %}</b><small>I have reviewed the data disclosure and TypeSafe terms above. I understand profile facts and listing details leave this device only after I choose to score a search.</small></span>
+      </label>
+      <button class="button button-outline" type="submit">{% if jev_consented %}Save consent setting{% else %}Enable Jev scoring{% endif %} <span aria-hidden="true">→</span></button>
+    </form>
+  </article>
+
+  <article class="panel setting-panel">
+    <div class="setting-heading"><span class="setting-icon icon-lime" aria-hidden="true">⌂</span><div><span class="kicker kicker-muted">LOCAL STORAGE</span><h2>Your files</h2></div></div>
+    <p>Profile, original CV, job cache, source settings, and results live under <code>.data/</code> in this project. They are not synced to a Clue account.</p>
+    <ul class="setting-list">
+      <li><span>Original CV</span><b>On this device</b></li>
+      <li><span>Profile and search history</span><b>On this device</b></li>
+      <li><span>Listings and Jev scores</span><b>On this device</b></li>
+      <li><span>Analytics and trackers</span><b>None</b></li>
+    </ul>
+    <a class="text-link" href="/profile">Review or remove your CV <span aria-hidden="true">→</span></a>
+  </article>
+</section>
+
+<section class="panel delete-panel">
+  <div class="delete-copy">
+    <span class="kicker">A CLEAN START</span><h2>Delete local job-search data</h2>
+    <p>Removes your saved CV and profile, search runs, preferences, indexed listings, saves, fit scores, Jev usage history, and owner-added source definitions from this device. The four built-in public source definitions remain.</p>
+  </div>
+  <form action="/data/delete" method="post" class="delete-form">
+    <label class="field"><span>Type DELETE to confirm</span><input name="confirmation" autocomplete="off" required pattern="DELETE" placeholder="DELETE"></label>
+    <button class="button button-danger" type="submit">Delete local data</button>
+  </form>
+</section>
+{% endblock %}

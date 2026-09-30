@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Search results · Clue AI{% endblock %}
+{% block eyebrow %}YOUR OPEN-ROLE SHORTLIST{% endblock %}
+{% block content %}
+<section class="results-heading">
+  <div>
+    <a class="back-link" href="/search"><span aria-hidden="true">←</span> Edit search</a>
+    <span class="kicker kicker-muted">YOUR SEARCH · {{ run.created_at[:10] }}</span>
+    <h1>Roles worth<br><em>a closer look.</em></h1>
+    <p>{{ run.message }}</p>
+  </div>
+  <div class="results-count-card">
+    <span class="count-number">{{ jobs|length }}</span>
+    <span>matching listings</span>
+    <small>{{ run.found_count }} records fetched in this run</small>
+  </div>
+</section>
+
+{% if run.status in ['queued', 'running', 'scoring'] %}
+  <section class="progress-panel" role="status" aria-live="polite">
+    <span class="progress-mark" aria-hidden="true">✳</span>
+    <div><b>Working on your search</b><p class="progress-message">{{ run.message }}</p></div>
+    <span class="progress-spinner" aria-hidden="true"></span>
+  </section>
+{% endif %}
+
+{% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
+
+<details class="coverage-panel" {% if run.status == 'complete' %}open{% endif %}>
+  <summary>
+    <span><span class="coverage-mark" aria-hidden="true">⌁</span><b>Search coverage</b></span>
+    <span class="coverage-summary">{{ run.checked_sources|length }} source notes <span aria-hidden="true">⌄</span></span>
+  </summary>
+  <div class="coverage-content">
+    {% if run.checked_sources %}
+      <ul class="coverage-list">
+        {% for item in run.checked_sources %}<li><span class="coverage-dot"></span>{{ item }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="panel-muted">Coverage details will appear as approved sources are checked.</p>
+    {% endif %}
+    <p class="tiny-note">Results come from the approved sources listed in your workspace. Coverage is not internet-wide; a listing's publisher remains the authority on whether it is open.</p>
+    <a class="text-link" href="/sources">Review source status <span aria-hidden="true">→</span></a>
+  </div>
+</details>
+
+<section class="results-toolbar">
+  <div><span class="kicker kicker-muted">THE SHORTLIST</span><h2>{{ jobs|length }} roles to explore</h2></div>
+  <div class="results-actions">
+    {% if jobs and run.status == 'complete' %}
+      {% if jev_key_configured and jev_consented %}
+        <form action="/searches/{{ run.id }}/score" method="post">
+          <button class="button button-dark" type="submit">Score with Jev <span aria-hidden="true">✳</span></button>
+        </form>
+      {% elif not jev_key_configured %}
+        <a class="button button-outline" href="/settings">Set up Jev <span aria-hidden="true">→</span></a>
+      {% else %}
+        <a class="button button-outline" href="/settings">Review Jev privacy settings <span aria-hidden="true">→</span></a>
+      {% endif %}
+    {% endif %}
+    <a class="text-link" href="/saved">Saved roles <span aria-hidden="true">→</span></a>
+  </div>
+</section>
+
+{% if run.scored_count %}
+  <div class="scoring-summary"><span aria-hidden="true">✳</span> {{ run.scored_count }} listings scored with Jev. Fit signals summarize evidence in the supplied profile and listing; they are not hiring probabilities. <small>{{ usage.used_usd|round(4) }} USD / {{ usage.budget_usd|round(2) }} USD app limit over 30 days</small></div>
+{% endif %}
+
+{% if not jobs and run.status == 'complete' %}
+  <section class="empty-state panel">
+    <span class="empty-illustration" aria-hidden="true">⌕</span>
+    <span class="kicker kicker-muted">NOT A DEAD END</span>
+    <h2>No roles matched this time.</h2>
+    <p>Try a broader title, include uncertain location details, or make a must-have optional. Your search history stays here.</p>
+    <a class="button button-dark" href="/search">Adjust the search <span aria-hidden="true">→</span></a>
+  </section>
+{% endif %}
+
+<section class="job-list" aria-label="Job listings">
+  {% for job in jobs %}
+    <article class="job-card">
+      <div class="job-card-main">
+        <div class="job-card-heading">
+          <div class="company-avatar" aria-hidden="true">{{ (job.company or '?')[0]|upper }}</div>
+          <div class="job-title-group">
+            <h3>{{ job.title }}</h3>
+            <p>{{ job.company or 'Company not listed' }} <span class="dot-separator">·</span> {{ job.location_raw or 'Location not specified' }}</p>
+          </div>
+          {% if job.combined_score is not none %}
+            <div class="fit-indicator">
+              <span class="fit-number">{{ "%.2f"|format(job.combined_score) }}</span>
+              <small>Jev fit<br>signal</small>
+            </div>
+          {% else %}
+            <div class="fit-indicator fit-unscored">
+              <span class="fit-symbol">—</span>
+              <small>Not<br>evaluated</small>
+            </div>
+          {% endif %}
+        </div>
+        <div class="job-tags">
+          {% if job.workplace_type == 'remote' %}<span class="tag tag-teal">Remote</span>
+          {% elif job.workplace_type == 'hybrid' %}<span class="tag">Hybrid</span>
+          {% elif job.workplace_type == 'onsite' %}<span class="tag">On-site</span>
+          {% else %}<span class="tag tag-muted">Workplace not stated</span>{% endif %}
+          {% if job.employment_type and job.employment_type != 'unknown' %}<span class="tag">{{ job.employment_type|title }}</span>{% endif %}
+          {% if job.salary_min or job.salary_max %}
+            <span class="tag tag-salary">
+              {% if job.salary_min and job.salary_max %}
+                {{ job.salary_currency }} {{ job.salary_min|int }}–{{ job.salary_max|int }}{% if job.salary_period %} / {{ job.salary_period }}{% endif %}
+              {% elif job.salary_min %}From {{ job.salary_currency }} {{ job.salary_min|int }}{% if job.salary_period %} / {{ job.salary_period }}{% endif %}
+              {% else %}Up to {{ job.salary_currency }} {{ job.salary_max|int }}{% if job.salary_period %} / {{ job.salary_period }}{% endif %}{% endif %}
+            </span>
+          {% endif %}
+          {% if job.eligibility_status == 'eligible' %}
+            <span class="tag tag-green">Location evidence found</span>
+          {% elif job.eligibility_status == 'not_eligible' %}
+            <span class="tag tag-warning">Location excludes your search</span>
+          {% elif job.eligibility_status == 'needs_verification' %}
+            <span class="tag tag-amber">Verify work location</span>
+          {% else %}
+            <span class="tag tag-muted">Location unclear</span>
+          {% endif %}
+          {% if job.freshness_status == 'recent' %}<span class="tag tag-green">Checked within 24 hours</span>
+          {% elif job.freshness_age_days is not none %}<span class="tag tag-warning">Last checked {{ job.freshness_age_days }} days ago</span>
+          {% else %}<span class="tag tag-muted">Check date unknown</span>{% endif %}
+        </div>
+        {% if job.eligibility_evidence %}
+          <p class="eligibility-evidence"><b>Location note:</b> {{ job.eligibility_evidence }}</p>
+        {% endif %}
+        {% if job.score_reason %}
+          <p class="fit-reason">{{ job.score_reason }}</p>
+        {% endif %}
+        {% if job.evidence %}
+          <ul class="evidence-list">{% for line in job.evidence %}<li>{{ line }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if job.dimensions %}
+          <details class="fit-breakdown">
+            <summary>How Jev compared this role <span>{% if job.confidence is not none %}signal confidence {{ "%.2f"|format(job.confidence) }}{% endif %}</span></summary>
+            <div class="dimension-grid">
+              {% for key, dimension in job.dimensions.items() %}
+                <div><span>{{ key|replace('_', ' ')|title }}</span><b>{% if dimension.score is not none %}{{ "%.2f"|format(dimension.score) }}{% else %}Not enough evidence{% endif %}</b></div>
+              {% endfor %}
+            </div>
+            <p>Scores summarize comparison evidence on a 0–1 scale. Confidence is the model's confidence in its response, not confidence of getting hired.</p>
+          </details>
+        {% endif %}
+        <details class="job-description">
+          <summary>Read listing details</summary>
+          <div class="description-copy">{{ job.description or 'The source did not provide a description.' }}</div>
+        </details>
+      </div>
+      <div class="job-card-footer">
+        <div class="source-trail">
+          <span class="source-trail-mark" aria-hidden="true">⌁</span>
+          <span class="source-trail-links">
+            {% for source in job.sources %}
+              <a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.name }}</a>{% if not loop.last %}<span aria-hidden="true"> · </span>{% endif %}
+            {% endfor %}
+          </span>
+          <span class="source-trail-meta">
+            {% if job.posted_at %}Posted {{ job.posted_at[:10] }} · {% endif %}
+            Checked {{ job.last_checked_at[:10] if job.last_checked_at else 'date unknown' }}
+          </span>
+        </div>
+        <div class="job-actions">
+          <form action="/jobs/{{ job.id }}/save" method="post">
+            <input type="hidden" name="return_to" value="/searches/{{ run.id }}">
+            <button class="quiet-button {% if job.saved %}is-saved{% endif %}" type="submit" aria-label="{% if job.saved %}Saved{% else %}Save{% endif %} {{ job.title }}">
+              <span aria-hidden="true">{% if job.saved %}♥{% else %}♡{% endif %}</span>{% if job.saved %}Saved{% else %}Save{% endif %}
+            </button>
+          </form>
+          <form action="/jobs/{{ job.id }}/hide" method="post">
+            <input type="hidden" name="return_to" value="/searches/{{ run.id }}">
+            <button class="quiet-button" type="submit" aria-label="Hide {{ job.title }}">Hide</button>
+          </form>
+        </div>
+      </div>
+    </article>
+  {% endfor %}
+</section>
+
+<script defer src="/static/poll.js"></script>
+{% endblock %}

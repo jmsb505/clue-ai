@@ -8,6 +8,7 @@
 # Local profile and app data
 /user-data/
 /local-data/
+/.data/
 /uploads/
 /storage/
 /cache/
@@ -20,6 +21,7 @@
 venv/
 node_modules/
 __pycache__/
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

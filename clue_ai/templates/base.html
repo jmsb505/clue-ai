@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}Clue AI{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css?v=4">
+  <script src="/static/app.js" defer></script>
+</head>
+<body {% if status_url %}data-status-url="{{ status_url }}"{% endif %}>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="/" aria-label="Clue AI home">
+        <span class="brand-mark" aria-hidden="true">c</span>
+        <span class="brand-name">clue<span>ai</span></span>
+      </a>
+      <p class="rail-label">YOUR SEARCH</p>
+      <nav class="main-nav">
+        <a href="/" class="{% if active_page == 'home' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+        </a>
+        <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">◎</span><span>My profile</span>
+        </a>
+        <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">⌕</span><span>Find roles</span>
+        </a>
+        <a href="/saved" class="{% if active_page == 'saved' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">♡</span><span>Saved roles</span>
+        </a>
+        <a href="/hidden" class="{% if active_page == 'hidden' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">⊘</span><span>Hidden roles</span>
+        </a>
+      </nav>
+      <p class="rail-label rail-label-spaced">WORKSPACE</p>
+      <nav class="main-nav">
+        <a href="/sources" class="{% if active_page == 'sources' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">⌁</span><span>Sources</span>
+        </a>
+        <a href="/settings" class="{% if active_page == 'settings' %}is-active{% endif %}">
+          <span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <a class="privacy-link" href="/privacy">
+        <span class="privacy-dot" aria-hidden="true"></span>
+        <span>Private on this device</span>
+      </a>
+      <div class="sidebar-foot">
+        <span class="version-mark">CLUE / PERSONAL</span>
+        <span class="local-mark"><span aria-hidden="true"></span> Local app</span>
+      </div>
+    </aside>
+    <div class="main-column">
+      <header class="topbar">
+        <span class="topbar-context">{% block eyebrow %}PERSONAL JOB SEARCH{% endblock %}</span>
+        <div class="topbar-right">
+          <span class="connection-indicator"><span aria-hidden="true"></span> On this device</span>
+          {% if jev_key_configured %}
+            <a class="key-chip key-ready" href="/settings"><span aria-hidden="true">●</span> Jev key set</a>
+          {% else %}
+            <a class="key-chip" href="/settings"><span aria-hidden="true">○</span> Jev key needed</a>
+          {% endif %}
+        </div>
+      </header>
+      <main id="main-content" class="content">
+        {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
+        {% block content %}{% endblock %}
+      </main>
+      <footer class="page-footer">
+        <span>Clue AI · Search for yourself. Decide for yourself. No auto-apply.</span>
+        <a href="/privacy">How your data is handled</a>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>

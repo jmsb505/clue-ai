@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+import io
+from datetime import datetime, timezone
+
+import pytest
+from docx import Document
+from pypdf import PdfWriter
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+from clue_ai.domain import SearchCriteria
+from clue_ai.filters import filter_jobs
+from clue_ai.jobs import canonical_url, classify_location, plain_text
+from clue_ai.resume import ResumeError, extract_resume_text, suggest_profile_sections
+
+
+def make_docx(text: str) -> bytes:
+    document = Document()
+    for line in text.splitlines():
+        document.add_paragraph(line)
+    output = io.BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
+def make_pdf(text: str, page_count: int = 1) -> bytes:
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    for _ in range(page_count - 1):
+        writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    font_ref = writer._add_object(font)
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref})}
+    )
+    stream = DecodedStreamObject()
+    escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream.set_data(f"BT /F1 12 Tf 40 700 Td ({escaped}) Tj ET".encode())
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def test_docx_text_is_extracted_for_review_and_section_suggestions(settings):
+    content = make_docx(
+        "SUMMARY\nProduct engineer with experience building reliable applications.\n"
+        "SKILLS\nPython, SQL, APIs, and accessibility.\n"
+        "EXPERIENCE\nBuilt local-first products for distributed teams."
+    )
+
+    text = extract_resume_text("resume.docx", content, settings)
+
+    assert "Product engineer" in text
+    assert suggest_profile_sections(text)["skills"] == "Python, SQL, APIs, and accessibility."
+
+
+def test_pdf_text_is_extracted_locally_and_page_limit_is_enforced(settings):
+    text = "Synthetic candidate profile with selectable text for the local PDF extraction flow."
+
+    extracted = extract_resume_text("resume.pdf", make_pdf(text), settings)
+
+    assert text in extracted
+    page_limited = settings.__class__(
+        data_dir=settings.data_dir,
+        api_key="",
+        model=settings.model,
+        monthly_jev_budget_usd=4.0,
+        max_cv_pages=1,
+    )
+    with pytest.raises(ResumeError, match="up to 1 pages"):
+        extract_resume_text("many-pages.pdf", make_pdf(text, page_count=2), page_limited)
+
+
+def test_resume_rejects_wrong_extension_invalid_file_and_oversize(settings):
+    with pytest.raises(ResumeError, match="PDF or DOCX"):
+        extract_resume_text("resume.txt", b"x" * 80, settings)
+    with pytest.raises(ResumeError, match="not a PDF"):
+        extract_resume_text("resume.pdf", b"not pdf" * 20, settings)
+    small_limit = settings.__class__(
+        data_dir=settings.data_dir,
+        api_key="",
+        model=settings.model,
+        monthly_jev_budget_usd=4.0,
+        max_cv_bytes=20,
+    )
+    with pytest.raises(ResumeError, match="12 MB or smaller"):
+        extract_resume_text("resume.docx", b"x" * 21, small_limit)
+
+
+def test_plain_text_drops_script_and_style_content():
+    assert plain_text("<p>Remote role</p><script>secret()</script><style>.x{}</style>") == "Remote role"
+
+
+@pytest.mark.parametrize(
+    ("location", "description", "expected"),
+    [
+        ("Italy", "Fully remote role", "eligible"),
+        ("Europe", "Fully remote role", "eligible"),
+        ("Remote", "Work from anywhere in the world", "eligible"),
+        ("Remote", "Remote team; location requirements are not listed", "needs_verification"),
+        ("United States only", "Fully remote role", "not_eligible"),
+    ],
+)
+def test_location_classification_requires_explicit_geographic_evidence(
+    location, description, expected
+):
+    status, evidence = classify_location(location, description, "Italy")
+
+    assert status == expected
+    assert evidence
+
+
+def test_canonical_url_removes_tracking_and_rejects_private_targets():
+    assert canonical_url("HTTPS://Jobs.Example.org/role?utm_source=mail&ref=board&id=7#apply") == (
+        "https://jobs.example.org/role?id=7"
+    )
+    assert canonical_url("https://user:pass@jobs.example.org/role") == ""
+    assert canonical_url("http://127.0.0.1/private") == ""
+    assert canonical_url("https://internal.example.local/jobs") == ""
+
+
+def test_hard_filters_keep_explicit_europe_eligibility_and_mark_uncertain_location(settings):
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    common = {
+        "title": "Software Engineer",
+        "company": "Example Labs",
+        "description": "Remote Python role. Build APIs with Python and SQL.",
+        "workplace_type": "remote",
+        "employment_type": "full-time",
+        "posted_at": now,
+        "last_checked_at": now,
+        "salary_min": None,
+        "salary_max": None,
+        "salary_currency": "",
+        "salary_period": "",
+        "visa_sponsorship": "unknown",
+    }
+    eligible = {**common, "id": "eligible", "location_raw": "Europe"}
+    uncertain = {**common, "id": "uncertain", "location_raw": "Remote"}
+    irrelevant = {**common, "id": "irrelevant", "title": "Designer", "location_raw": "Italy"}
+
+    results = filter_jobs(
+        [eligible, uncertain, irrelevant],
+        SearchCriteria(roles="Software Engineer", must_have="Python", include_unknown_location=True),
+    )
+
+    assert [item["id"] for item in results] == ["eligible", "uncertain"]
+    assert results[0]["eligibility_status"] == "eligible"
+    assert results[0]["eligibility_evidence"]
+    assert results[1]["eligibility_status"] == "needs_verification"
+    assert {item["freshness_status"] for item in results} == {"recent"}
+
+
+def test_unknown_location_can_be_excluded_by_explicit_user_choice():
+    item = {
+        "id": "uncertain",
+        "title": "Software Engineer",
+        "company": "Example Labs",
+        "description": "Remote software engineering position.",
+        "location_raw": "Remote",
+        "workplace_type": "remote",
+        "posted_at": "",
+        "last_checked_at": "",
+    }
+
+    assert filter_jobs([item], SearchCriteria(include_unknown_location=False)) == []
