@@ -1,9 +1,9 @@
 # Project documentation
 
-**Status:** M1 pushed and remote-verified on `main` (`00e8398d8a0d73082bb3d9217633f169b92a339c`)
+**Status:** M1 pushed and remote-verified; M2 synthetic Jev acceptance validated locally, direct push pending
 **Research snapshot:** 2026-09-30
 
-This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. PLAN-002's M1 offline validation has passed. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
+This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. M1 is pushed to `main`; M2's single synthetic Jev request and local failure/budget checks have passed, with its evidence awaiting a separate push. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
 
 ## Authority map
 
@@ -17,7 +17,7 @@ This repository contains the local personal job-search app, its product definiti
 | Work order and implementation milestone | [Roadmap](roadmap.md), [PLAN-001](plans/PLAN-001-free-local-source-discovery.md), and [PLAN-002](plans/PLAN-002-local-first-job-search-app.md) |
 | Decision history | [Decisions](decisions/) |
 
-The product definition records owner requirements separately from local-use defaults. Research reviews are dated external evidence; source conditions remain per-provider and per-geography. The definition gate passes for a single-user local build, while TypeSafe terms, source behavior, and ranking evidence still need checks before the owner's real CV is used. ADR 0004 records the local-only scope.
+The product definition records owner requirements separately from local-use defaults. Research reviews are dated external evidence; source conditions remain per-provider and per-geography. The definition gate passes for a single-user local build. A synthetic Jev API request has verified the technical integration, while provider terms, source behavior, and ranking evidence remain open before the owner's real CV is used. ADR 0004 records the local-only scope.
 
 ## Status labels
 

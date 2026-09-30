@@ -31,7 +31,7 @@ The initial feeds do not cover the whole internet. Open the original listing and
 
 ## Local setup
 
-The `.env` file, `.data/`, CV uploads, databases, and development caches are ignored by Git. Do not commit your key, CV, or `.data/` folder. Deletion cannot remove data already processed by TypeSafe. M1's automated validation uses local fixtures and a mocked Jev client; the one live integration check is a separately authorized synthetic request in M2. No real CV is used for that check.
+The `.env` file, `.data/`, CV uploads, databases, and development caches are ignored by Git. Do not commit your key, CV, or `.data/` folder. Deletion cannot remove data already processed by TypeSafe. M1 automated validation used local fixtures and a mocked Jev client. M2 then made one separately authorized live request with synthetic profile and job facts only: Jev 1.13.0 returned rubric `fit-v1.1.0`, used 1,574 input tokens, and the local ledger estimated `$0.00006611`. No real CV or live job-source data was sent.
 
 ## Project documents
 

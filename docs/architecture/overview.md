@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** M1 IMPLEMENTED AND LOCALLY VALIDATED — synthetic live Jev acceptance pending
+**Status:** M1 pushed to `main`; synthetic live Jev acceptance validated — provider terms, source audit, and ranking benchmark remain
 **Updated:** 2026-09-30
 
 ## Owner-set cost ceiling
@@ -81,7 +81,7 @@ The first increment uses FastAPI/Uvicorn on `127.0.0.1`, Jinja templates, semant
 
 Use TypeSafe's official Python SDK for `/v1/systemone`, with Jev pinned to `jev-1.13.0`. Configure `RetryPolicy(max_retries=0)`. Before each request, reserve an 80,000-token allowance at the current documented input price, then settle successful responses to returned `usage.input_tokens`; ambiguous failures retain the reservation. The app enforces a $4.00 inference cap over a rolling 30-day period, leaving $1.00 of the owner's $5 ceiling as a buffer. See [ADR 0006](../decisions/0006-jev-scoring-and-budget-guard.md).
 
-The local implementation includes profile/CV review, source management, feed/ATS/Scrapling adapters, SQLite persistence, deterministic search, Jev scoring controls, results, saved/hidden views, and local deletion. M1 passed offline tests, lint, byte-compilation, localhost startup, and manual keyboard/responsive review. One synthetic live Jev call remains in M2; real-CV use remains gated on the TypeSafe terms and privacy review. See [PLAN-002](../plans/PLAN-002-local-first-job-search-app.md) for evidence and remaining gates.
+The local implementation includes profile/CV review, source management, feed/ATS/Scrapling adapters, SQLite persistence, deterministic search, Jev scoring controls, results, saved/hidden views, and local deletion. M1 passed offline tests, lint, byte-compilation, localhost startup, and manual keyboard/responsive review. M2 verified the Jev path with one synthetic live call; no real CV or live job listing was sent. Real-CV use remains gated on TypeSafe terms, local privacy controls, source review, and ranking evidence. See [PLAN-002](../plans/PLAN-002-local-first-job-search-app.md) for evidence and remaining gates.
 
 ## Provider and deployment choices still open
 

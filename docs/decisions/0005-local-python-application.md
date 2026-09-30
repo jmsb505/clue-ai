@@ -34,7 +34,7 @@ The product is a single-user desktop-local job search. Scraping, PDF/DOCX extrac
 
 ## Implementation state
 
-The Python package, localhost server, SQLite schema/repository, local CV extraction, Jinja views, project-owned CSS/JavaScript, and ignored `.env` are implemented and passed M1 offline validation. The owner-configured key is local and is not part of the repository. Synthetic-only live Jev acceptance remains in M2.
+The Python package, localhost server, SQLite schema/repository, local CV extraction, Jinja views, project-owned CSS/JavaScript, and ignored `.env` are implemented and passed M1 offline validation. The owner-configured key is local and is not part of the repository. M2's single live Jev request used synthetic data only; no CV or job-source data was sent.
 
 ## Reconsideration
 

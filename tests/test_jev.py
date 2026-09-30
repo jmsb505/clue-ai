@@ -2,12 +2,19 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
 from conftest import make_job
 
 from clue_ai.database import save_search_run, set_jev_consent
 from clue_ai.domain import CandidateProfile, SearchCriteria
 from clue_ai.jev import _build_request_state, _parse_choice_answer, score_run
-from clue_ai.repository import get_run_results, save_jobs, save_run_results
+from clue_ai.repository import (
+    connect,
+    get_run_results,
+    reserve_jev_budget,
+    save_jobs,
+    save_run_results,
+)
 
 
 def test_choice_answers_are_bounded_and_unknown_is_not_a_zero_score():
@@ -151,3 +158,135 @@ def test_synthetic_jev_call_uses_typed_questions_no_retries_and_records_fit(
     assert "RAW CV DATA IS NOT INCLUDED" not in repr(captured["state"])
     assert captured["client_kwargs"]["retry_max_retries"] == 0
     assert len(captured["questions"]) == 4
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_reason", "expected_ledger_status"),
+    [
+        ("invalid_key", "rejected the configured key", "not_charged"),
+        ("rate_limit", "rate limit reached", "not_charged"),
+        ("overload", "HTTP 529", "reserved"),
+        ("timeout", "timed out or lost its connection", "reserved"),
+        ("missing_usage", "cost reserve was retained", "reserved"),
+    ],
+)
+def test_jev_failures_remain_unscored_and_are_not_retried(
+    settings, database, failure, expected_reason, expected_ledger_status
+):
+    settings = settings.__class__(
+        data_dir=settings.data_dir,
+        api_key="synthetic-test-key",
+        model=settings.model,
+        monthly_jev_budget_usd=4.0,
+    )
+    save_search_run(database, f"run-{failure}", SearchCriteria())
+    save_jobs(database, [make_job()])
+    from clue_ai.repository import all_active_jobs
+
+    save_run_results(database, f"run-{failure}", all_active_jobs(database))
+    set_jev_consent(database, True)
+    calls = []
+    client_kwargs = {}
+
+    class SyntheticAPIError(Exception):
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def system_one(self, *, state, questions):
+            calls.append((state, questions))
+            if failure == "invalid_key":
+                raise SyntheticAPIError(401)
+            if failure == "rate_limit":
+                raise SyntheticAPIError(429)
+            if failure == "overload":
+                raise SyntheticAPIError(529)
+            if failure == "timeout":
+                raise TimeoutError("synthetic timeout; details must not be surfaced")
+            return SimpleNamespace(usage=None, choices={})
+
+    def client_factory(**kwargs):
+        client_kwargs.update(kwargs)
+        return FakeClient()
+
+    result = score_run(
+        database,
+        settings,
+        f"run-{failure}",
+        get_run_results(database, f"run-{failure}"),
+        CandidateProfile(
+            target_roles="Software Engineer",
+            skills="Python, SQL",
+            experience="Built production APIs",
+            profile_language="en",
+        ),
+        SearchCriteria(),
+        client_factory=client_factory,
+    )
+
+    scored = get_run_results(database, f"run-{failure}")[0]
+    with connect(database) as db:
+        usage = db.execute(
+            "SELECT status FROM jev_usage ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+
+    assert result.scored_count == 0
+    assert result.unscored_count == 1
+    assert scored["score_state"] == "unscored"
+    assert expected_reason in scored["score_reason"]
+    assert "details must not be surfaced" not in scored["score_reason"]
+    assert len(calls) == 1
+    assert client_kwargs["retry_max_retries"] == 0
+    assert usage["status"] == expected_ledger_status
+
+
+def test_jev_cap_exhaustion_leaves_listing_unscored_without_creating_client(settings, database):
+    cap = 0.00336
+    settings = settings.__class__(
+        data_dir=settings.data_dir,
+        api_key="synthetic-test-key",
+        model=settings.model,
+        monthly_jev_budget_usd=cap,
+    )
+    run_id = "run-cap-exhausted"
+    save_search_run(database, run_id, SearchCriteria())
+    save_jobs(database, [make_job()])
+    from clue_ai.repository import all_active_jobs
+
+    save_run_results(database, run_id, all_active_jobs(database))
+    set_jev_consent(database, True)
+    reserved, remaining = reserve_jev_budget(
+        database, run_id, settings.model, 80_000, 0.042, cap
+    )
+    assert reserved is not None
+    assert remaining == 0
+
+    def forbidden_client(**_kwargs):
+        raise AssertionError("Cap exhaustion must stop before creating the API client")
+
+    result = score_run(
+        database,
+        settings,
+        run_id,
+        get_run_results(database, run_id),
+        CandidateProfile(
+            target_roles="Software Engineer",
+            skills="Python, SQL",
+            experience="Built production APIs",
+            profile_language="en",
+        ),
+        SearchCriteria(),
+        client_factory=forbidden_client,
+    )
+
+    scored = get_run_results(database, run_id)[0]
+    assert result.scored_count == 0
+    assert result.unscored_count == 1
+    assert scored["score_state"] == "unscored"
+    assert "Monthly Jev limit reached" in scored["score_reason"]

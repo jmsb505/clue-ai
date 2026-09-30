@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** M1 IMPLEMENTED AND LOCALLY VALIDATED — M2 synthetic Jev acceptance is next
+**Status:** M1 pushed to `main`; M2 synthetic Jev acceptance validated — source and ranking evidence remain
 **Updated:** 2026-09-30
 
 ## Definition gate
@@ -33,7 +33,7 @@ Proceed after TypeSafe and source conditions in [the definition gate](readiness/
 
 ## Current implementation state
 
-PLAN-002's M1 implementation is locally validated: the localhost FastAPI/Jinja app, local profile and CV review, SQLite repository, four free feed connectors, approved-only ATS and Scrapling paths, deterministic filters, Jev adapter and reserve, and search/source/settings views. The 36-test offline suite, Ruff, byte-compilation, no-key startup, and keyboard/responsive review passed. One synthetic live Jev acceptance request remains for M2; no real CV is in scope.
+PLAN-002's M1 implementation is pushed to `main`. The 42-test offline suite, Ruff, byte-compilation, no-key startup, and keyboard/responsive review pass. M2's one synthetic live Jev request returned a score using 1,574 input tokens; the local ledger estimated `$0.00006611`. No real CV or live job-source data was sent. Provider terms, live source audits, and a representative relevance benchmark remain open.
 
 ## Delivery workflow
 

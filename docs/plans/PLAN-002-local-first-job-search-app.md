@@ -1,6 +1,6 @@
 # PLAN-002 — First local job-search application
 
-**Status:** M1 PUSHED AND REMOTE-VERIFIED — M2 synthetic Jev check remains
+**Status:** M1 PUSHED AND REMOTE-VERIFIED — M2 synthetic Jev acceptance validated locally; evidence push pending
 **Created:** 2026-09-30
 **Last updated:** 2026-09-30
 
@@ -16,6 +16,7 @@ The product definition and source research support a local feasibility increment
 
 - `main` contains the product, architecture, source-policy, and research baseline at `617f5c8`; `origin` points to `https://github.com/jmsb505/clue-ai.git`.
 - M1 implementation, documentation, and offline validation were pushed to `main` as `00e8398d8a0d73082bb3d9217633f169b92a339c`; `git ls-remote` confirmed that exact remote head.
+- One authorized live Jev request used only synthetic candidate and job facts. It returned Jev 1.13.0 / `fit-v1.1.0`, 1,574 input tokens, fit score `0.9904`, confidence `0.9475`, and an app-ledger cost estimate of `$0.00006611`. No real CV or live job-source listing was sent.
 - Each later milestone will be validated and pushed directly to `main` before work advances. Required protections/checks will be honored; a remote rejection will be reported without bypass.
 - A local ignored `.env` exists with the owner's TypeSafe key configured; its value has not been displayed or staged. `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder. `.gitignore` excludes `.env`, `.data`, local uploads, databases, virtual environments, and test caches.
 - The selected runtime is FastAPI/Uvicorn, Jinja, Python SQLite, pypdf/python-docx, Scrapling 0.4.15 with its `fetchers` extra, and the TypeSafe SDK. Scrapling's Python dependencies are installed; no browser binaries are used. TypeSafe documents the System One endpoint and Jev model; its legal page links to the account agreement, privacy policy, and DPA. Real-CV use remains gated until those applicable terms are reviewed.
@@ -144,25 +145,25 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 
 - [ ] Review TypeSafe account terms, DPA/privacy, processing location/retention, and credit/refill settings before sending real CV-derived data; synthetic data may be used for technical acceptance.
 - [x] The owner-configured key is present in the ignored `.env` and is untracked.
-- [ ] After M1 offline checks pass, make one synthetic matching request and record usage and score output.
-- [ ] Record actual token usage, cost ledger settlement, score response version/confidence, error handling, and one monthly-cap stop demonstration.
+- [x] After M1 offline checks pass, make one synthetic matching request and record usage and score output.
+- [x] Record token usage, app-ledger cost settlement, score response version/confidence, simulated error handling, and a monthly-cap stop demonstration. The separate TypeSafe account billing conversion remains unverified.
 - [ ] Only after terms and local deletion/key controls are accepted should the owner decide whether to use their real CV.
 
 **Affected areas:** local `.env` (never commit), live Jev client, readiness evidence, and operating instructions.
 
-**Dependencies:** M1 complete; owner-supplied API key; review of provider terms and account billing settings.
+**Dependencies:** M1 complete; owner-supplied API key for synthetic technical validation. TypeSafe terms and account billing review remain prerequisites for real-CV use.
 
 **Acceptance criteria:**
 
-- [ ] Synthetic request returns structured Jev scores and reports the answering version and billed input tokens.
-- [ ] Missing/invalid key, 429/529, timeout, response-shape error, and cap exhaustion produce safe, visible unscored results without fallback model calls.
-- [ ] No personal CV is sent in this milestone.
+- [x] Synthetic request returns structured Jev scores and reports the answering version and input token usage.
+- [x] Invalid key, 429/529, timeout, missing-usage response, and cap exhaustion produce safe, visible unscored results without retry or fallback calls in local tests.
+- [x] No personal CV is sent in this milestone.
 
-**Validation:** One explicitly authorized synthetic live request, plus local ledger verification; no real CV test.
+**Validation:** One explicitly authorized synthetic live request and isolated temporary ledger; local tests cover five provider-failure cases and the pre-client cap stop. Full offline suite: 42 passed, one upstream Starlette/AnyIO deprecation warning; Ruff and byte-compilation passed. No real CV or live source crawl was used.
 
 **Documentation updates:** Record current live API/model evidence, measured costs, and terms gate state in the plan and readiness document.
 
-**Expected Git checkpoint:** no API key, local database, or personal data enters Git. Push M1 first; deliver M2 evidence on `main` as a separate checkpoint. Do not create a branch.
+**Expected Git checkpoint:** no API key, local database, or personal data enters Git. Commit and push M2 evidence directly to `main` as a separate checkpoint; do not create a branch or bypass protections.
 
 ## Final integration validation
 
@@ -181,6 +182,10 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Wire M1 application paths, including local profile/CV review, four default feeds, reviewed ATS/career sources, deterministic filters, Jev controls, results, saved/hidden views, and local deletion.
 - [x] Run M1 validation after wiring is complete: 36 offline tests, Ruff, byte-compilation, localhost health/startup, no-key flow, and manual keyboard/responsive review passed.
 - [x] Commit and push the validated M1 milestone to `main`; `git ls-remote` verified remote SHA `00e8398d8a0d73082bb3d9217633f169b92a339c` before starting M2.
+- [x] Run one live Jev request with synthetic candidate/listing facts only; record model, rubric, input tokens, app-ledger estimate, score, and confidence.
+- [x] Verify synthetic error and exhausted-budget paths locally: no automatic retries/fallbacks, safe unscored results, and no client creation after the cap.
+- [x] Re-run all checks in Conda `gen`: 42 tests passed (one upstream deprecation warning), Ruff passed, and byte-compilation passed.
+- [ ] Commit and push the validated M2 synthetic Jev evidence and tests as a separate checkpoint on `main`.
 
 ## Implementation discoveries / decisions
 
@@ -199,4 +204,5 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - Mocked integration evidence for feeds, ATS/page policy, Jev typed responses, monthly reservations, local persistence and deletion.
 - Manual notes for visible focus, Italy default, reduced-motion rule, and no page overflow at 320/640/651px. Actual 200% browser zoom and full screen-reader review remain open.
 - Updated README, source-of-truth docs, and this plan's progress/acceptance evidence.
-- GitHub `main` push/check evidence before beginning M2.
+- Verified M1 `main` SHA before starting M2: `00e8398d8a0d73082bb3d9217633f169b92a339c`.
+- M2 live-call and offline failure/cap evidence; direct `main` push is pending.

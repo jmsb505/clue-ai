@@ -38,7 +38,7 @@ Jev is the required candidate-to-listing evaluator. Its answers are typed decisi
 
 ## Implementation state
 
-The client, four-dimension rubric (`fit-v1.1.0`), unknown-evidence handling, contact redaction, English-only gate, per-request reservation, 30-day ledger, and explicit score action are implemented. Offline mocked validation passed, including minimized synthetic request state and the no-key path. One synthetic live Jev request remains in M2; no real CV has been or will be used for that check.
+The client, four-dimension rubric (`fit-v1.1.0`), unknown-evidence handling, contact redaction, English-only gate, per-request reservation, 30-day ledger, and explicit score action are implemented. On 2026-09-30, one live request with synthetic candidate and listing facts returned a scored result on Jev 1.13.0: 1,574 input tokens, fit `0.9904`, confidence `0.9475`, and an app-ledger cost estimate of `$0.00006611`. No real CV or live job listing was sent. Offline tests cover invalid-key, rate-limit, 529, timeout, missing-usage, and cap-stop behavior; the latter uses a small synthetic cap to show the call is blocked before creating the client. These checks validate the integration path, not score calibration or provider billing terms.
 
 ## Reconsideration
 
