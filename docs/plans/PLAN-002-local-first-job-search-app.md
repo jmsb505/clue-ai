@@ -177,7 +177,7 @@ After M1 wiring, validate the local end-to-end flow with synthetic files and sou
 
 ## M3 — Local server lifecycle controls
 
-**Status:** Implemented and validated locally; direct-to-main checkpoint pending.
+**Status:** Implemented, validated, and pushed directly to `main` at `f4edf3b5bef05bbea24d8e32791e73b003a4c464`.
 
 **Goal:** Make it easy to inspect, stop, restart, and run the local server only while the owner is actively using it.
 
@@ -192,7 +192,7 @@ After M1 wiring, validate the local end-to-end flow with synthetic files and sou
 
 **Documentation:** README startup and server-control commands updated. No data deletion or background startup behavior was added.
 
-**Git checkpoint:** Push this validated server lifecycle fix directly to `main`, following the owner's standing instruction.
+**Git checkpoint:** Commit `f4edf3b5bef05bbea24d8e32791e73b003a4c464` was pushed to `origin/main`; `git ls-remote` confirmed the same remote SHA.
 
 ## Rollback / recovery
 
