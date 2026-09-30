@@ -1,6 +1,6 @@
 # PLAN-002 — First local job-search application
 
-**Status:** M1 and M2 PUSHED AND REMOTE-VERIFIED on `main`
+**Status:** M1 implementation and M2 synthetic integration are pushed and remote-verified on `main`; manual accessibility and owner/account gates remain open
 **Created:** 2026-09-30
 **Last updated:** 2026-09-30
 
@@ -21,6 +21,7 @@ The product definition and source research support a local feasibility increment
 - Each later milestone will be validated and pushed directly to `main` before work advances. Required protections/checks will be honored; a remote rejection will be reported without bypass.
 - A local ignored `.env` exists with the owner's TypeSafe key configured; its value has not been displayed or staged. `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder. `.gitignore` excludes `.env`, `.data`, local uploads, databases, virtual environments, and test caches.
 - The selected runtime is FastAPI/Uvicorn, Jinja, Python SQLite, pypdf/python-docx, Scrapling 0.4.15 with its `fetchers` extra, and the TypeSafe SDK. Scrapling's Python dependencies are installed; no browser binaries are used. TypeSafe documents the System One endpoint and Jev model; its legal page links to the account agreement, privacy policy, and DPA. Real-CV use remains gated until those applicable terms are reviewed.
+- Current public TypeSafe documents and the M3a evaluation note were reviewed. The official API reference documents the evaluation endpoint but no account billing, credit-balance, or refill-settings API; account-specific facts require the owner's TypeSafe console/Order.
 - Current source review establishes four promising no-key discovery paths: Jobicy public API, Remote OK public JSON/RSS, Remote First Jobs RSS, and Startup Jobs RSS. Each requires source credit and original links; only the documented RSS/public paths are in scope. Company-specific ATS endpoints and career-page crawls remain per-source review items.
 
 ## Desired state
@@ -126,7 +127,8 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 - [x] Deterministic hard constraints run before Jev. Unknown location evidence remains unknown; the UI never treats a generic remote label as Italy eligibility.
 - [x] With no Jev key, results remain visible with “fit not evaluated.” With a key, the SDK uses versioned typed questions, bounded batches, disabled retries, and a monthly reserve that stops before the $4.00 app inference cap.
 - [x] Save/hide/open-source actions work; the delete flow removes CV, profile, searches/preferences, indexed/saved results, and usage history while preserving nonpersonal source definitions.
-- [x] UI has visible keyboard focus, responsive forms/results, understandable empty/error states, and reduced-motion rules without third-party fonts or analytics. Keyboard focus and 320/640/651px layouts were manually inspected; actual 200% browser zoom and full screen-reader review remain unverified.
+- [x] UI has visible keyboard focus, responsive forms/results, understandable empty/error states, and reduced-motion rules without third-party fonts or analytics. Keyboard focus and 320/640/651px layouts were manually inspected.
+- [ ] Complete manual verification at 200% browser zoom and a full screen-reader review of onboarding, profile, search, results, and settings.
 - [x] `.env` remains ignored; `.env.example` contains a blank `TYPESAFE_API_KEY=` placeholder; no key or CV is committed.
 - [x] The offline validation suite passed with synthetic documents, fixtures, and a mocked Jev service. No live Jev/source call occurred during tests.
 
@@ -144,7 +146,8 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 
 **Subtasks:**
 
-- [ ] Review TypeSafe account terms, DPA/privacy, processing location/retention, and credit/refill settings before sending real CV-derived data; synthetic data may be used for technical acceptance.
+- [x] Review current public TypeSafe model, Master Customer Agreement, DPA, and privacy documentation; record data-use, telemetry, retention, and transfer conditions in the M3a evaluation note.
+- [ ] Owner reviews the applicable Order and account-specific credit/refill settings, confirms the all-in $5 limit, and decides whether the public and account-specific terms are acceptable before any real CV-derived data is sent.
 - [x] The owner-configured key is present in the ignored `.env` and is untracked.
 - [x] After M1 offline checks pass, make one synthetic matching request and record usage and score output.
 - [x] Record token usage, app-ledger cost settlement, score response version/confidence, simulated error handling, and a monthly-cap stop demonstration. The separate TypeSafe account billing conversion remains unverified.
@@ -152,7 +155,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 
 **Affected areas:** local `.env` (never commit), live Jev client, readiness evidence, and operating instructions.
 
-**Dependencies:** M1 complete; owner-supplied API key for synthetic technical validation. TypeSafe terms and account billing review remain prerequisites for real-CV use.
+**Dependencies:** M1 implementation complete; owner-supplied API key for synthetic technical validation. The M1 manual accessibility review and M2 owner/account gates remain open for overall readiness.
 
 **Acceptance criteria:**
 
@@ -168,7 +171,7 @@ A browser-based app bound to localhost stores the CV, edited candidate profile, 
 
 ## Final integration validation
 
-After M1 wiring, validate the local end-to-end flow with synthetic files and source/API fixtures, a mocked TypeSafe response, no external network in automated tests, localhost-only listening, and deletion of the isolated temporary data directory. Inspect UI keyboard flow, responsive layout, errors and empty states, source attribution, location evidence, stale/unscored labels, cost reservation, and the Git diff. After M2, validate live Jev only with synthetic data and the owner's configured key. Real-CV use remains a distinct owner choice after TypeSafe terms are reviewed.
+After M1 wiring, validate the local end-to-end flow with synthetic files and source/API fixtures, a mocked TypeSafe response, no external network in automated tests, localhost-only listening, and deletion of the isolated temporary data directory. Inspect UI keyboard flow, responsive layout, errors and empty states, source attribution, location evidence, stale/unscored labels, cost reservation, and the Git diff. The 200% zoom and full screen-reader review remain unverified because the available browser cannot open the running localhost app and no native screen-reader interaction is available in this session. After M2, validate live Jev only with synthetic data and the owner's configured key. Real-CV use remains a distinct owner decision after the applicable TypeSafe terms and local controls are accepted.
 
 ## Rollback / recovery
 
@@ -187,6 +190,9 @@ Keep local databases and uploads under ignored `.data/`; test data is temporary.
 - [x] Verify synthetic error and exhausted-budget paths locally: no automatic retries/fallbacks, safe unscored results, and no client creation after the cap.
 - [x] Re-run all checks in Conda `gen`: 42 tests passed (one upstream deprecation warning), Ruff passed, and byte-compilation passed.
 - [x] Commit and push M2 synthetic Jev evidence and tests as a separate checkpoint on `main`; `git ls-remote` verified `0d5ed33369934ab330f7eca20c28d0d27c5063cf`.
+- [x] Re-check official TypeSafe API docs for an account billing/credit/refill endpoint; none is documented. Do not inspect the authenticated console or undocumented endpoints without the owner.
+- [ ] Complete the actual 200% zoom and full screen-reader review once the app can be opened in a supported local browser/accessibility setup.
+- [ ] Obtain the owner's account-specific TypeSafe spend/refill/Order evidence and real-CV terms decision before sending any personal candidate data.
 
 ## Implementation discoveries / decisions
 
