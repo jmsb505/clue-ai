@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is pushed. PLAN-004 M1 CV-first automated workflow is pushed to `main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`. PLAN-005 M1 local-origin form fix is pushed to `main` at `d2c0a499a62612ad63eece941d0c2289cd6042ee`. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration remains open.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is pushed. PLAN-004 M1 CV-first automated workflow is pushed to `main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`. PLAN-005 M1 local-origin form fix is pushed to `main` at `b3b1bc56843866d0cffd8dc834fd93430956b217`. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration remains open.
 **Updated:** 2026-10-01
 
 ## Owner-set cost ceiling
