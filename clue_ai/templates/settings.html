@@ -6,7 +6,7 @@
   <div>
     <span class="kicker kicker-muted">YOU ARE IN CONTROL</span>
     <h1>Simple settings.<br><em>Clear boundaries.</em></h1>
-    <p>Clue runs on your computer. The only planned paid service is TypeSafe Jev, and it is never called during a regular search.</p>
+    <p>Clue runs on your computer. When enabled, TypeSafe Jev checks eligible matches automatically after a search.</p>
   </div>
   <div class="intro-mark intro-mark-settings" aria-hidden="true"><span>⚙</span><i>●</i></div>
 </section>
@@ -17,7 +17,7 @@
     <div class="key-status">
       <span class="status-light {% if jev_key_configured %}status-light-on{% endif %}"></span>
       <span><b>{% if jev_key_configured %}API key found in local settings{% else %}API key not configured{% endif %}</b><small>The key value is never shown in the interface.</small></span>
-      <span class="state-pill {% if jev_key_configured %}state-approved{% else %}state-review{% endif %}">{% if jev_key_configured %}Ready when you ask{% else %}No Jev calls{% endif %}</span>
+      <span class="state-pill {% if jev_key_configured %}state-approved{% else %}state-review{% endif %}">{% if jev_key_configured %}Ready when enabled{% else %}No Jev calls{% endif %}</span>
     </div>
     {% if not jev_key_configured %}
       <div class="key-setup">
@@ -26,8 +26,8 @@
       </div>
     {% endif %}
     <div class="data-disclosure">
-      <h3>What gets sent if you enable Jev</h3>
-      <p>When you choose “Score with Jev”, Clue sends reviewed profile fields (summary, target roles, skills, experience, education, and languages), the optional preferences entered for that search, and selected listing details (title, company, description, and employment type). It removes email addresses, phone numbers, and web links from profile text; it does not send the original CV file, work authorization, or source URL.</p>
+      <h3>What gets sent when automatic Jev is enabled</h3>
+      <p>After each search, Clue sends parsed profile fields (summary, target roles, skills, experience, education, and languages), the optional preferences entered for that search, and selected listing details (title, company, description, and employment type). It removes email addresses, phone numbers, and web links from profile text; it does not send the original CV file, work authorization, or source URL.</p>
       <p>Work history and skills can still identify you. TypeSafe processes the request outside this device. Clue does not inspect your TypeSafe account terms, billing or refill settings, or other uses of the same key. The local ledger limits Clue's own reservations to the amount shown here; it cannot guarantee account-wide charges.</p>
       <p>Jev scoring is currently limited to English profile details and listings that Clue can confidently identify as English. Other languages remain visible without a Jev score.</p>
       <div class="official-links">
@@ -47,9 +47,9 @@
       <label class="check-field consent-field">
         <input type="checkbox" name="agree" value="on" {% if jev_consented %}checked{% endif %}>
         <span class="check-custom" aria-hidden="true"></span>
-        <span><b>{% if jev_consented %}Jev scoring is enabled{% else %}Enable Jev scoring for listings I explicitly select{% endif %}</b><small>I understand which profile facts and listing details leave this device, and I choose to send them only when I explicitly score a search.</small></span>
+        <span><b>{% if jev_consented %}Automatic Jev scoring is enabled{% else %}Enable automatic Jev scoring after each search{% endif %}</b><small>I understand which profile facts and listing details leave this device. I can turn automatic scoring off here at any time.</small></span>
       </label>
-      <button class="button button-outline" type="submit">{% if jev_consented %}Save consent setting{% else %}Enable Jev scoring{% endif %} <span aria-hidden="true">→</span></button>
+      <button class="button button-outline" type="submit">{% if jev_consented %}Save consent setting{% else %}Enable automatic scoring{% endif %} <span aria-hidden="true">→</span></button>
     </form>
   </article>
 

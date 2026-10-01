@@ -105,6 +105,29 @@ h1, h2, h3, p { margin-top: 0; }
 h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter-spacing: -.07em; }
 .welcome-lede { max-width: 400px; margin-bottom: 25px; color: #586f68; font-size: 13px; line-height: 1.75; }
 .welcome-actions { display: flex; align-items: center; gap: 22px; }
+.home-workflow { display: grid; gap: 12px; max-width: 465px; margin-top: 19px; }
+.home-workflow .file-picker { width: 100%; min-height: 64px; border-color: #aebfb3; background: rgba(255,255,255,.58); }
+.home-saved-profile { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 9px 12px; border: 1px solid rgba(255,255,255,.75); border-radius: 12px; background: rgba(255,255,255,.52); }
+.home-saved-profile > span:nth-child(2) { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.home-saved-profile small { color: #758880; font-size: 7px; font-weight: 750; letter-spacing: .12em; }
+.home-saved-profile b { overflow: hidden; color: var(--ink); font-size: 10px; font-weight: 660; text-overflow: ellipsis; white-space: nowrap; }
+.saved-profile-mark { display: grid; place-items: center; flex: 0 0 auto; width: 25px; height: 25px; border-radius: 50%; background: #dcefe0; color: #3e7c5c; font-size: 12px; }
+.home-saved-profile a, .replace-cv-control summary, .home-jev-status a, .home-jev-consent a { color: #246e63; font-size: 8px; font-weight: 650; }
+.replace-cv-control summary { width: fit-content; margin: 0 0 8px 2px; cursor: pointer; }
+.replace-cv-control .file-picker { min-height: 54px; }
+.home-jev-consent { padding: 10px 11px; border: 1px solid rgba(255,255,255,.65); border-radius: 11px; background: rgba(255,255,255,.45); }
+.home-jev-consent b { font-size: 9px; }
+.home-jev-consent small { color: #61766d; font-size: 8px; }
+.home-jev-consent .check-custom { background: rgba(255,255,255,.8); }
+.home-jev-details { width: fit-content; margin: -7px 0 0 39px; color: #246e63; font-size: 8px; font-weight: 650; }
+.home-jev-status { display: flex; align-items: flex-start; gap: 10px; padding: 10px 11px; border-radius: 11px; background: rgba(255,255,255,.44); }
+.home-jev-status .status-light { flex: 0 0 auto; margin: 3px 0 0 3px; }
+.home-jev-status > span:last-child { display: grid; gap: 4px; }
+.home-jev-status b { color: #456c58; font-size: 8px; }
+.home-jev-status small { color: #73847c; font-size: 8px; line-height: 1.5; }
+.home-workflow-actions { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+.home-workflow-actions > span { color: #667b72; font-size: 8px; }
+.home-workflow-actions .button { min-height: 43px; }
 .button {
   display: inline-flex; justify-content: center; align-items: center; gap: 12px; min-height: 43px;
   padding: 0 18px; border: 1px solid transparent; border-radius: 11px; cursor: pointer;

@@ -9,6 +9,8 @@ The product is a single-user desktop-local job search. Scraping, PDF/DOCX extrac
 
 ## Decision
 
+**Current upload flow:** ADR 0008 supersedes the pre-save editing requirement in this ADR. The upload workflow now saves the locally parsed profile and starts search immediately; the profile editor remains available afterward.
+
 - Implement the local application in Python with FastAPI and Uvicorn, bound to `127.0.0.1` only.
 - Render views on the server with Jinja templates, semantic HTML forms, and project-owned CSS/vanilla JavaScript. Do not require Node for the app.
 - Use SQLite through Python's standard library for profile, preferences, source registry, normalized listings, search runs, Jev usage, and save/hide state.

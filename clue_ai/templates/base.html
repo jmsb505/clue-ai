@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>{% block title %}Clue AI{% endblock %}</title>
-    <link rel="stylesheet" href="/static/app.css?v=5">
+    <link rel="stylesheet" href="/static/app.css?v=6">
   <script src="/static/app.js" defer></script>
 </head>
 <body {% if status_url %}data-status-url="{{ status_url }}"{% endif %}>
@@ -19,16 +19,13 @@
       <p class="rail-label">YOUR SEARCH</p>
       <nav class="main-nav" aria-label="Your search">
         <a href="/" class="{% if active_page == 'home' %}is-active{% endif %}" {% if active_page == 'home' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⌂</span><span>Overview</span>
+          <span class="nav-icon" aria-hidden="true">⌂</span><span>Find matches</span>
         </a>
         <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}" {% if active_page == 'profile' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">◎</span><span>My profile</span>
+          <span class="nav-icon" aria-hidden="true">◎</span><span>CV &amp; profile</span>
         </a>
         <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}" {% if active_page == 'search' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⌕</span><span>Find roles</span>
-        </a>
-        <a href="/x-leads" class="{% if active_page == 'x_leads' %}is-active{% endif %}" {% if active_page == 'x_leads' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">↗</span><span>X leads</span>
+          <span class="nav-icon" aria-hidden="true">⌕</span><span>Search preferences</span>
         </a>
         <a href="/saved" class="{% if active_page == 'saved' %}is-active{% endif %}" {% if active_page == 'saved' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">♡</span><span>Saved roles</span>

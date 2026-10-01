@@ -57,7 +57,7 @@ Never use protected or sensitive traits such as race, religion, health, disabili
 
 These are working defaults that complete the pilot definition; they can be revised if user research or feasibility evidence points elsewhere.
 
-- Accept PDF and DOCX CVs first. The user reviews and corrects extracted facts before saving the profile.
+- Accept PDF and DOCX CVs first. Parse and save the profile locally, then start the search from the same upload action. Keep extracted fields editable afterward.
 - Start with an English interface and validate Jev rubrics by CV/job-description language. A listing in a language without a validated rubric may still be shown, but receives “fit not evaluated” rather than an unsupported score.
 - Use Milan, Italy as the first search test location, with fully remote work as a hard preference and Italy, EU/EEA, Europe, or worldwide as explicit eligibility scopes. Keep the person's work authorization as a separate user-controlled input.
 - Classify location evidence as `Eligible here`, `Needs verification`, `Not eligible`, or `Unknown`. Italy, EU/EEA, Europe, and worldwide are positive only when stated and not contradicted. Treat EMEA, timezone overlap, or an unqualified “remote” label as `Needs verification` unless the posting also makes Italy eligibility explicit. Exclude an explicit incompatible country restriction from an Italy-only search. Preserve the exact evidence passage and source URL.
@@ -68,12 +68,12 @@ These are working defaults that complete the pilot definition; they can be revis
 
 ## Core workflow
 
-1. The user opens the local app, uploads a CV, and reviews the extracted candidate profile before saving it on the device. A saved work-authorization list is local reference; the app does not infer legal eligibility from it.
-2. The user starts a search, chooses where they will work from and a role target, and labels must-haves and preferences. The first pilot profile starts from Milan, Italy and fully remote work; the user can change it.
+1. The user uploads a CV from the local app. Clue extracts the document on-device, saves the original and parsed profile locally, and starts a search without requiring a separate review/save step. The profile remains editable afterward. A saved work-authorization list is local reference; the app does not infer legal eligibility from it.
+2. Clue uses the most recently saved search preferences when available. On first use it derives likely target roles from the CV and defaults to fully remote work from Italy; the user can change location, roles, and other preferences later.
 3. An out-of-band ingestion process fetches from geography-relevant `Approved` connector sources in the source registry, normalizes fields, removes duplicates, and records source and freshness information. A user search never starts an unbounded crawl. X is a separate manual lead path: the user opens an X search link, checks the post and final employer/ATS page in their browser, then enters the lead in Clue.
 4. Ordinary software applies exact user-defined constraints. Missing listing data remains “unknown” unless the user chooses to treat it as a hard exclusion.
-5. Jev evaluates bounded, job-related fit questions using the candidate profile and listing. The system ranks the evaluated results using the user's weights.
-6. The user reviews match details, saves or dismisses jobs, and opens the original source page. For a manual X lead, Clue preserves the post permalink and a separate employer/ATS listing link, labels the lead as manually added, and does not claim to have rechecked the job. The user can manually record that they applied outside the platform.
+5. After hard filters, Jev automatically evaluates bounded, job-related fit questions when the user has enabled the one-time opt-in, a key is configured, the app-side reserve allows the request, and the profile/listing language is supported. Otherwise, listings remain available with a clear unscored reason.
+6. The user reviews match details, saves or dismisses jobs, and opens the original source page. The user decides whether to apply on the original site; Clue never submits an application. A manual X lead, if used separately, keeps its own provenance and is not part of automated discovery.
 7. The user can revise their local profile or search and delete the saved CV, profile, preferences, indexed jobs, and results through product controls.
 
 ## Jev's role in matching
@@ -86,7 +86,7 @@ Jev returns structured decisions, not explanatory prose. It cannot by itself pro
 
 Call the result a **fit score** or **match score**, never a hiring probability or prediction that an employer will interview or hire the person. The score is a guide for the user's own review. Do not show a 0–100 number as calibrated until a representative evaluation supports that mapping.
 
-Run Jev after retrieval, deduplication, and hard filters so calls are spent on plausible postings. Preserve the model/version, rubric, candidate-profile snapshot, listing snapshot, and response needed to reproduce a result, subject to approved retention limits. If Jev is unavailable or returns low-confidence results, label the result accordingly rather than silently substituting another evaluator.
+Run Jev automatically after retrieval, deduplication, and hard filters when the one-time opt-in, key, language, and app-side budget gates pass, so calls are spent on plausible postings. Preserve the model/version, rubric, candidate-profile snapshot, listing snapshot, and response needed to reproduce a result, subject to approved retention limits. If Jev is unavailable or returns low-confidence results, label the result accordingly rather than silently substituting another evaluator.
 
 ## Results and interaction
 
@@ -116,7 +116,7 @@ Scrapling is the selected crawler for registered public HTML job and career page
 
 ### In scope for the first product increment
 
-- Local candidate profile and PDF/DOCX CV upload with an edit/review step.
+- Local candidate profile and PDF/DOCX CV upload that immediately starts search; extracted fields stay editable afterward.
 - Per-search role, geography, must-have, and preference inputs.
 - A source registry, approved source connectors, normalized listing records, duplicate handling, and freshness checks.
 - A manually controlled X search handoff and owner-reviewed lead intake; no X API or X site automation.
@@ -136,11 +136,11 @@ Scrapling is the selected crawler for registered public HTML job and career page
 
 ## Local data and privacy behavior
 
-**NORMATIVE:** Store the saved CV, reviewed profile, search preferences, cached job listings, and results locally on the owner's device. Provide a single clear action to delete the local profile and its associated data. Do not create a hosted account or upload the job index.
+**NORMATIVE:** Store the saved CV, parsed/editable profile, search preferences, cached job listings, and results locally on the owner's device. Provide a single clear action to delete the local profile and its associated data. Do not create a hosted account or upload the job index.
 
-**WORKING recommendation:** Do CV parsing and job indexing locally. Do not send name, email, phone number, or exact home address to Jev when those fields are not needed for job-fit scoring. Send only the minimum relevant profile and listing text for fit evaluation. The work and education history can still identify someone and remains personal data. Explain which fields leave the device, where Jev processes them, and any retention/telemetry behavior.
+**WORKING recommendation:** Do CV parsing and job indexing locally. Do not send name, email, phone number, or exact home address to Jev when those fields are not needed for job-fit scoring. After one-time opt-in, send only the minimum relevant parsed profile and listing text for fit evaluation. The work and education history can still identify someone and remains personal data. Explain which fields leave the device, where Jev processes them, and any retention/telemetry behavior.
 
-Keep the original CV, extracted profile, search criteria, saved jobs, and fit results under user-controlled local deletion. The owner waived confirmation of device encryption for local data and backups on 2026-09-30; the project does not claim encryption or Windows permission evidence. TypeSafe receives reviewed profile and listing fields only after the in-app disclosure/opt-in and an explicit score action. The owner waived account/terms verification; account-specific provider retention, telemetry, and deletion behavior remain unverified.
+Keep the original CV, extracted profile, search criteria, saved jobs, and fit results under user-controlled local deletion. The owner waived confirmation of device encryption for local data and backups on 2026-09-30; the project does not claim encryption or Windows permission evidence. After a one-time in-app opt-in, TypeSafe receives minimized parsed profile and listing fields automatically after each search when scoring gates pass. The original CV, contact details, work authorization, and source URL stay local. The owner waived account/terms verification; account-specific provider retention, telemetry, and deletion behavior remain unverified.
 
 ## Quality and validation direction
 
@@ -153,6 +153,6 @@ Measure personal usefulness through save/open/dismiss actions and explicit “wh
 The personal app's product behavior and source policy are defined. The following are remaining evidence tasks or owner choices, rather than unanswered product goals:
 
 - Confirm each source's personal-use terms, free limits, and geographic coverage; see the [source discovery review](research/source-discovery-and-crawl-review.md).
-- Provider account/terms and device-encryption checks were waived by the owner on 2026-09-30; the app's $4 request reserve and explicit score action remain, but provider-wide limits are not verified.
+- Provider account/terms and device-encryption checks were waived by the owner on 2026-09-30; the app's $4 request reserve and one-time Jev opt-in remain, but provider-wide limits are not verified.
 - The synthetic backup/restore and deletion path is tested; Windows file permissions and encryption are not verified or required by owner decision.
 - Review the synthetic relevance examples and provide judgments or defer personal calibration before treating scores as personally validated.

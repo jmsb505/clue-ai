@@ -1,15 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Overview · Clue AI{% endblock %}
+{% block title %}Find matches · Clue AI{% endblock %}
 {% block content %}
 <section class="welcome-band">
   <div class="welcome-copy">
     <span class="kicker"><span class="kicker-mark">✳</span> YOUR NEXT CHAPTER, WITH MORE CLARITY</span>
     <h1>Find work that<br><em>fits your life.</em></h1>
-    <p class="welcome-lede">One calm place to search the open web for roles that match your experience, priorities, and where you can work.</p>
-    <div class="welcome-actions">
-      <a class="button button-dark" href="/search">Start a job search <span aria-hidden="true">↗</span></a>
-      <a class="text-link" href="/profile">{% if profile_ready %}Review my profile{% else %}Build my profile{% endif %} <span aria-hidden="true">→</span></a>
-    </div>
+    <p class="welcome-lede">Start with your CV. Clue reads it on this device, searches for roles that fit your goals, then asks Jev to review the matches when enabled.</p>
+    <form class="home-workflow" action="/workflow/start" method="post" enctype="multipart/form-data">
+      {% if profile_ready %}
+        <div class="home-saved-profile">
+          <span class="saved-profile-mark" aria-hidden="true">✓</span>
+          <span><small>READY TO SEARCH</small><b>{{ profile.cv_filename or 'Saved profile' }}</b></span>
+          <a href="/profile">Edit profile</a>
+        </div>
+        <details class="replace-cv-control">
+          <summary>Use a different CV</summary>
+          <label class="file-picker" for="cv-file">
+            <span class="file-picker-icon" aria-hidden="true">↥</span>
+            <span><b>Choose a replacement CV</b><small>PDF or DOCX · up to 12 MB</small></span>
+            <input id="cv-file" type="file" name="cv_file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+          </label>
+        </details>
+      {% else %}
+        <label class="file-picker" for="cv-file">
+          <span class="file-picker-icon" aria-hidden="true">↥</span>
+          <span><b>Choose your CV</b><small>PDF or DOCX · up to 12 MB · parsed locally</small></span>
+          <input id="cv-file" type="file" name="cv_file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+        </label>
+      {% endif %}
+
+      {% if jev_consented %}
+        <div class="home-jev-status">
+          <span class="status-light status-light-on" aria-hidden="true"></span>
+          <span><b>Automatic Jev checks are enabled.</b>
+            {% if not jev_key_configured %}<small>Add your TypeSafe key in <a href="/settings">Settings</a> to use them.</small>{% else %}<small>Eligible matches will be checked after each search.</small>{% endif %}
+          </span>
+        </div>
+      {% else %}
+        <label class="check-field home-jev-consent">
+          <input type="checkbox" name="jev_auto_score" value="on">
+          <span class="check-custom" aria-hidden="true"></span>
+          <span><b>Enable automatic Jev fit checks</b><small>After each search, Clue sends selected parsed profile facts and listing details to TypeSafe. Your CV file and contact details stay here.</small></span>
+        </label>
+        <a class="home-jev-details" href="/settings">Read data and cost details</a>
+      {% endif %}
+
+      <div class="home-workflow-actions">
+        <button class="button button-dark" type="submit">{% if profile_ready %}Find new matches{% else %}Upload CV &amp; find matches{% endif %} <span aria-hidden="true">↗</span></button>
+        <span>First search: remote from Italy. Repeat searches use saved preferences.</span>
+      </div>
+    </form>
   </div>
   <div class="welcome-art" aria-hidden="true">
     <div class="art-orbit orbit-one"></div>
@@ -49,49 +89,19 @@
   </div>
 </section>
 
-<section class="section-block">
-  <div class="section-heading">
-    <div>
-      <span class="kicker kicker-muted">A SIMPLE PLACE TO BEGIN</span>
-      <h2>Your search, in three steps</h2>
-    </div>
-    <a class="text-link" href="/privacy">See how Clue works <span aria-hidden="true">→</span></a>
-  </div>
-  <div class="step-grid">
-    <article class="step-card">
-      <span class="step-number">01</span><span class="step-icon icon-coral">↥</span>
-      <h3>Bring your experience</h3>
-      <p>Add a PDF or DOCX CV. Clue reads it locally, then lets you check every detail before saving.</p>
-      <a href="/profile">Set up your profile <span aria-hidden="true">→</span></a>
-    </article>
-    <article class="step-card">
-      <span class="step-number">02</span><span class="step-icon icon-lime">⌕</span>
-      <h3>Choose what matters</h3>
-      <p>Pick roles, where work must be allowed, remote preferences, salary, and skills you care about.</p>
-      <a href="/search">Shape your search <span aria-hidden="true">→</span></a>
-    </article>
-    <article class="step-card">
-      <span class="step-number">03</span><span class="step-icon icon-blue">✳</span>
-      <h3>Review a useful shortlist</h3>
-      <p>See current listings with source links and location evidence. Ask Jev for fit signals when you're ready.</p>
-      <a href="/sources">Explore job sources <span aria-hidden="true">→</span></a>
-    </article>
-  </div>
-</section>
-
 <section class="home-bottom-grid">
   <article class="panel latest-panel">
     <div class="panel-header">
       <div><span class="kicker kicker-muted">YOUR WORKSPACE</span><h2>Latest search</h2></div>
-      <a class="icon-link" href="/search" aria-label="Start a new search">↗</a>
+      <a class="icon-link" href="/search" aria-label="Edit search preferences">↗</a>
     </div>
     {% if latest_run %}
       <p class="latest-title">{{ latest_run.message }}</p>
       <div class="latest-meta"><span>{{ latest_run.matched_count }} matched roles</span><span>{{ latest_run.created_at[:16].replace('T', ' ') }} UTC</span></div>
       <a class="button button-outline" href="/searches/{{ latest_run.id }}">View search results <span aria-hidden="true">→</span></a>
     {% else %}
-      <p class="panel-muted">Your first shortlist will appear here. Search the approved sources and bring the results back into one view.</p>
-      <a class="button button-outline" href="/search">Create your first search <span aria-hidden="true">→</span></a>
+      <p class="panel-muted">Your first match list will appear here after the CV search completes.</p>
+      <a class="button button-outline" href="/search">Set search preferences <span aria-hidden="true">→</span></a>
     {% endif %}
   </article>
   <article class="panel sources-panel">
@@ -105,7 +115,7 @@
       {% endfor %}
       {% if not sources %}<span class="panel-muted">No enabled sources yet.</span>{% endif %}
     </div>
-    <p class="tiny-note">Listings keep their publisher credit and original link. Source coverage is broad, but never internet-wide.</p>
+    <p class="tiny-note">Listings keep their publisher credit and original link. Search checks approved sources; coverage is not internet-wide.</p>
   </article>
 </section>
 {% endblock %}

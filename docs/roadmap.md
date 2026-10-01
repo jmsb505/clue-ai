@@ -1,11 +1,11 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration and actual spoken screen-reader review remain. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 for manual X leads is pushed and remote-verified at `bdcf5c9`.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration remains. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X leads is pushed. PLAN-004 M1 CV-first search is in progress.
 **Updated:** 2026-10-01
 
 ## Definition gate
 
-The project definition passes for a single-user local feasibility build. The owner waived TypeSafe account/terms checks and local device-encryption confirmation; account facts remain unverified, not proven safe or capped. The app reserves at most $4 per rolling 30 days for Jev toward the $5 owner ceiling and spends $0 on every other element. Source-specific terms still gate optional employer/ATS connectors. X is manual-only and creates no API or source-refresh cost. There is no public deployment or scale target.
+The project definition passes for a single-user local feasibility build. The owner waived TypeSafe account/terms checks and local device-encryption confirmation; account facts remain unverified, not proven safe or capped. The app reserves at most $4 per rolling 30 days for Jev toward the $5 owner ceiling and spends $0 on every other element. Source-specific terms still gate optional employer/ATS connectors. There is no public deployment or scale target.
 
 ## 1. Select a free source set for remote work from Italy
 
@@ -35,7 +35,7 @@ Proceed for the single-user local scope with the app-side Jev reserve, in-app di
 
 PLAN-002 M1 and M2 are pushed to `main`; M2 used one synthetic Jev request (1,574 input tokens; `$0.00006611` local ledger estimate). Accessibility/privacy fix `063ec584e5eae70e411aa255a8dd699097b76663` is on `main`; the full 65-test suite, Ruff, byte-compilation, and diff checks passed. PLAN-001 M1/M2, M3a/M3b, and M3c owner-waiver decisions are recorded on `main`; M3b `9399ad81e0cd34ed244045d4ab52e70d0e4a7245` contains backup/restore guidance and synthetic validation. M3a's five-item synthetic benchmark used one Jev request; Jev and the keyword baseline both achieved `nDCG@5 = 1.0` against assistant-authored labels, which is integration evidence rather than personal calibration. No real CV or live listing was sent to Jev. Personal relevance judgments, optional source-specific approvals, and spoken screen-reader review remain open. TypeSafe account charges and device encryption were waived as checks and remain unverified.
 
-PLAN-003 M1 has implemented a manual X search handoff and local lead intake. It does not use Scrapling on X, the X API, or any automatic URL fetching. Local validation passed; the direct-to-main push remains pending. See [PLAN-003](plans/PLAN-003-x-manual-leads.md) and [ADR 0007](decisions/0007-x-manual-lead-discovery.md).
+PLAN-003 M1 implemented a separate manual X search handoff and local lead intake. It does not use Scrapling on X, the X API, or automatic URL fetching. See [PLAN-003](plans/PLAN-003-x-manual-leads.md) and [ADR 0007](decisions/0007-x-manual-lead-discovery.md). The active CV-first workflow is tracked in [PLAN-004](plans/PLAN-004-cv-first-automated-search.md): upload, local profile parsing, search, then automatic Jev checks when enabled.
 
 ## Delivery workflow
 

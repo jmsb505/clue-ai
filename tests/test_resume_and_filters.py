@@ -11,7 +11,13 @@ from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 from clue_ai.domain import SearchCriteria
 from clue_ai.filters import filter_jobs
 from clue_ai.jobs import canonical_url, classify_location, plain_text
-from clue_ai.resume import ResumeError, extract_resume_text, suggest_profile_sections
+from clue_ai.resume import (
+    ResumeError,
+    extract_resume_text,
+    infer_profile_language,
+    parse_candidate_profile,
+    suggest_profile_sections,
+)
 
 
 def make_docx(text: str) -> bytes:
@@ -59,6 +65,60 @@ def test_docx_text_is_extracted_for_review_and_section_suggestions(settings):
 
     assert "Product engineer" in text
     assert suggest_profile_sections(text)["skills"] == "Python, SQL, APIs, and accessibility."
+
+
+def test_candidate_profile_parser_derives_editable_english_role_and_sections():
+    text = """Alex Rivera
+alex@example.test
+SUMMARY
+Product designer focused on accessible software and clear customer experiences.
+SKILLS
+Figma, user research, prototyping, design systems, accessibility
+EXPERIENCE
+Senior Product Designer | Northstar Studio | 2022 – Present
+Led product design for a remote team, improving onboarding and usability.
+EDUCATION
+MSc Human Computer Interaction
+LANGUAGES
+English C1, Italian B2
+"""
+
+    profile = parse_candidate_profile(text)
+
+    assert profile["target_roles"] == "Senior Product Designer"
+    assert "accessible software" in profile["summary"]
+    assert "Figma" in profile["skills"]
+    assert "Northstar Studio" in profile["experience"]
+    assert profile["profile_language"] == "en"
+    assert "alex@example.test" not in " ".join(profile.values())
+
+
+def test_candidate_profile_parser_uses_explicit_target_roles_and_conservative_language():
+    text = """Obiettivo
+Cerco una posizione professionale in un team italiano che collabora con clienti e aziende in tutta Europa.
+TARGET ROLES
+Product Designer, UX Researcher
+ESPERIENZA
+Ho progettato servizi digitali e coordinato la ricerca con utenti e gruppi di lavoro.
+"""
+
+    profile = parse_candidate_profile(text)
+
+    assert profile["target_roles"] == "Product Designer, UX Researcher"
+    assert profile["profile_language"] == "it"
+    assert infer_profile_language("Short CV") == "unknown"
+
+
+def test_candidate_profile_parser_does_not_turn_generic_experience_bullets_into_roles():
+    profile = parse_candidate_profile(
+        """SUMMARY
+        Reliable teammate who improved processes across an international organization.
+        EXPERIENCE
+        Built better handoffs and worked with colleagues on internal improvements.
+        """
+    )
+
+    assert profile["target_roles"] == ""
 
 
 def test_pdf_text_is_extracted_locally_and_page_limit_is_enforced(settings):

@@ -1,8 +1,8 @@
 # Clue AI — Personal Job Search
 
-A local, single-user job-discovery and review app. Search free feeds and approved public career pages, filter jobs against your criteria, and optionally ask TypeSafe Jev for fit signals. Clue never applies for you.
+A local, single-user job-discovery and review app. Upload a CV to parse it locally, search free feeds and approved public career pages, filter jobs against your criteria, and automatically ask TypeSafe Jev for fit signals when you enable it. Clue never applies for you.
 
-The first search defaults to remote work explicitly eligible from Italy, but you can choose another location per search. CV, profile, preferences, indexed listings, and results stay in .data/ on this device. Without a TypeSafe key, listings remain visible and unscored.
+The first search defaults to remote work from Italy, but you can choose another location per search. CV, parsed profile, preferences, indexed listings, and results stay in `.data/` on this device. Jev scoring requires a one-time opt-in, a configured key, supported English text, and available app-side budget; otherwise, listings remain visible and unscored.
 
 ## Run locally
 
@@ -26,15 +26,15 @@ Use the same PowerShell window, or another one, to manage the local server:
 
 The helper always runs against Conda `gen`. `stop` and `restart` close a Python server from that environment if it occupies port 8000. They refuse to stop a non-Python process or a process launched from another environment. Stopping the server does not delete the profile or `.data/` files. The app is not installed as a background service and does not start automatically.
 
-To enable Jev later, add your key to .env and restart Clue. Read the data disclosure in Settings; Clue does not inspect TypeSafe account terms, billing/refill settings, or other uses of the key. Scoring requires your opt-in and an explicit Score with Jev action. The app reserves at most USD 4 over 30 days toward your USD 5 owner ceiling; that local limit does not guarantee account-wide charges.
+To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure in Settings; Clue does not inspect TypeSafe account terms, billing/refill settings, or other uses of the key. Automatic scoring requires your one-time in-app opt-in and runs after searches while the app-side key, language, and budget gates pass. The app reserves at most USD 4 over 30 days toward your USD 5 owner ceiling; that local limit does not guarantee account-wide charges.
 
 ## What is wired
 
-- Local PDF/DOCX extraction and editable profile review.
+- Local PDF/DOCX parsing, saved editable profile, immediate CV-first search, and repeat searches using the saved profile.
 - Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
 - Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. They start disabled in Review.
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
-- Optional Jev batches with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
+- Automatic Jev batches after searches when enabled, with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
 - Manual X.com search links and owner-reviewed job leads. Clue does not scrape X, call its API, or open/resolve pasted links; see [the X lead decision](docs/decisions/0007-x-manual-lead-discovery.md).
 
 The initial feeds do not cover the whole internet. Open the original listing and verify it is still available and the employer can hire where you live.
@@ -58,3 +58,5 @@ A synthetic backup/restore check confirms that the local profile and CV can be r
 - [Local backup and deletion guide](docs/operations/local-data-backup-and-deletion.md)
 - [Local app implementation plan](docs/plans/PLAN-002-local-first-job-search-app.md)
 - [UI/UX implementation review](docs/research/ui-ux-implementation-review.md)
+- [CV-first workflow plan](docs/plans/PLAN-004-cv-first-automated-search.md)
+- [CV-first workflow decision](docs/decisions/0008-cv-first-automatic-search.md)

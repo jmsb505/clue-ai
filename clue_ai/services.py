@@ -22,7 +22,13 @@ from clue_ai.repository import (
 from clue_ai.sources import FetchOutcome, SourceFetchError, fetch_source
 
 
-def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
+def run_search(
+    database_path: Path,
+    settings: Settings,
+    run_id: str,
+    *,
+    auto_jev: bool = True,
+) -> None:
     run = get_run(database_path, run_id)
     if run is None:
         return
@@ -127,9 +133,7 @@ def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
         run_id,
         matched,
         score_state="unscored",
-        score_reason=(
-            "Fit not evaluated. Select “Score with Jev” to make an explicit TypeSafe request."
-        ),
+        score_reason="Waiting for the automatic Jev fit check.",
     )
     if not checked_notes:
         checked_notes.append(
@@ -138,6 +142,19 @@ def run_search(database_path: Path, settings: Settings, run_id: str) -> None:
             else "No source returned a listing."
         )
     message = f"Search ready: {len(matched)} listings match your hard filters."
+    if auto_jev:
+        update_run(
+            database_path,
+            run_id,
+            status="scoring",
+            stage="jev",
+            message="Search complete. Checking Jev settings and fit evidence.",
+            checked_sources=checked_notes,
+            found_count=found_count,
+            matched_count=len(matched),
+        )
+        run_jev_scoring(database_path, settings, run_id)
+        return
     update_run(
         database_path,
         run_id,
@@ -162,9 +179,15 @@ def _status_summary(outcome: FetchOutcome) -> str:
     return f"; {codes}" if codes else ""
 
 
-def run_search_worker(database_path: Path, settings: Settings, run_id: str) -> None:
+def run_search_worker(
+    database_path: Path,
+    settings: Settings,
+    run_id: str,
+    *,
+    auto_jev: bool = True,
+) -> None:
     try:
-        run_search(database_path, settings, run_id)
+        run_search(database_path, settings, run_id, auto_jev=auto_jev)
     except Exception as exc:  # noqa: BLE001 - persist a failed state for any worker failure.
         update_run(
             database_path,
@@ -184,6 +207,22 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
     profile = get_profile(database_path)
     criteria = criteria_from_form(run.get("criteria") or {})
     jobs = [job for job in get_run_results(database_path, run_id) if not job.get("hidden")]
+    if not jobs:
+        matched_count = int(run.get("matched_count") or 0)
+        message = (
+            f"Search ready: {matched_count} listings match your hard filters. "
+            "There are no listings to score with Jev."
+        )
+        update_run(
+            database_path,
+            run_id,
+            status="complete",
+            stage="done",
+            message=message,
+            scored_count=0,
+            completed=True,
+        )
+        return
     try:
         result = score_run(
             database_path,

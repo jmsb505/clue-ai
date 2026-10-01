@@ -39,7 +39,7 @@ DIMENSION_INSTRUCTIONS = {
         "Missing evidence is not proof the candidate lacks a skill; use a lower score only for fit evidence."
     ),
     "experience": (
-        "Assess alignment between the candidate's reviewed experience and the listing's scope and seniority. "
+        "Assess alignment between the candidate's parsed or user-edited experience and the listing's scope and seniority. "
         "Do not infer age or years from education dates."
     ),
     "preferences": (
@@ -90,9 +90,9 @@ def score_run(
         return _unscore_all(
             database_path, run_id, jobs, "Add your TypeSafe API key to .env, then restart the app."
         )
-    if not _reviewed_profile(profile):
+    if not _has_fit_fields(profile):
         return _unscore_all(
-            database_path, run_id, jobs, "Review and save your candidate profile before using Jev."
+            database_path, run_id, jobs, "Add candidate profile details before using Jev."
         )
     if profile.profile_language != "en":
         return _unscore_all(
@@ -451,7 +451,7 @@ def _local_evidence(
     return evidence[:5]
 
 
-def _reviewed_profile(profile: CandidateProfile) -> bool:
+def _has_fit_fields(profile: CandidateProfile) -> bool:
     return any(value.strip() for value in profile.fit_fields().values())
 
 

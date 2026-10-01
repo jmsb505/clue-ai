@@ -5,10 +5,11 @@ import re
 import threading
 import time
 import uuid
+from dataclasses import replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -50,7 +51,12 @@ from clue_ai.repository import (
     set_job_user_state,
     set_source_enabled,
 )
-from clue_ai.resume import ResumeError, extract_resume_text, suggest_profile_sections
+from clue_ai.resume import (
+    ResumeError,
+    extract_resume_text,
+    parse_candidate_profile,
+    suggest_profile_sections,
+)
 from clue_ai.services import run_jev_scoring, run_search_worker
 from clue_ai.sources import validate_career_url
 
@@ -93,9 +99,9 @@ def create_app(
     app.state.templates = templates
     operation_lock = threading.Lock()
 
-    def run_search_serialized(run_id: str) -> None:
+    def run_search_serialized(run_id: str, auto_jev: bool = True) -> None:
         with operation_lock:
-            run_search_worker(db_path, current_settings, run_id)
+            run_search_worker(db_path, current_settings, run_id, auto_jev=auto_jev)
 
     def run_scoring_serialized(run_id: str) -> None:
         with operation_lock:
@@ -147,6 +153,7 @@ def create_app(
             "request": request,
             "active_page": "",
             "jev_key_configured": bool(current_settings.api_key),
+            "jev_consented": bool(get_settings(db_path).get("jev_consent_at")),
         }
         values.update(context or {})
         return templates.TemplateResponse(
@@ -171,7 +178,10 @@ def create_app(
                 "latest_run": latest,
                 "approved_source_count": len(enabled_sources),
                 "sources": enabled_sources,
-                "profile_ready": bool(profile.target_roles or profile.skills or profile.experience),
+                "profile_ready": bool(
+                    profile.target_roles or profile.summary or profile.skills or profile.experience
+                ),
+                "jev_consented": bool(get_settings(db_path).get("jev_consent_at")),
                 "notice": request.query_params.get("notice", ""),
             },
         )
@@ -305,6 +315,109 @@ def create_app(
             old_cv_to_delete.unlink()
         return RedirectResponse("/profile?notice=Profile+saved+on+this+device.", status_code=303)
 
+    @app.post("/workflow/start")
+    async def start_cv_workflow(
+        request: Request,
+        background_tasks: BackgroundTasks,
+        cv_file: UploadFile | None = File(default=None),  # noqa: B008 - FastAPI uses File as parameter metadata.
+        jev_auto_score: str | None = Form(default=None),
+    ):
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                "/?notice=Finish+the+current+local+search+before+starting+another.",
+                status_code=303,
+            )
+        current_profile: CandidateProfile | None = None
+        profile = CandidateProfile()
+        profile_saved = False
+        new_cv_path: Path | None = None
+        try:
+            current_profile = get_profile(db_path)
+            profile = current_profile
+            if has_active_runs(db_path):
+                return RedirectResponse(
+                    "/?notice=Finish+the+current+local+search+before+starting+another.",
+                    status_code=303,
+                )
+
+            if cv_file is not None and cv_file.filename:
+                content = await cv_file.read(current_settings.max_cv_bytes + 1)
+                extracted_text = extract_resume_text(
+                    cv_file.filename, content, current_settings
+                )
+                parsed = parse_candidate_profile(extracted_text)
+                suffix = Path(cv_file.filename).suffix.lower()
+                safe_name = _safe_filename(cv_file.filename, suffix)
+                new_cv_path = current_settings.cv_dir / f"{uuid.uuid4().hex}{suffix}"
+                new_cv_path.write_bytes(content)
+                profile = CandidateProfile(
+                    **parsed,
+                    work_authorized_countries=current_profile.work_authorized_countries,
+                    requires_sponsorship=current_profile.requires_sponsorship,
+                    cv_filename=safe_name,
+                    cv_path=str(new_cv_path),
+                    extracted_text=extracted_text,
+                )
+                save_profile(db_path, profile)
+                profile_saved = True
+            elif not (
+                current_profile.target_roles
+                or current_profile.skills
+                or current_profile.experience
+                or current_profile.summary
+            ):
+                return RedirectResponse(
+                    "/?notice=Choose+a+PDF+or+DOCX+CV+to+start+your+first+search.",
+                    status_code=303,
+                )
+
+            settings_row = get_settings(db_path)
+            if _checked(jev_auto_score) and not settings_row.get("jev_consent_at"):
+                set_jev_consent(db_path, True)
+
+            latest = get_latest_run(db_path)
+            if latest and latest.get("criteria"):
+                criteria = criteria_from_form(latest["criteria"])
+            else:
+                criteria = SearchCriteria(
+                    roles=profile.target_roles,
+                    work_from=str(settings_row.get("default_work_from") or "Italy"),
+                    workplace="remote",
+                    requires_sponsorship=profile.requires_sponsorship,
+                )
+            if not criteria.roles.strip() and profile.target_roles.strip():
+                criteria = replace(criteria, roles=profile.target_roles)
+
+            run_id = uuid.uuid4().hex
+            save_search_run(db_path, run_id, criteria)
+            old_path = Path(current_profile.cv_path) if current_profile.cv_path else None
+            if (
+                new_cv_path
+                and old_path
+                and old_path.is_file()
+                and old_path.parent.resolve() == current_settings.cv_dir.resolve()
+                and old_path.resolve() != new_cv_path.resolve()
+            ):
+                try:
+                    old_path.unlink()
+                except OSError:
+                    LOGGER.warning("Could not remove the replaced local CV file.")
+        except ResumeError as exc:
+            if new_cv_path and new_cv_path.is_file():
+                new_cv_path.unlink()
+            return RedirectResponse(f"/?notice={_url_message(str(exc))}", status_code=303)
+        except Exception:
+            if new_cv_path and new_cv_path.is_file():
+                new_cv_path.unlink()
+            if profile_saved and current_profile is not None:
+                save_profile(db_path, current_profile)
+            raise
+        finally:
+            operation_lock.release()
+
+        background_tasks.add_task(run_search_serialized, run_id, True)
+        return RedirectResponse(f"/searches/{run_id}", status_code=303)
+
     @app.post("/profile/remove-cv")
     async def remove_cv():
         profile = get_profile(db_path)
@@ -370,7 +483,7 @@ def create_app(
             save_search_run(db_path, run_id, criteria)
         finally:
             operation_lock.release()
-        background_tasks.add_task(run_search_serialized, run_id)
+        background_tasks.add_task(run_search_serialized, run_id, True)
         return RedirectResponse(f"/searches/{run_id}", status_code=303)
 
     @app.get("/x-leads", response_class=HTMLResponse)

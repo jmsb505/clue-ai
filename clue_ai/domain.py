@@ -26,7 +26,7 @@ class CandidateProfile:
     updated_at: str = ""
 
     def fit_fields(self) -> dict[str, str]:
-        """Only reviewed, job-relevant fields intended for Jev; never include CV/file metadata."""
+        """Return job-relevant parsed or edited Jev fields, never CV/file metadata."""
         return {
             "summary": self.summary.strip(),
             "target_roles": self.target_roles.strip(),

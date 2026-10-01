@@ -1,11 +1,11 @@
 # Architecture direction
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is pushed and remote-verified at `bdcf5c9`. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration and spoken screen-reader review remain open.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus owner-waiver decisions are pushed to `main`; PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X lead flow is pushed. PLAN-004 M1 CV-first automated workflow is in progress. TypeSafe account facts and device encryption remain unverified under owner waiver; personal relevance calibration remains open.
 **Updated:** 2026-10-01
 
 ## Owner-set cost ceiling
 
-This is a single-user local app, not a hosted service. The owner allocates at most **$5 per rolling 30 days to TypeSafe Jev and $0 to every other component or source**. The app reserves against a $4 rolling 30-day request limit, leaving $1 as a planned buffer. This guard covers only requests Clue makes; it cannot cap other uses of the same key or establish account-wide charges. On 2026-09-30 the owner waived TypeSafe account/terms/refill verification; those facts remain unknown and were not inspected. Keep the CV, profile, search settings, listing index, and results on the user's device; TypeSafe receives selected profile and listing fields only after the owner's opt-in and explicit score action.
+This is a single-user local app, not a hosted service. The owner allocates at most **$5 per rolling 30 days to TypeSafe Jev and $0 to every other component or source**. The app reserves against a $4 rolling 30-day request limit, leaving $1 as a planned buffer. This guard covers only requests Clue makes; it cannot cap other uses of the same key or establish account-wide charges. On 2026-09-30 the owner waived TypeSafe account/terms/refill verification; those facts remain unknown and were not inspected. Keep the CV, profile, search settings, listing index, and results on the user's device; after a one-time opt-in, TypeSafe receives selected profile and listing fields automatically after searches when other scoring gates pass.
 
 ## System boundary
 
@@ -14,7 +14,7 @@ The local app searches and ranks jobs for its owner. It keeps a candidate profil
 ```mermaid
 flowchart LR
     U[Owner] --> A[Local profile and preferences]
-    A --> P[Local CV extraction and review]
+    A --> P[Local CV extraction and editable profile]
     U --> Q[Search preferences]
     U --> X[Manual X search and review in owner's browser]
     X --> M[Owner-entered listing and post provenance]
@@ -38,7 +38,7 @@ The diagram describes the connector-fed local workflow. X leads use a separate m
 | Component | Responsibility | Boundary |
 |---|---|---|
 | Local profile and preferences | Save the owner's CV/profile, edits, search preferences, and delete controls on device | No login, account service, or multi-user access. Keep direct identifiers out of Jev payloads. |
-| CV extraction | Read PDF and DOCX documents and produce a structured profile the user can review | The user reviews extraction before use. Do not treat a parser's omission as proof of missing capability. |
+| CV extraction | Read PDF and DOCX documents locally, derive profile fields and likely roles, save them, and start a search | Keep the resulting profile editable. Be conservative when inferring roles or language; do not treat an omission as proof of missing capability. |
 | Source registry and connectors | Fetch listings through $0 APIs, public feeds, public ATS boards, or ordinary public employer career pages | Each connector records access/terms notes, geography, refresh rules, attribution, local cache/retention, limits, and data expiry. No blanket employer-by-employer opt-in; do not bypass login or access controls. X is manual-only and is never scheduled or fetched. |
 | Manual X lead handoff | Build a role/location search link and accept an owner-reviewed X post permalink, employer/ATS URL, and job details | The app makes no X API/site request and never fetches, expands, previews, or automatically opens submitted URLs. Display the destination host and preserve the post URL separately from the job URL. |
 | Listing normalization | Map different source fields to a common job record | Preserve original values and provenance; do not invent salary, remote, authorization, or posted-date data. |
@@ -50,9 +50,9 @@ The diagram describes the connector-fed local workflow. X leads use a separate m
 
 ## Data flow and controls
 
-1. Store the original CV locally on the owner's device. Extract a structured profile, ask the user to correct it, and let them control whether it is retained for saved searches.
+1. Store the original CV locally on the owner's device. Extract a structured, editable profile and start a search from the upload action. The user can correct it later without re-uploading.
 2. Keep direct contact details out of the fit request. For matching, send only relevant candidate qualifications/preferences and the normalized job description needed for evaluation.
-3. A work history can identify a person even without name or contact details. The app discloses the exact fields sent and requires opt-in plus an explicit score action. The owner waived provider-side terms and retention verification for this personal local scope; those details remain unverified.
+3. A work history can identify a person even without name or contact details. The app discloses the exact fields sent and requires a one-time opt-in; when enabled, Jev runs automatically after a search if the key, language, and app-side budget gates pass. The owner waived provider-side terms and retention verification for this personal local scope; those details remain unverified.
 4. Keep source provenance and freshness in the local listing index. Preserve the employer's posted date separately from first-seen and last-checked dates.
 5. For X, keep discovery in the owner's browser. Add only a user-reviewed lead to the local index; label it manually added and do not present the entry time as a live availability check. Do not send X post text to Jev.
 6. Make the local delete control cover profile, original CV, extracted data, preferences, saved/hidden jobs, fit results, search history, and owner-added sources. Preserve built-in source definitions, but clear personal role-feed cache hashes and refresh timestamps. Manual backup/restore and local deletion are tested; the owner waived device-encryption confirmation. Deletion cannot affect data already processed by TypeSafe.
@@ -65,7 +65,7 @@ The diagram describes the connector-fed local workflow. X leads use a separate m
 3. Normalize, filter obvious stale/closed records, deduplicate, and keep a direct source URL.
    For a manual X lead, the owner supplies the direct listing URL and the separate X post URL. Clue validates their shape, displays the job-link hostname, and does not make any request to either URL.
 4. Apply hard user filters in deterministic code. Keep workplace type, where the person can work from, and work authorization separate. Preserve exact location-eligibility evidence; for the first Milan/Italy search, a generic “remote” label does not confirm the job can be done from Italy.
-5. Send up to five filtered listings per Jev request with four versioned categorical `Choice` questions per listing: role alignment, skills evidence, experience/scope, and optional preferences. Each question can return `unknown`; missing evidence is not treated as a mismatch. Treat profile and listing fields as untrusted evidence, never as instructions. Jev scoring is currently limited to reviewed profile text marked English and listings confidently identified as English.
+5. Automatically send up to five filtered listings per Jev request when enabled, with four versioned categorical `Choice` questions per listing: role alignment, skills evidence, experience/scope, and optional preferences. Each question can return `unknown`; missing evidence is not treated as a mismatch. Treat profile and listing fields as untrusted evidence, never as instructions. Jev scoring is currently limited to profile text marked English and listings confidently identified as English. Without opt-in, a key, supported language, or available budget, keep listings visible and explain why they are unscored.
 6. Convert the returned 0–4 choice probabilities to a 0–1 fit signal and combine dimensions with the user's weights in code, renormalizing over dimensions with evidence. This is not a calibrated hiring probability.
 7. Build reasons from matched profile facts and exact listing text; label absent evidence as unknown. Sort and display the best results and include the sources searched.
 
@@ -87,7 +87,7 @@ The first increment uses FastAPI/Uvicorn on `127.0.0.1`, Jinja templates, semant
 
 Use TypeSafe's official Python SDK for `/v1/systemone`, with Jev pinned to `jev-1.13.0`. Configure `RetryPolicy(max_retries=0)`. Before each request, reserve an 80,000-token allowance at the current documented input price, then settle successful responses to returned `usage.input_tokens`; ambiguous failures retain the reservation. The app enforces a $4.00 inference cap over a rolling 30-day period, leaving $1.00 of the owner's $5 ceiling as a buffer. See [ADR 0006](../decisions/0006-jev-scoring-and-budget-guard.md).
 
-The local implementation includes profile/CV review, source management, feed/ATS/Scrapling adapters, SQLite persistence, deterministic search, Jev scoring controls, results, saved/hidden views, and local deletion. PLAN-001 M2 transiently compared one public Prima Lever EU API response with its job page; the board remains disabled in `Review` until ongoing display, refresh, attribution, and retention conditions are checked. PLAN-002 M2 and PLAN-001 M3a used synthetic Jev inputs only; no CV or live job listing was sent to Jev. M3a's five-item benchmark scored `nDCG@5 = 1.0` for Jev and the keyword baseline on assistant-authored labels, so it confirms the evaluation path but not personal relevance or Jev's advantage. M3b tested local backup/restore and deletion with synthetic data; see the [backup and deletion guide](../operations/local-data-backup-and-deletion.md). The owner waived TypeSafe account verification and device-encryption checks; neither is claimed as verified. The app retains its disclosure, explicit opt-in, and per-search scoring action. Source-by-source review, personal relevance, and spoken screen-reader output remain open. See [PLAN-001](../plans/PLAN-001-free-local-source-discovery.md) and [PLAN-002](../plans/PLAN-002-local-first-job-search-app.md) for evidence and remaining choices.
+The local implementation includes profile/CV management, source management, feed/ATS/Scrapling adapters, SQLite persistence, deterministic search, Jev scoring, results, saved/hidden views, and local deletion. PLAN-001 M2 transiently compared one public Prima Lever EU API response with its job page; the board remains disabled in `Review` until ongoing display, refresh, attribution, and retention conditions are checked. PLAN-002 M2 and PLAN-001 M3a used synthetic Jev inputs only; no real CV or live job listing was sent to Jev. M3a's five-item benchmark scored `nDCG@5 = 1.0` for Jev and the keyword baseline on assistant-authored labels, so it confirms the evaluation path but not personal relevance or Jev's advantage. M3b tested local backup/restore and deletion with synthetic data; see the [backup and deletion guide](../operations/local-data-backup-and-deletion.md). The owner waived TypeSafe account verification and device-encryption checks; neither is claimed as verified. The app now requires one-time disclosure/opt-in and automatically checks eligible results after searches. Source-by-source review and personal relevance remain open. PLAN-004 records the CV-first workflow.
 
 ## Provider and deployment choices still open
 

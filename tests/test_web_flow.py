@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlparse
 
 import pytest
@@ -8,9 +11,17 @@ from conftest import make_job
 from docx import Document
 from fastapi.testclient import TestClient
 
-from clue_ai.database import get_profile, save_search_run
+from clue_ai.database import get_profile, get_settings, save_profile, save_search_run
 from clue_ai.domain import CandidateProfile, SearchCriteria
-from clue_ai.repository import add_source, get_run_results, get_source, list_sources, update_run
+from clue_ai.repository import (
+    add_source,
+    get_run,
+    get_run_results,
+    get_source,
+    list_sources,
+    save_jobs,
+    update_run,
+)
 from clue_ai.sources import FetchOutcome
 from clue_ai.web import create_app
 
@@ -32,7 +43,6 @@ def test_local_views_render_without_a_jev_key(settings):
         ("/", "/"),
         ("/profile", "/profile"),
         ("/search", "/search"),
-        ("/x-leads", "/x-leads"),
         ("/saved", "/saved"),
         ("/hidden", "/hidden"),
         ("/sources", "/sources"),
@@ -297,7 +307,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     assert results.status_code == 200
     assert "Software Engineer" in results.text
     assert 'href="https://jobs.example.org/openings/software-engineer"' in results.text
-    assert "Fit not evaluated" in results.text or "not evaluated" in results.text.casefold()
+    assert "explicitly enable Jev scoring" in results.text
     assert "HTTP 200" in results.text
     assert set(calls) == {"jobicy", "remotejobs", "remoteok", "remotefirstjobs", "startupjobs"}
     assert "Powered by RemoteJobs.org" in results.text
@@ -382,3 +392,225 @@ def test_cv_upload_is_held_for_review_then_saved_locally_and_removable(settings)
     assert profile.target_roles == "Software Engineer"
     assert profile.cv_path == ""
     assert profile.extracted_text == ""
+
+
+def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(settings, monkeypatch):
+    from clue_ai import jev, services
+    from clue_ai.services import run_jev_scoring as score_jev
+
+    configured = replace(settings, api_key="test-key")
+    client = TestClient(create_app(configured), base_url="http://127.0.0.1")
+    monkeypatch.setattr(services, "sources_due", lambda *_args: [])
+    save_jobs(
+        settings.database_path,
+        [
+            make_job(
+                title="Senior Product Designer",
+                location="Italy and Europe",
+                description=(
+                    "We need a senior product designer for our fully remote European team. "
+                    "You will lead user research, build prototypes, improve design systems, "
+                    "work with product managers, and make accessible software for customers."
+                ),
+            )
+        ],
+    )
+
+    document = Document()
+    document.add_paragraph("Alex Rivera")
+    document.add_paragraph("alex@example.test")
+    document.add_heading("Summary", level=1)
+    document.add_paragraph(
+        "Product designer focused on accessible software and clear customer experiences."
+    )
+    document.add_heading("Skills", level=1)
+    document.add_paragraph("Figma, user research, prototyping, design systems, accessibility")
+    document.add_heading("Experience", level=1)
+    document.add_paragraph("Senior Product Designer | Northstar Studio | 2022 – Present")
+    document.add_paragraph(
+        "Led product design for a remote team, improving onboarding and usability."
+    )
+    document.add_heading("Languages", level=1)
+    document.add_paragraph("English C1, Italian B2")
+    file_bytes = io.BytesIO()
+    document.save(file_bytes)
+    sent_states = []
+    scoring_stages = []
+
+    def capture_scoring_stage(database_path, runtime_settings, run_id):
+        run = get_run(database_path, run_id)
+        scoring_stages.append((run["status"], run["stage"]))
+        score_jev(database_path, runtime_settings, run_id)
+
+    monkeypatch.setattr(services, "run_jev_scoring", capture_scoring_stage)
+
+    class FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def system_one(self, *, state, questions):
+            sent_states.append(state)
+            choices = {
+                name: SimpleNamespace(choice="4", confidence=0.9, probabilities={"4": 1.0})
+                for name in questions
+            }
+            return SimpleNamespace(
+                usage=SimpleNamespace(input_tokens=500),
+                model="jev-test",
+                choices=choices,
+            )
+
+    monkeypatch.setattr(jev, "_default_client_factory", lambda **_kwargs: FakeClient())
+    response = client.post(
+        "/workflow/start",
+        data={"jev_auto_score": "on"},
+        files={
+            "cv_file": (
+                "candidate.docx",
+                file_bytes.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/searches/")
+    run_id = response.headers["location"].rsplit("/", 1)[-1]
+    profile = get_profile(settings.database_path)
+    assert profile.target_roles == "Senior Product Designer"
+    assert profile.profile_language == "en"
+    assert profile.cv_path and Path(profile.cv_path).is_file()
+    assert "alex@example.test" in profile.extracted_text
+    run = get_run(settings.database_path, run_id)
+    assert run["status"] == "complete"
+    assert run["criteria"]["roles"] == "Senior Product Designer"
+    assert run["criteria"]["work_from"] == "Italy"
+    assert run["criteria"]["workplace"] == "remote"
+    result = get_run_results(settings.database_path, run_id)[0]
+    assert result["score_state"] == "scored"
+    assert result["combined_score"] == 1.0
+    assert get_settings(settings.database_path)["jev_consent_at"]
+    assert len(sent_states) == 1
+    assert scoring_stages == [("scoring", "jev")]
+    assert "alex@example.test" not in str(sent_states[0])
+    assert "candidate.docx" not in str(sent_states[0])
+
+    page = client.get(response.headers["location"])
+    assert "1 listings scored with Jev" in page.text
+    assert "Score with Jev" not in page.text
+
+
+def test_cv_first_workflow_keeps_listings_unscored_without_opt_in(settings, monkeypatch):
+    from clue_ai import jev, services
+
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    monkeypatch.setattr(services, "sources_due", lambda *_args: [])
+    monkeypatch.setattr(
+        jev,
+        "_default_client_factory",
+        lambda **_kwargs: pytest.fail("Jev client must not be created without opt-in and a key"),
+    )
+    save_jobs(settings.database_path, [make_job(title="Product Designer")])
+
+    document = Document()
+    document.add_heading("Summary", level=1)
+    document.add_paragraph(
+        "Product designer with experience building useful software and supporting remote teams."
+    )
+    document.add_heading("Experience", level=1)
+    document.add_paragraph("Product Designer | Example Studio | 2021 – Present")
+    document.add_paragraph(
+        "Designed product workflows, developed research plans, and worked with distributed teams."
+    )
+    file_bytes = io.BytesIO()
+    document.save(file_bytes)
+
+    response = client.post(
+        "/workflow/start",
+        files={
+            "cv_file": (
+                "candidate.docx",
+                file_bytes.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    run_id = response.headers["location"].rsplit("/", 1)[-1]
+    run = get_run(settings.database_path, run_id)
+    assert run["status"] == "complete"
+    row = get_run_results(settings.database_path, run_id)[0]
+    assert row["score_state"] == "unscored"
+    assert "explicitly enable Jev scoring" in row["score_reason"]
+    assert not get_settings(settings.database_path)["jev_consent_at"]
+
+
+def test_repeat_cv_workflow_uses_saved_profile_and_search_preferences(settings, monkeypatch):
+    from clue_ai import services
+
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    monkeypatch.setattr(services, "sources_due", lambda *_args: [])
+    save_profile(
+        settings.database_path,
+        CandidateProfile(
+            target_roles="UX Researcher",
+            skills="User research",
+            profile_language="en",
+        ),
+    )
+    save_search_run(
+        settings.database_path,
+        "previous-preferences",
+        SearchCriteria(
+            roles="UX Researcher",
+            work_from="Milan, Italy",
+            workplace="remote",
+            minimum_salary="55000",
+        ),
+    )
+    update_run(
+        settings.database_path,
+        "previous-preferences",
+        status="complete",
+        stage="done",
+        message="Previous search completed.",
+        completed=True,
+    )
+
+    response = client.post(
+        "/workflow/start",
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    run_id = response.headers["location"].rsplit("/", 1)[-1]
+    run = get_run(settings.database_path, run_id)
+    assert run["criteria"]["roles"] == "UX Researcher"
+    assert run["criteria"]["work_from"] == "Milan, Italy"
+    assert run["criteria"]["minimum_salary"] == "55000"
+
+
+def test_search_worker_marks_unexpected_workflow_failure(settings, database, monkeypatch):
+    from clue_ai import services
+
+    save_search_run(settings.database_path, "run-worker-failure", SearchCriteria())
+
+    def fail_search(*_args, **_kwargs):
+        raise RuntimeError("synthetic worker failure")
+
+    monkeypatch.setattr(services, "run_search", fail_search)
+    services.run_search_worker(settings.database_path, settings, "run-worker-failure")
+
+    run = get_run(settings.database_path, "run-worker-failure")
+    assert run["status"] == "failed"
+    assert run["stage"] == "error"
+    assert run["error"] == "Local search error: RuntimeError."

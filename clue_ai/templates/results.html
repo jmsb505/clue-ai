@@ -8,6 +8,7 @@
     <span class="kicker kicker-muted">YOUR SEARCH · {{ run.created_at[:10] }}</span>
     <h1>Roles worth<br><em>a closer look.</em></h1>
     <p>{{ run.message }}</p>
+    <p class="results-scope"><b>Search:</b> {{ run.criteria.roles or 'All roles' }} · {{ run.criteria.workplace|title }} · eligible from {{ run.criteria.work_from }}</p>
   </div>
   <div class="results-count-card">
     <span class="count-number">{{ jobs|length }}</span>
@@ -47,7 +48,7 @@
 <section class="results-toolbar">
   <div><span class="kicker kicker-muted">THE SHORTLIST</span><h2>{{ jobs|length }} roles to explore</h2></div>
   <div class="results-actions">
-    {% if jobs and run.status == 'complete' %}
+    {% if jobs and run.status == 'complete' and not run.scored_count %}
       {% if jev_key_configured and jev_consented %}
         <form action="/searches/{{ run.id }}/score" method="post">
           <button class="button button-dark" type="submit">Score with Jev <span aria-hidden="true">✳</span></button>
