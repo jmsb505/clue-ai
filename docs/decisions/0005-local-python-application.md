@@ -18,7 +18,7 @@ The product is a single-user desktop-local job search. Scraping, PDF/DOCX extrac
 - Extract PDF/DOCX text locally with `pypdf` and `python-docx`; make extracted content editable before saving a candidate profile or sending any fields to Jev.
 - Load simple `KEY=value` configuration from `.env` through project code, without overriding environment variables already supplied by the owner. Keep `.env` ignored and commit only `.env.example` with a blank key variable.
 - Restrict request hosts/origins to the local app; do not load external fonts, trackers, or UI libraries.
-- Accept the local aliases `127.0.0.1`, `localhost`, and `::1` for browser form origins only when scheme and effective port match the request. Reject external hosts, ports, and schemes.
+- For browser form posts, accept `Sec-Fetch-Site: same-origin` only after the request host is confirmed local; reject `cross-site`. When Fetch Metadata is unavailable, validate a non-opaque Origin or fall back to Referer. Accept the local aliases `127.0.0.1`, `localhost`, and `::1` only when scheme and effective port match. Reject external hosts, ports, and schemes.
 
 ## Alternatives considered
 
@@ -30,7 +30,7 @@ The product is a single-user desktop-local job search. Scraping, PDF/DOCX extrac
 ## Consequences
 
 - One Python process owns UI, local workflows, and database access; long-running source refreshes must run as visible background operations so the request path remains responsive.
-- The app must bind only to loopback and validate local host/origin requests. The three loopback aliases are interchangeable only at the same scheme and effective port; this local-only design is not a multi-user security boundary.
+- The app must bind only to loopback and validate local host/origin requests. The three loopback aliases are interchangeable only at the same scheme and effective port. Browser Fetch Metadata can confirm a same-origin request; opaque `Origin: null` falls back to Referer when the metadata is absent. This local-only design is not a multi-user security boundary.
 - Jinja and native controls keep accessibility and keyboard behavior in the project's code, so those states require explicit validation.
 - `.data/` and `.env` must stay ignored; the UI deletion action must remove personal rows and the CV while preserving non-personal source definitions.
 - The existing Conda `gen` environment uses Python 3.10.21 and is within the TypeSafe SDK's documented Python >=3.10 requirement.

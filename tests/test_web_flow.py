@@ -26,6 +26,7 @@ from clue_ai.sources import FetchOutcome
 from clue_ai.web import create_app
 
 ORIGIN = {"Origin": "http://127.0.0.1"}
+IN_APP_BROWSER_SAME_ORIGIN = {"Origin": "null", "Sec-Fetch-Site": "same-origin"}
 
 
 def test_local_views_render_without_a_jev_key(settings):
@@ -125,6 +126,32 @@ def test_same_port_loopback_aliases_are_accepted_for_local_forms(settings, origi
     assert response.status_code == 303
 
 
+def test_same_origin_fetch_metadata_allows_an_opaque_browser_origin(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
+
+    response = client.post(
+        "/settings/jev-consent",
+        data={"agree": "on"},
+        headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+
+def test_null_origin_falls_back_to_a_same_origin_referer(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
+
+    response = client.post(
+        "/settings/jev-consent",
+        data={"agree": "on"},
+        headers={"Origin": "null", "Referer": "http://127.0.0.1:8000/settings"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+
 @pytest.mark.parametrize("origin", ("https://127.0.0.1:8000", "http://127.0.0.1:8001"))
 def test_local_form_boundary_rejects_scheme_or_port_mismatch(settings, origin):
     client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
@@ -133,6 +160,23 @@ def test_local_form_boundary_rejects_scheme_or_port_mismatch(settings, origin):
         "/settings/jev-consent",
         data={"agree": "on"},
         headers={"Origin": origin},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+
+
+def test_cross_site_fetch_metadata_is_rejected(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
+
+    response = client.post(
+        "/settings/jev-consent",
+        data={"agree": "on"},
+        headers={
+            "Origin": "null",
+            "Referer": "http://127.0.0.1:8000/settings",
+            "Sec-Fetch-Site": "cross-site",
+        },
         follow_redirects=False,
     )
 
@@ -291,7 +335,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
 ):
     from clue_ai import services
 
-    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
     add_source(
         settings.database_path,
         name="Under review",
@@ -327,7 +371,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     response = client.post(
         "/search",
         data={"roles": "Software Engineer", "work_from": "Italy", "workplace": "remote"},
-        headers=ORIGIN,
+        headers=IN_APP_BROWSER_SAME_ORIGIN,
         follow_redirects=False,
     )
     assert response.status_code == 303
@@ -351,7 +395,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     saved = client.post(
         f"/jobs/{row['id']}/save",
         data={"return_to": results_url},
-        headers=ORIGIN,
+        headers=IN_APP_BROWSER_SAME_ORIGIN,
         follow_redirects=False,
     )
     assert saved.status_code == 303
@@ -361,7 +405,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     hidden = client.post(
         f"/jobs/{row['id']}/hide",
         data={"return_to": results_url},
-        headers=ORIGIN,
+        headers=IN_APP_BROWSER_SAME_ORIGIN,
         follow_redirects=False,
     )
     assert hidden.status_code == 303
@@ -372,7 +416,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
     deleted = client.post(
         "/data/delete",
         data={"confirmation": "DELETE"},
-        headers=ORIGIN,
+        headers=IN_APP_BROWSER_SAME_ORIGIN,
         follow_redirects=False,
     )
     assert deleted.status_code == 303
@@ -430,7 +474,7 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
     from clue_ai.services import run_jev_scoring as score_jev
 
     configured = replace(settings, api_key="test-key")
-    client = TestClient(create_app(configured), base_url="http://127.0.0.1")
+    client = TestClient(create_app(configured), base_url="http://127.0.0.1:8000")
     monkeypatch.setattr(services, "sources_due", lambda *_args: [])
     save_jobs(
         settings.database_path,
@@ -505,7 +549,7 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
-        headers=ORIGIN,
+        headers=IN_APP_BROWSER_SAME_ORIGIN,
         follow_redirects=False,
     )
 

@@ -117,11 +117,17 @@ def create_app(
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             request_scheme = request.url.scheme.casefold()
             request_port = request.url.port or (443 if request_scheme == "https" else 80)
-            origin = request.headers.get("origin")
-            referer = request.headers.get("referer")
-            source_url = origin or referer
+            fetch_site = request.headers.get("sec-fetch-site", "").casefold()
+            if fetch_site == "cross-site":
+                return Response("Cross-origin form submissions are not accepted.", status_code=403)
+            if fetch_site == "same-origin":
+                source_url = ""
+            else:
+                origin = request.headers.get("origin", "").strip()
+                referer = request.headers.get("referer", "").strip()
+                source_url = referer if origin.casefold() == "null" else origin or referer
             if not source_url:
-                if request.headers.get("sec-fetch-site", "").casefold() != "same-origin":
+                if fetch_site != "same-origin":
                     return Response("A same-origin browser request is required.", status_code=403)
             else:
                 source_parts = urlsplit(source_url)
