@@ -1,6 +1,6 @@
 # Source discovery and crawl review
 
-**Status:** M1 five-feed/API set validated; M2's transient EU Lever API/page comparison validated the adapter; all employer/ATS sources remain `Review` until their specific ongoing-use terms are checked; X is manual-only under PLAN-003
+**Status:** Historical PLAN-001/002 pilot source review. The five-feed/API set and EU Lever/API comparison remain valid as initial implementation evidence. Company-board UX and automated source qualification are superseded by [PLAN-006](../plans/PLAN-006-profile-aware-company-board-discovery.md) and [ADR 0008](../decisions/0008-profile-aware-company-board-discovery.md); X remains manual-only under PLAN-003.
 **Reviewed:** 2026-10-01
 **Scope:** A single-user local job-search tool using $0 data sources and company career pages. The first search focus is fully remote work from Milan/Italy, including listings explicitly open to Europe or worldwide; no automated applying or public redistribution.
 
@@ -9,6 +9,8 @@
 Use a source registry and a **source-diverse discovery pipeline**. For the first validation search, target fully remote work from Milan/Italy; include EU/EEA, Europe, or worldwide roles only when the listing says that geography is eligible. Query a documented public feed or ATS endpoint first. Where no usable feed exists, consider ordinary, low-rate crawling of the employer's public career page and job-posting paths. This is a local personal-use tool, so do not design around commercial redistribution or public rehosting. Check each source's use terms, robots rules, and access behavior; prefer a clear alternative when published rules conflict with the planned local use. Parse job sitemaps, RSS/Atom, `JobPosting` JSON-LD, and ordinary HTML. Preserve the source URL, posted date, last-check time, and exact location-eligibility evidence.
 
 The local app must not crawl the whole web on each search. It should ingest registered sources on a controlled schedule, then filter its local listing index for the owner's location, role, and preferences. The source list will be broad but incomplete and will vary by geography.
+
+**Update (2026-10-01):** The initial implementation treated company/ATS connectors as manual `Review` entries and required the owner to inspect each before activation. This left Scrapling dependent on already-known URLs and did not fulfill the broader company-board discovery goal. PLAN-006 changes the target: automatically discover/qualify public official company career and ATS routes from a profile-matched company directory; do not present a repeated per-company approval checklist. If a public route is unsuitable, blocked, or ambiguous, pause that connector and continue with other sources. The pilot observations below are retained as historical evidence, not as a requirement to make the user approve every employer individually.
 
 Scrapling is the **selected local crawler** for registered public HTML job and career pages, including employer and ATS pages. Direct APIs and feeds remain separate connectors. Scrapling is licensed under BSD 3-Clause; that covers the library itself, not job-source content or access rules. Use its ordinary `Spider` and static-fetching paths; do not use its advertised stealth, proxy-rotation, fingerprint-impersonation, CAPTCHA, or anti-bot bypass features.
 
