@@ -50,6 +50,49 @@ def test_local_views_render_without_a_jev_key(settings):
     assert client.get("/health").json() == {"status": "ok", "storage": "local"}
 
 
+def test_sources_page_lists_new_remote_boards_and_manual_linkouts(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    response = client.get("/sources")
+
+    assert response.status_code == 200
+    assert "We Work Remotely public RSS feed" in response.text
+    assert "Himalayas public JSON API" in response.text
+    assert "Remotive public JSON API" in response.text
+    assert "Working Nomads public JSON feed" in response.text
+    assert "JustRemote public pages (Scrapling)" in response.text
+    assert "Open Dynamite Jobs manually" in response.text
+    assert "Open Wellfound manually" in response.text
+    assert "Never fetched by Clue" in response.text
+
+
+def test_embedded_browser_exact_local_origin_is_accepted_despite_cross_site_fetch_metadata(
+    settings,
+):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    response = client.post(
+        "/companies/aindo/track",
+        headers={"Origin": "http://127.0.0.1", "Sec-Fetch-Site": "cross-site"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+
+def test_actual_cross_origin_form_submission_is_still_rejected(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    response = client.post(
+        "/companies/aindo/untrack",
+        headers={"Origin": "https://attacker.example", "Sec-Fetch-Site": "cross-site"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert response.text == "Cross-origin form submissions are not accepted."
+
+
 @pytest.mark.parametrize(
     ("route", "current_href"),
     (
@@ -402,7 +445,18 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     assert 'href="https://jobs.example.org/openings/software-engineer"' in results.text
     assert "explicitly enable Jev scoring" in results.text
     assert "HTTP 200" in results.text
-    assert set(calls) == {"jobicy", "remotejobs", "remoteok", "remotefirstjobs", "startupjobs"}
+    assert set(calls) == {
+        "jobicy",
+        "remotejobs",
+        "remoteok",
+        "weworkremotely",
+        "himalayas",
+        "remotive",
+        "workingnomads",
+        "justremote",
+        "remotefirstjobs",
+        "startupjobs",
+    }
     assert "Powered by RemoteJobs.org" in results.text
     assert not any(call.startswith("user-") for call in calls)
     row = get_run_results(settings.database_path, run_id)[0]

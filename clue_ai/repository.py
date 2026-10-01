@@ -41,8 +41,121 @@ def list_companies(database_path: Path) -> list[dict[str, Any]]:
 def set_company_tracked(database_path: Path, company_id: str, tracked: bool) -> bool:
     with connect(database_path) as db:
         cursor = db.execute(
-            "UPDATE companies SET tracked = ? WHERE id = ?",
-            (int(tracked), company_id),
+            """UPDATE companies SET tracked = ?,
+               board_state = CASE
+                 WHEN ? = 0 AND board_state != 'blocked' THEN 'paused'
+                 WHEN ? = 1 AND board_state = 'paused' THEN 'candidate'
+                 ELSE board_state END
+               WHERE id = ?""",
+            (int(tracked), int(tracked), int(tracked), company_id),
+        )
+    return cursor.rowcount == 1
+
+
+def companies_due(
+    database_path: Path,
+    *,
+    interval_seconds: int = 86_400,
+    limit: int = 100,
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT * FROM companies WHERE tracked = 1 AND board_state NOT IN ('blocked', 'paused')
+               ORDER BY CASE WHEN last_checked_at = '' THEN 0 ELSE 1 END,
+                        last_checked_at, name COLLATE NOCASE LIMIT ?""",
+            (max(1, min(int(limit), 100)),),
+        ).fetchall()
+    due = []
+    for row in rows:
+        company = dict(row)
+        checked = _parse_time(company.get("last_checked_at"))
+        if (
+            force
+            or checked is None
+            or now - checked >= timedelta(seconds=max(3600, interval_seconds))
+        ):
+            try:
+                company["role_tags"] = json.loads(company.pop("role_tags_json") or "[]")
+            except json.JSONDecodeError:
+                company["role_tags"] = []
+            due.append(company)
+    return due
+
+
+def update_company_board(
+    database_path: Path,
+    company_id: str,
+    *,
+    board_state: str,
+    last_state: str,
+    careers_url: str = "",
+    board_url: str = "",
+    provider: str = "",
+    error: str = "",
+    listing_count: int = 0,
+    checked_at: str | None = None,
+) -> bool:
+    allowed_states = {
+        "candidate",
+        "resolved",
+        "checked",
+        "stale",
+        "paused",
+        "unavailable",
+        "blocked",
+    }
+    if board_state not in allowed_states:
+        raise ValueError("Unsupported company board state.")
+    safe_error = re.sub(r"[\r\n\t]+", " ", str(error))[:240]
+    checked = checked_at or utc_now()
+    endpoint = board_url or careers_url
+    with connect(database_path) as db:
+        cursor = db.execute(
+            """UPDATE companies SET board_state = ?, last_checked_at = ?, last_state = ?,
+               careers_url = CASE WHEN ? != '' THEN ? ELSE careers_url END,
+               board_url = CASE WHEN ? != '' THEN ? ELSE board_url END,
+               provider = CASE WHEN ? != '' THEN ? ELSE provider END,
+               last_error = ?, listing_count = ? WHERE id = ?""",
+            (
+                board_state,
+                checked,
+                last_state[:32],
+                careers_url,
+                careers_url,
+                board_url,
+                board_url,
+                provider,
+                provider,
+                safe_error,
+                max(0, int(listing_count)),
+                company_id,
+            ),
+        )
+        if cursor.rowcount == 1:
+            db.execute(
+                """UPDATE sources SET endpoint = CASE WHEN ? != '' THEN ? ELSE endpoint END,
+                   last_checked_at = ?, last_state = ?, last_error = ? WHERE id = ?""",
+                (
+                    endpoint,
+                    endpoint,
+                    checked,
+                    last_state[:32],
+                    safe_error,
+                    f"company-{company_id}",
+                ),
+            )
+    return cursor.rowcount == 1
+
+
+def retry_company_board(database_path: Path, company_id: str) -> bool:
+    with connect(database_path) as db:
+        cursor = db.execute(
+            """UPDATE companies SET board_state = 'candidate', last_checked_at = '',
+               last_state = 'never', last_error = ''
+               WHERE id = ? AND tracked = 1 AND board_state = 'blocked'""",
+            (company_id,),
         )
     return cursor.rowcount == 1
 
@@ -53,7 +166,8 @@ def list_sources(database_path: Path) -> list[dict[str, Any]]:
             """SELECT id, name, kind, endpoint, state, enabled, attribution,
                       interval_seconds, retention_days, policy_note, config_json,
                       is_builtin, last_checked_at, last_state, last_error
-               FROM sources ORDER BY is_builtin DESC, name COLLATE NOCASE"""
+               FROM sources WHERE kind != 'company_board'
+               ORDER BY is_builtin DESC, name COLLATE NOCASE"""
         ).fetchall()
     result = []
     for row in rows:
@@ -85,7 +199,7 @@ def sources_due(database_path: Path, force: bool = False) -> list[dict[str, Any]
     for source in list_sources(database_path):
         if source["state"] != "approved" or not source["enabled"]:
             continue
-        if source["kind"] == "manual_x":
+        if source["kind"] in {"manual_x", "manual_board"}:
             continue
         if source["kind"] in {"remote_first_rss", "remotejobs_api"}:
             # These sources track refreshes per requested role/query, not per source endpoint.

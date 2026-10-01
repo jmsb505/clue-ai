@@ -20,6 +20,7 @@
 .venv/
 venv/
 node_modules/
+/.cache/
 __pycache__/
 *.egg-info/
 .pytest_cache/

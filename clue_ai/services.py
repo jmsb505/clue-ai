@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from clue_ai.company_sources import crawl_tracked_companies
 from clue_ai.config import Settings
 from clue_ai.database import get_profile
 from clue_ai.domain import utc_now
@@ -61,13 +62,22 @@ def run_search(
                 checked_notes.append(f"{source['name']}: skipped — {outcome.message}")
                 continue
             if outcome.blocked:
-                record_source_state(
-                    database_path, source["id"], "blocked", outcome.message
+                if outcome.jobs:
+                    saved_partial = save_jobs_with_report(database_path, outcome.jobs)
+                    found_count += len(outcome.jobs)
+                else:
+                    saved_partial = None
+                partial_note = (
+                    f", {saved_partial.saved} listing record(s) saved from completed pages"
+                    if saved_partial
+                    else ""
                 )
+                record_source_state(database_path, source["id"], "blocked", outcome.message)
                 statuses = _status_summary(outcome)
                 checked_notes.append(
                     f"{source['name']}: paused after a block response; "
                     f"{outcome.checked} request(s), {outcome.response_bytes} response bytes"
+                    f"{partial_note}"
                     f"{statuses}."
                 )
                 continue
@@ -91,8 +101,10 @@ def run_search(
                     f" {outcome.not_found_count} page(s) returned 404; cached listings remain "
                     "stale until their normal expiry or retention rule applies."
                 )
+            message_prefix = f"{outcome.message} " if outcome.message else ""
             checked_notes.append(
-                f"{source['name']}: checked; {save_report.saved} listing record(s) indexed. {detail}"
+                f"{source['name']}: checked; {save_report.saved} listing record(s) indexed. "
+                f"{message_prefix}{detail}"
             )
         except SourceFetchError as exc:
             state = "blocked" if exc.blocked else "error"
@@ -114,6 +126,42 @@ def run_search(
                 f"{source['name']}: connector error ({type(exc).__name__}); existing listings kept."
             )
 
+    def company_progress(message: str) -> None:
+        update_run(
+            database_path,
+            run_id,
+            stage="sources",
+            message=message,
+            checked_sources=checked_notes,
+            found_count=found_count,
+        )
+
+    try:
+        company_report = crawl_tracked_companies(
+            database_path,
+            settings,
+            on_progress=company_progress,
+            save_jobs=lambda jobs: save_jobs_with_report(database_path, jobs).saved,
+        )
+        found_count += company_report.raw_records
+        if company_report.companies_checked:
+            coverage_note = (
+                f"Company career search: {company_report.companies_checked} tracked companies, "
+                f"{company_report.boards_resolved} public ATS boards resolved, "
+                f"{company_report.pages_checked} pages/feed requests, "
+                f"{company_report.raw_records} listings parsed, "
+                f"{company_report.jobs_indexed} new records indexed, "
+                f"{company_report.blocked} blocked, {company_report.unavailable} unavailable, "
+                f"{company_report.errors} errors; "
+                f"{company_report.response_bytes} response bytes in "
+                f"{company_report.elapsed_seconds:.1f}s."
+            )
+            checked_notes.append(coverage_note)
+    except Exception as exc:  # noqa: BLE001 - existing aggregator results remain usable on crawler failure.
+        checked_notes.append(
+            f"Company career search could not finish ({type(exc).__name__}); existing listings kept."
+        )
+
     update_run(
         database_path,
         run_id,
@@ -122,7 +170,6 @@ def run_search(
         checked_sources=checked_notes,
         found_count=found_count,
     )
-
 
     prune_expired_data(database_path)
     indexed = all_active_jobs(database_path)

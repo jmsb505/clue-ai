@@ -25,6 +25,17 @@ def database(settings):
     return settings.database_path
 
 
+@pytest.fixture(autouse=True)
+def disable_live_company_crawling_in_unit_tests(monkeypatch):
+    """Keep workflow tests deterministic; synthetic crawler tests call the crawler directly."""
+    from clue_ai.company_sources import CompanyCrawlSummary
+
+    monkeypatch.setattr(
+        "clue_ai.services.crawl_tracked_companies",
+        lambda *_args, **_kwargs: CompanyCrawlSummary(),
+    )
+
+
 def make_job(
     *,
     source_id="jobicy",

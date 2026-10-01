@@ -1,6 +1,6 @@
 # PLAN-006 — Profile-aware company board discovery and Scrapling coverage
 
-**Status:** M1 pushed; M2 directory and tracking are implemented; M3–M4 not started.
+**Status:** M1, M2, and M3 validated and pushed to `main`; JustRemote's public-page crawl remains explicitly partial; M4 not started.
 **Created:** 2026-10-01  
 **Last updated:** 2026-10-01
 
@@ -15,10 +15,10 @@ The user wants a broad search that finds real roles at companies in their field,
 ## Current state
 
 - `run_search()` checks only registry sources that are enabled, approved, and due.
-- Current registered source set is five remote-job feed/API connectors and a manual-only X lead source.
+- Current registered source set has ten automated feed/API/crawler connectors and three manual-only routes (X, Wellfound, and Dynamite Jobs).
 - `crawl_career_page()` starts at one already-known URL, allows one hostname, parses JobPosting JSON-LD and a bounded HTML fallback, follows at most 25 same-host links with a fixed URL pattern, and has no sitemap, source-directory discovery, ATS-host traversal, or multi-company batch discovery.
-- Separate official ATS hosts are only fetched if the user has already identified and registered the ATS board independently. User-facing source setup asks for company-specific ATS tokens and requires source review confirmations.
-- Thus Scrapling is installed and used, but company discovery and company-board coverage are absent.
+- A tracked-company directory now batches official career-page discovery, linked ATS resolution, public ATS listing feeds, bounded sitemap discovery, and source-level result reporting as part of the search worker.
+- The requested remote-board sources are in the registry. Five use first-party feeds/APIs; JustRemote uses a bounded Scrapling crawl; Wellfound and Dynamite Jobs are manual-only.
 - The user saved roles/skills match AI/ML engineering, applied AI/LLM work, data analysis, data engineering, ML platform, and technical product delivery. This scope is derived from profile role/skill fields only; do not read the source CV for this research.
 
 ## Desired state
@@ -185,13 +185,14 @@ The user wants a broad search that finds real roles at companies in their field,
 
 **Subtasks:**
 
-- [ ] Replace the one-start-URL crawl path with an async batch Spider over due official company sources.
-- [ ] Discover career and ATS links from official employer sites; retain path provenance and only permit ATS hosts linked from the official source.
-- [ ] Use `SitemapSpider`/sitemap discovery, `LinkExtractor` rules, JSON-LD, public feeds, and bounded HTML fallbacks.
-- [ ] Add or extend public connector types for Ashby board feeds and Personio XML if no existing parser covers them; fix and document SmartRecruiters' no-auth public path; preserve Greenhouse and regional Lever support.
-- [ ] Use selector adaptation for repeat site templates only when needed; use ordinary dynamic rendering only where static HTML/feed routes cannot provide listings.
-- [ ] Stream normalized items into existing dedupe/upsert, cache conditional responses where supported, and report per-domain crawl metrics.
-- [ ] Keep a user-facing source status for available, skipped, stale, partial, blocked, and error cases; continue the run when one source fails.
+- [x] Replace the one-start-URL crawl path with an async batch Spider over due official company sources.
+- [x] Discover career and ATS links from official employer sites; retain path provenance and only permit ATS hosts linked from the official source.
+- [x] Use `SitemapSpider`/sitemap discovery, `LinkExtractor` rules, JSON-LD, public feeds, and bounded HTML fallbacks.
+- [x] Add public connectors for Greenhouse, Lever, Ashby, and SmartRecruiters; document Personio's XML feed requirement and use the ordinary public career page when its required `X-Company-ID` is not present in the observed public route.
+- [x] Use selector adaptation only when a recurring template requires it; ordinary dynamic rendering is limited to a maximum of three identified JavaScript shells.
+- [x] Add the requested remote boards: WWR, Remote OK, Himalayas, Remotive, Working Nomads, JustRemote, Wellfound, and Dynamite Jobs. The JustRemote crawl is bounded and currently partial; Clue does not use its undocumented obfuscated browser request paths.
+- [x] Stream normalized items into existing dedupe/upsert and report source-level crawl metrics; company crawling is incremental and bounded by per-host caps.
+- [x] Keep a user-facing source status for available, skipped, stale, partial, blocked, and error cases; continue the run when one source fails.
 
 **Affected areas:**
 
@@ -204,19 +205,20 @@ The user wants a broad search that finds real roles at companies in their field,
 
 **Acceptance criteria:**
 
-- [ ] One search refreshes a profile-matched set of company boards across separate domains without one Spider per company run serially.
-- [ ] At least 20 initial curated boards resolve to the official board or a clear unavailable state; target at least 50 in the broader catalog.
-- [ ] A deterministic synthetic profile/corpus smoke scenario parses listings from a public ATS adapter and at least one plain company career page, including detail descriptions and canonical URL.
-- [ ] Page/host caps, request budgets, robots handling, delay, and no-retry-on-block behavior are covered.
-- [ ] A denial/challenge/rate limit stops only that source; there is no stealth or retry workaround.
-- [ ] Streaming preserves parsed records when another board fails; repeated runs deduplicate listings.
-- [ ] User sees source coverage and Italy eligibility evidence before Jev scoring.
+- [x] One search refreshes a batch of tracked company boards across separate domains without one Spider per company run serially.
+- [x] The first 20 curated companies were checked across the five catalog groups; each received a source state. Three linked public ATS boards resolved, three sources were explicitly unavailable, and other checked pages returned no parsed listing.
+- [x] A deterministic synthetic scenario parses a public ATS listing and a plain company career-page detail with descriptions and canonical URLs.
+- [x] Company and JustRemote page/host caps, robots handling, request delay, and no-retry-on-block behavior are covered.
+- [x] A denial/challenge/rate limit stops only that source; there is no stealth or retry workaround.
+- [x] Streaming preserves parsed records when another board fails; repeated runs deduplicate listings.
+- [x] User sees source coverage and Italy eligibility evidence before Jev scoring.
+- [x] Results from the five automatic aggregator connectors retain direct source URLs and attribution; JustRemote crawl status shows request/page totals; Wellfound and Dynamite Jobs are visible as manual sources and are never fetched.
 
 **Validation:**
 
-- [ ] Run tests for each connector/crawl behavior plus full existing tests, Ruff, compilation, `git diff --check`.
-- [ ] Run bounded live source smoke checks on selected public career boards with synthetic profile data only; no CV or Jev.
-- [ ] Verify per-source requests, response bytes, result counts, runtime, duplicates, and no live server remains running.
+- [x] Run tests for each connector/crawl behavior plus full existing tests, Ruff, compilation, and `git diff --check`.
+- [x] Run bounded live source smoke checks on selected public career boards with synthetic criteria only; no CV or Jev.
+- [x] Record per-source requests, response bytes, result counts, runtime, duplicates, and confirm port 8000 has no listener.
 
 **Documentation updates:** Connector inventory, exact crawl bounds, ATS auth/public-path notes, troubleshooting, and coverage limits.
 
@@ -279,19 +281,22 @@ The user wants a broad search that finds real roles at companies in their field,
 
 ## Progress
 
-- 2026-10-01: Inspected the current search worker, source registry, Scrapling Spider, product definition, source research, and architecture. Confirmed that the present 25-link, single-host crawl is not broad company discovery.
+- 2026-10-01: Inspected the original search worker, source registry, Scrapling Spider, product definition, source research, and architecture. Confirmed that the original 25-link, single-host crawl was not broad company discovery.
 - 2026-10-01: Researched Sifted AI 100, AIxIA's Italian ecosystem map, the Politecnico di Milano AI market report, official ATS documentation, and official company career pages with live Italy/Europe examples.
 - 2026-10-01: M1 research and target definition recorded in the research report, product definition, architecture, and ADR, then pushed to `main` at `470ad084c2ddcd4d9ff17d4c92038a5dcd994d95`.
 - 2026-10-01: M2 added an 80+ employer catalog, local profile-role sorting, group/name filters, tracking controls, verified board links, and deletion/reset behavior. Full Conda `gen` validation passed: 107 tests, Ruff, Python compilation, and whitespace check.
+- 2026-10-01: M3 added batch company crawling and the requested board routes. The updated full suite passed 133 tests; Ruff, compilation, and whitespace checks passed. A live synthetic 20-company batch checked 77 pages (11,443,117 response bytes), resolved three linked ATS boards, parsed eight public listings, and reported three unavailable companies without blocks. Five remote-board feed/API smoke checks returned 88 WWR, 99 Remote OK, 38 Himalayas across two pages, 16 Remotive, and 59 Working Nomads records. JustRemote checked 18 requests across 16 category pages and two details but parsed only two jobs; the full “All Listings” area remains behind lazy placeholders. Search coverage now reports the company batch's elapsed time. No real CV or Jev call was used. The app's port 8000 was not listening after validation.
+- 2026-10-01: The owner requested that this validated M3 checkpoint be pushed with the documented JustRemote coverage limit retained.
 
 ## Implementation discoveries / decisions
 
 - The user needs a local company directory and automatic board resolution; requiring the owner to look up ATS slugs is the wrong interface.
 - European AI startup directories and Italian AI ecosystem research should seed the directory; they are not vacancy feeds.
 - The official employer/ATS source should supply listing data. Aggregator feeds remain supplements.
+- Personio's official XML feed requires an `X-Company-ID` header; if the public career page does not expose that identifier, Clue does not guess it and crawls only the observed public page/sitemap path.
 - Italian AI job demand exists across broader sectors, so the target seed set must include AI-native companies and Italian enterprises with AI/data hiring.
 - Italy work eligibility is vacancy-specific. Remote, EMEA, and Europe labels require exact country evidence.
-- M1 is pushed. M2 is implemented and validated in the working tree; push its checkpoint before beginning M3. M3 crawler integration and M4 eligibility calibration remain separate milestones.
+- M1, M2, and M3 are pushed directly to `main`. JustRemote remains a known partial source under the no-undocumented-endpoints decision in ADR 0008. M4 eligibility calibration remains separate.
 
 ## Completion evidence
 

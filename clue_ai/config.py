@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+os.environ.setdefault(
+    "PLAYWRIGHT_BROWSERS_PATH",
+    str(PROJECT_ROOT / ".cache" / "ms-playwright"),
+)
 
 
 def load_local_environment(path: Path | None = None) -> None:

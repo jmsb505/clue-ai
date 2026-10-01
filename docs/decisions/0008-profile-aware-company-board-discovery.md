@@ -21,6 +21,8 @@ Build a local, profile-aware company-board directory and make multi-company offi
 6. Public official pages are the normal search path. The app performs automated source qualification and only tracks public routes it can fetch within their published behavior; an explicit denial, challenge, or rate limit pauses that connector and does not block the rest of the search. Do not require the user to certify each board through a repeated per-source checklist.
 7. Never use login-only content, guessed ATS identifiers, unrelated page crawling, search-result scraping, stealth, proxy rotation, browser impersonation, CAPTCHA solving, or retrying around an explicit block.
 
+8. Add the requested job-board sources through the access path each publisher documents: We Work Remotely's public RSS, Remote OK's JSON feed, Himalayas' role/country search API, Remotive's public API, and Working Nomads' linked public JSON feed. Use Scrapling's robots-aware, same-host public-page crawl for JustRemote, capped at 60 pages per daily refresh. Wellfound is a manual link-out because its Talent Terms prohibit automated harvesting/scraping; Dynamite Jobs is a manual link-out because its developer docs exclude public-board scraping and provide no public listings API. Do not reverse undocumented/obfuscated request paths to bypass these limitations.
+
 ## Consequences
 
 - Company-level recall and current listing coverage improve beyond aggregator feeds, while the app remains honest that no catalog covers every employer.
@@ -29,6 +31,8 @@ Build a local, profile-aware company-board directory and make multi-company offi
 - A catalog company is only a candidate seed, not a live vacancy or a promise of Italy eligibility.
 - Each vacancy keeps original source, date, and country evidence; the user follows the original employer link and decides whether to apply.
 - This adds no paid source or infrastructure cost. Jev remains the only recurring cost.
+- The requested aggregator group expands source breadth without replacing official employer/ATS discovery. Manual-only boards remain visible so the owner can open them directly.
+- JustRemote's current static HTML exposes only two posting-detail links across 16 category pages; browser rendering leaves the all-listings placeholders unpopulated. Clue records this as partial coverage and avoids its undocumented obfuscated request paths.
 
 ## Evidence
 

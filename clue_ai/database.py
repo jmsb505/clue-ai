@@ -53,6 +53,104 @@ DEFAULT_SOURCES = (
         "is_builtin": 1,
     },
     {
+        "id": "weworkremotely",
+        "name": "We Work Remotely",
+        "kind": "weworkremotely_rss",
+        "endpoint": "https://weworkremotely.com/remote-jobs.rss",
+        "state": "approved",
+        "enabled": 1,
+        "attribution": "We Work Remotely",
+        "interval_seconds": 43_200,
+        "retention_days": 30,
+        "policy_note": "Official public RSS feed. Keep a direct link to each WWR listing and credit We Work Remotely.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
+        "id": "himalayas",
+        "name": "Himalayas",
+        "kind": "himalayas_api",
+        "endpoint": "https://himalayas.app/jobs/api/search",
+        "state": "approved",
+        "enabled": 1,
+        "attribution": "Himalayas",
+        "interval_seconds": 86_400,
+        "retention_days": 30,
+        "policy_note": "Official public JSON search API; filters by requested role and country, up to 25 pages per daily search. Keep the Himalayas listing link and visible source credit.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
+        "id": "remotive",
+        "name": "Remotive",
+        "kind": "remotive_api",
+        "endpoint": "https://remotive.com/api/remote-jobs",
+        "state": "approved",
+        "enabled": 1,
+        "attribution": "Remotive",
+        "interval_seconds": 86_400,
+        "retention_days": 30,
+        "policy_note": "Official public API; data is delayed by 24 hours. Keep the Remotive listing link and source credit. Local private search only; do not republish to other job platforms.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
+        "id": "workingnomads",
+        "name": "Working Nomads",
+        "kind": "workingnomads_api",
+        "endpoint": "https://www.workingnomads.com/api/exposed_jobs/",
+        "state": "approved",
+        "enabled": 1,
+        "attribution": "Working Nomads",
+        "interval_seconds": 86_400,
+        "retention_days": 30,
+        "policy_note": "First-party JSON endpoint linked from Working Nomads' jobs page. Refresh daily and retain the direct Working Nomads listing URL and source credit.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
+        "id": "justremote",
+        "name": "JustRemote",
+        "kind": "justremote_scrapling",
+        "endpoint": "https://justremote.co/remote-jobs",
+        "state": "approved",
+        "enabled": 1,
+        "attribution": "JustRemote",
+        "interval_seconds": 86_400,
+        "retention_days": 30,
+        "policy_note": "Public listing pages via Scrapling: robots.txt respected, at most 60 same-site pages per daily search, no login or browser impersonation. Keep the JustRemote listing link and credit.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
+        "id": "dynamitejobs_manual",
+        "name": "Dynamite Jobs",
+        "kind": "manual_board",
+        "endpoint": "https://dynamitejobs.com/remote-jobs",
+        "state": "approved",
+        "enabled": 0,
+        "attribution": "Dynamite Jobs",
+        "interval_seconds": 86_400,
+        "retention_days": 30,
+        "policy_note": "Manual link-out. Dynamite Jobs' developer documentation says its company API is not for scraping the public board; no listings are fetched by Clue.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
+        "id": "wellfound_manual",
+        "name": "Wellfound",
+        "kind": "manual_board",
+        "endpoint": "https://wellfound.com/jobs",
+        "state": "approved",
+        "enabled": 0,
+        "attribution": "Wellfound",
+        "interval_seconds": 86_400,
+        "retention_days": 30,
+        "policy_note": "Manual link-out. Wellfound's current Talent Terms prohibit scraping and automated access; no listings are fetched by Clue.",
+        "config_json": "{}",
+        "is_builtin": 1,
+    },
+    {
         "id": "remotefirstjobs",
         "name": "Remote First Jobs",
         "kind": "remote_first_rss",
@@ -306,6 +404,20 @@ def initialize(database_path: Path) -> None:
                     company["discovery_url"],
                 ),
             )
+            db.execute(
+                """INSERT OR IGNORE INTO sources
+                   (id, name, kind, endpoint, state, enabled, attribution, interval_seconds,
+                    retention_days, policy_note, config_json, is_builtin)
+                   VALUES (?, ?, 'company_board', ?, 'approved', 0, ?, 86400, 30, ?, ?, 1)""",
+                (
+                    f"company-{company['id']}",
+                    company["name"],
+                    company["board_url"] or company["careers_url"] or company["homepage_url"],
+                    company["name"],
+                    "Official company board discovered from the employer's own website.",
+                    json.dumps({"company_id": company["id"]}),
+                ),
+            )
         for source in DEFAULT_SOURCES:
             db.execute(
                 """INSERT OR IGNORE INTO sources
@@ -402,7 +514,7 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
         db.execute("DELETE FROM sources WHERE is_builtin = 0")
         db.execute(
             """UPDATE sources SET last_checked_at = '', last_state = 'never', last_error = ''
-               WHERE is_builtin = 1 AND state = 'approved' AND enabled = 1"""
+               WHERE is_builtin = 1 AND (state = 'approved' AND enabled = 1 OR kind = 'company_board')"""
         )
         db.execute(
             """UPDATE app_settings SET jev_consent_at = '', default_work_from = 'Italy',

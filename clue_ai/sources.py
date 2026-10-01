@@ -8,9 +8,10 @@ import socket
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, ClassVar
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from clue_ai.config import Settings
@@ -45,11 +46,16 @@ SOURCE_HOSTS = {
     "jobicy_api": {"jobicy.com"},
     "remotejobs_api": {"remotejobs.org"},
     "remoteok_json": {"remoteok.com"},
+    "weworkremotely_rss": {"weworkremotely.com"},
+    "himalayas_api": {"himalayas.app"},
+    "remotive_api": {"remotive.com"},
+    "workingnomads_api": {"workingnomads.com", "www.workingnomads.com"},
     "remote_first_rss": {"remotefirstjobs.com"},
     "startup_rss": {"startup.jobs"},
     "greenhouse": {"boards-api.greenhouse.io"},
     "lever": {"api.lever.co", "api.eu.lever.co"},
     "smartrecruiters": {"api.smartrecruiters.com"},
+    "ashby": {"api.ashbyhq.com"},
 }
 
 
@@ -61,10 +67,21 @@ def fetch_source(
 ) -> FetchOutcome:
     """Fetch only an enabled, already-approved source supplied by the registry."""
     if source.get("kind") == "manual_x":
-        return FetchOutcome(message="X is a manual-only lead source and is never fetched.", skipped=True)
+        return FetchOutcome(
+            message="X is a manual-only lead source and is never fetched.", skipped=True
+        )
+    if source.get("kind") == "manual_board":
+        return FetchOutcome(
+            message="This board is available as a manual link-out and is never fetched by Clue.",
+            skipped=True,
+        )
     if source.get("state") != "approved" or not source.get("enabled"):
         return FetchOutcome(message="This source is not approved and enabled.", skipped=True)
     kind = str(source.get("kind") or "")
+    if kind == "justremote_scrapling":
+        from clue_ai.scrapling_boards import crawl_justremote
+
+        return crawl_justremote(source, settings)
     if kind == "scrapling":
         return crawl_career_page(source, settings)
     if kind not in SOURCE_HOSTS:
@@ -77,6 +94,10 @@ def fetch_source(
         if database_path is None:
             raise SourceFetchError("The role-query refresh ledger is unavailable.")
         return _fetch_remotejobs(source, criteria, settings, database_path)
+    if kind == "himalayas_api":
+        return _fetch_himalayas(source, criteria, settings)
+    if kind == "smartrecruiters":
+        return _fetch_smartrecruiters(source, settings)
 
     url = _connector_url(source)
     allowed_hosts = _allowed_hosts(source, kind, url)
@@ -84,7 +105,16 @@ def fetch_source(
         raise SourceFetchError("The source endpoint is outside its registered host.", blocked=True)
     payload = _fetch_bytes(url, allowed_hosts, settings)
     try:
-        if kind in {"jobicy_api", "remotejobs_api", "remoteok_json", "greenhouse", "lever", "smartrecruiters"}:
+        if kind in {
+            "jobicy_api",
+            "remotejobs_api",
+            "remoteok_json",
+            "remotive_api",
+            "workingnomads_api",
+            "greenhouse",
+            "lever",
+            "ashby",
+        }:
             raw = json.loads(payload.decode("utf-8-sig"))
             raw_records = _raw_json_record_count(kind, raw)
             jobs = _parse_json_feed(kind, source, raw, settings)
@@ -104,6 +134,168 @@ def fetch_source(
     )
 
 
+def _fetch_himalayas(
+    source: dict[str, Any],
+    criteria: SearchCriteria,
+    settings: Settings,
+    *,
+    max_pages: int = 25,
+) -> FetchOutcome:
+    """Search Himalayas for the requested role/location and walk a bounded number of pages."""
+    endpoint = str(source.get("endpoint") or "https://himalayas.app/jobs/api")
+    allowed_hosts = SOURCE_HOSTS["himalayas_api"]
+    page_budget = max(1, min(25, max_pages))
+    endpoint_parts = urlsplit(endpoint)
+    path = endpoint_parts.path.rstrip("/")
+    if path.endswith("/jobs/api"):
+        path = f"{path}/search"
+    query = criteria.roles.strip()[:500]
+    country = _himalayas_country(criteria.work_from)
+    jobs: list[NormalizedJob] = []
+    response_bytes = 0
+    raw_records = 0
+    checked = 0
+    truncated = False
+    status_counts: dict[str, int] = {}
+
+    for page in range(1, page_budget + 1):
+        if page > 1:
+            # The API refreshes daily and warns that excess requests can be rate-limited.
+            time.sleep(1.0)
+        params = {
+            key: value
+            for key, value in parse_qsl(endpoint_parts.query, keep_blank_values=True)
+            if key not in {"cursor", "offset", "limit", "page", "q", "country"}
+        }
+        if query:
+            params["q"] = query
+        if country:
+            params["country"] = country
+        params["page"] = str(page)
+        page_url = urlunsplit(
+            (endpoint_parts.scheme, endpoint_parts.netloc, path, urlencode(params), "")
+        )
+        try:
+            payload = _fetch_bytes(page_url, allowed_hosts, settings)
+        except SourceFetchError as exc:
+            if exc.status_code == 429:
+                status_counts["status_429"] = status_counts.get("status_429", 0) + 1
+                return FetchOutcome(
+                    jobs=jobs,
+                    checked=checked + 1,
+                    message="Himalayas rate-limited the role/location search; saved listings from completed pages and paused this source.",
+                    blocked=True,
+                    response_bytes=response_bytes,
+                    raw_records=raw_records,
+                    status_counts=status_counts,
+                )
+            raise
+        checked += 1
+        status_counts["status_200"] = status_counts.get("status_200", 0) + 1
+        response_bytes += len(payload)
+        try:
+            raw = json.loads(payload.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SourceFetchError("The Himalayas API response could not be parsed.") from exc
+        if not isinstance(raw, dict) or not isinstance(raw.get("jobs"), list):
+            raise SourceFetchError("The Himalayas API returned an unexpected response shape.")
+        page_records = _raw_json_record_count("himalayas_api", raw)
+        raw_records += page_records
+        jobs.extend(_parse_json_feed("himalayas_api", source, raw, settings))
+        try:
+            total_count = max(0, int(raw.get("totalCount") or 0))
+        except (TypeError, ValueError):
+            total_count = 0
+        if total_count:
+            if page * 20 >= total_count:
+                break
+        elif page_records < 20:
+            break
+        if page == page_budget:
+            truncated = True
+
+    message = (
+        f"Retrieved {len(jobs)} Himalayas listings from {checked} role/location search page(s)."
+        if not truncated
+        else f"Retrieved {len(jobs)} Himalayas listings; stopped at the {page_budget}-page daily cap."
+    )
+    return FetchOutcome(
+        jobs=jobs,
+        checked=checked,
+        message=message,
+        response_bytes=response_bytes,
+        raw_records=raw_records,
+        parse_failures=max(0, raw_records - len(jobs)),
+        status_counts=status_counts,
+    )
+
+
+def _himalayas_country(work_from: str) -> str:
+    """Return a country query when the user's work location names a country."""
+    value = str(work_from or "").strip()
+    if "," in value:
+        value = value.rsplit(",", 1)[-1].strip()
+    if value.casefold() in {
+        "",
+        "anywhere",
+        "worldwide",
+        "global",
+        "europe",
+        "european union",
+        "eu",
+        "emea",
+        "remote",
+    }:
+        return ""
+    return value[:100]
+
+
+def _fetch_smartrecruiters(
+    source: dict[str, Any], settings: Settings, *, max_pages: int = 5
+) -> FetchOutcome:
+    """Read up to five pages from SmartRecruiters' documented public postings route."""
+    company_id = quote(str((source.get("config") or {}).get("company_id") or ""), safe="")
+    if not company_id:
+        raise SourceFetchError("The linked SmartRecruiters board has no company identifier.")
+    allowed_hosts = SOURCE_HOSTS["smartrecruiters"]
+    jobs: list[NormalizedJob] = []
+    total_bytes = 0
+    raw_records = 0
+    checked = 0
+    for page in range(max(1, min(max_pages, 5))):
+        if page:
+            time.sleep(2.0)
+        offset = page * 100
+        url = (
+            f"https://api.smartrecruiters.com/v1/companies/{company_id}"
+            f"/postings?limit=100&offset={offset}"
+        )
+        payload = _fetch_bytes(url, allowed_hosts, settings)
+        checked += 1
+        total_bytes += len(payload)
+        try:
+            raw = json.loads(payload.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SourceFetchError(
+                "The SmartRecruiters public listing response could not be parsed."
+            ) from exc
+        page_count = _raw_json_record_count("smartrecruiters", raw)
+        raw_records += page_count
+        jobs.extend(_parse_json_feed("smartrecruiters", source, raw, settings))
+        total = int(raw.get("totalFound") or raw.get("total") or 0) if isinstance(raw, dict) else 0
+        if page_count < 100 or (total and offset + page_count >= total):
+            break
+    return FetchOutcome(
+        jobs=jobs,
+        checked=checked,
+        message=f"Retrieved {len(jobs)} SmartRecruiters listing records.",
+        response_bytes=total_bytes,
+        raw_records=raw_records,
+        parse_failures=max(0, raw_records - len(jobs)),
+        status_counts={"status_200": checked},
+    )
+
+
 def _connector_url(source: dict[str, Any]) -> str:
     kind = source["kind"]
     config = source.get("config") or {}
@@ -119,7 +311,12 @@ def _connector_url(source: dict[str, Any]) -> str:
         return f"https://{host}/v0/postings/{site}?mode=json"
     if kind == "smartrecruiters":
         company_id = quote(str(config.get("company_id") or ""), safe="")
-        return f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings?limit=100&offset=0"
+        return (
+            f"https://api.smartrecruiters.com/v1/companies/{company_id}/postings?limit=100&offset=0"
+        )
+    if kind == "ashby":
+        board_name = quote(str(config.get("board_name") or ""), safe="")
+        return f"https://api.ashbyhq.com/posting-api/job-board/{board_name}"
     return str(source.get("endpoint") or "")
 
 
@@ -181,7 +378,9 @@ def _fetch_bytes(url: str, allowed_hosts: set[str], settings: Settings) -> bytes
             if len(body) > settings.max_feed_bytes:
                 raise SourceFetchError("The source response exceeds the local size limit.")
             if _looks_blocked(body):
-                raise SourceFetchError("The source returned a bot or access challenge.", blocked=True)
+                raise SourceFetchError(
+                    "The source returned a bot or access challenge.", blocked=True
+                )
             return body
     except HTTPError as exc:
         blocked = exc.code in {401, 403, 429}
@@ -213,13 +412,27 @@ def _looks_blocked(payload: bytes) -> bool:
 
 
 def _raw_json_record_count(kind: str, raw: Any) -> int:
-    if kind in {"jobicy_api", "greenhouse"}:
+    if kind in {
+        "jobicy_api",
+        "greenhouse",
+        "ashby",
+        "remotive_api",
+        "himalayas_api",
+    }:
         items = raw.get("jobs", []) if isinstance(raw, dict) else []
+        if kind == "ashby":
+            items = [
+                item
+                for item in items
+                if isinstance(item, dict) and item.get("isListed") is not False
+            ]
     elif kind == "remotejobs_api":
         items = raw.get("data", []) if isinstance(raw, dict) else []
     elif kind == "remoteok_json":
         items = raw if isinstance(raw, list) else []
         items = [item for item in items if isinstance(item, dict) and item.get("position")]
+    elif kind == "workingnomads_api":
+        items = raw if isinstance(raw, list) else raw.get("jobs", []) if isinstance(raw, dict) else []
     elif kind == "lever":
         items = raw if isinstance(raw, list) else []
     elif kind == "smartrecruiters":
@@ -241,13 +454,20 @@ def _parse_json_feed(
     settings: Settings,
 ) -> list[NormalizedJob]:
     items: list[dict[str, Any]] = []
-    if kind == "jobicy_api":
+    if kind in {"jobicy_api", "remotive_api", "himalayas_api"}:
         items = raw.get("jobs", []) if isinstance(raw, dict) else []
+    elif kind == "ashby":
+        items = raw.get("jobs", []) if isinstance(raw, dict) else []
+        items = [
+            item for item in items if isinstance(item, dict) and item.get("isListed") is not False
+        ]
     elif kind == "remotejobs_api":
         items = raw.get("data", []) if isinstance(raw, dict) else []
     elif kind == "remoteok_json":
         items = raw if isinstance(raw, list) else []
         items = [item for item in items if isinstance(item, dict) and item.get("position")]
+    elif kind == "workingnomads_api":
+        items = raw if isinstance(raw, list) else raw.get("jobs", []) if isinstance(raw, dict) else []
     elif kind == "greenhouse":
         items = raw.get("jobs", []) if isinstance(raw, dict) else []
     elif kind == "lever":
@@ -270,6 +490,7 @@ def _normalize_api_job(
     item: dict[str, Any],
     settings: Settings,
 ) -> NormalizedJob | None:
+    valid_through = ""
     if kind == "jobicy_api":
         title = item.get("jobTitle") or item.get("title")
         company = item.get("companyName") or item.get("company")
@@ -282,6 +503,85 @@ def _normalize_api_job(
         salary_min, salary_max = _number(item.get("salaryMin")), _number(item.get("salaryMax"))
         currency = item.get("salaryCurrency") or ""
         period = item.get("salaryPeriod") or ""
+    elif kind == "remotive_api":
+        title = item.get("title")
+        company = item.get("company_name") or ""
+        description = item.get("description") or ""
+        tags = item.get("tags") or []
+        if isinstance(tags, list) and tags:
+            description = f"{description}\n\nTags: {', '.join(str(tag) for tag in tags if tag)}"
+        if item.get("category"):
+            description = f"{description}\n\nCategory: {item['category']}"
+        location = item.get("candidate_required_location") or "Remote"
+        url = item.get("url")
+        ext = item.get("id") or url
+        posted = item.get("publication_date")
+        employment = item.get("job_type") or ""
+        salary_text = str(item.get("salary") or "")
+        salary_min = _number(item.get("salary_min"))
+        salary_max = _number(item.get("salary_max"))
+        if salary_min is None and salary_max is None:
+            salary_min, salary_max = _salary_range_from_text(salary_text)
+        currency = item.get("salary_currency") or _salary_currency_from_text(salary_text)
+        period = item.get("salary_period") or _salary_period_from_text(salary_text)
+    elif kind == "himalayas_api":
+        title = item.get("title")
+        company = item.get("companyName") or ""
+        description = item.get("description") or item.get("excerpt") or ""
+        category_values = item.get("categories") or item.get("parentCategories") or []
+        seniority_values = item.get("seniority") or []
+        if not isinstance(category_values, list):
+            category_values = [category_values]
+        if not isinstance(seniority_values, list):
+            seniority_values = [seniority_values]
+        metadata = [
+            f"Categories: {', '.join(str(value) for value in category_values if value)}"
+            if category_values
+            else "",
+            f"Seniority: {', '.join(str(value) for value in seniority_values if value)}"
+            if seniority_values
+            else "",
+        ]
+        if any(metadata):
+            metadata_text = "\n".join(value for value in metadata if value)
+            description = f"{description}\n\n{metadata_text}"
+        restrictions = item.get("locationRestrictions") or []
+        if not isinstance(restrictions, list):
+            restrictions = [restrictions]
+        location_names = [
+            str(value.get("name") or value.get("alpha2") or "")
+            if isinstance(value, dict)
+            else str(value)
+            for value in restrictions
+        ]
+        location = ", ".join(value for value in location_names if value) or "Worldwide"
+        url = item.get("applicationLink")
+        ext = item.get("guid") or url
+        posted = _source_epoch_date(item.get("pubDate"))
+        valid_through = _source_epoch_date(item.get("expiryDate"))
+        employment = item.get("employmentType") or ""
+        salary_min = _number(item.get("minSalary"))
+        salary_max = _number(item.get("maxSalary"))
+        currency = item.get("currency") or ""
+        period = item.get("salaryPeriod") or "annual"
+    elif kind == "workingnomads_api":
+        title = item.get("title")
+        company = item.get("company_name") or ""
+        description = item.get("description") or ""
+        tags = item.get("tags") or ""
+        if isinstance(tags, list):
+            tags = ", ".join(str(tag) for tag in tags if tag)
+        if tags:
+            description = f"{description}\n\nTags: {tags}"
+        location = item.get("location") or "Remote"
+        url = item.get("url")
+        ext = item.get("id") or url
+        posted = item.get("pub_date")
+        employment = item.get("type") or ""
+        salary_min = _number(item.get("salary_min"))
+        salary_max = _number(item.get("salary_max"))
+        currency = item.get("salary_currency") or ""
+        period = item.get("salary_period") or ""
     elif kind == "remotejobs_api":
         title = item.get("title")
         company_obj = item.get("company") or {}
@@ -332,13 +632,49 @@ def _normalize_api_job(
         employment = categories.get("commitment") or ""
         salary_min = salary_max = None
         currency = period = ""
+    elif kind == "ashby":
+        title = item.get("title")
+        company = (source.get("config") or {}).get("company") or source.get("name")
+        description = item.get("descriptionPlain") or item.get("descriptionHtml") or ""
+        locations = [str(item.get("location") or "")]
+        for secondary in item.get("secondaryLocations") or []:
+            if not isinstance(secondary, dict):
+                continue
+            locations.append(str(secondary.get("location") or ""))
+            address = secondary.get("address") or {}
+            if isinstance(address, dict):
+                locations.extend(
+                    str(address.get(key) or "")
+                    for key in ("addressLocality", "addressRegion", "addressCountry")
+                )
+        address_value = item.get("address") or {}
+        postal = address_value.get("postalAddress") or {} if isinstance(address_value, dict) else {}
+        if isinstance(postal, dict):
+            locations.extend(
+                str(postal.get(key) or "")
+                for key in ("addressLocality", "addressRegion", "addressCountry")
+            )
+        location = ", ".join(value for value in locations if value)
+        url = item.get("jobUrl")
+        ext = item.get("jobUrl") or url
+        posted = item.get("publishedAt")
+        employment = item.get("employmentType") or ""
+        salary_min = salary_max = None
+        currency = period = ""
     else:
         company = (source.get("config") or {}).get("company") or source.get("name")
         title = item.get("name")
-        description = item.get("jobAd", {}).get("sections", {}).get("jobDescription", {}).get("text", "")
+        description = (
+            item.get("jobAd", {}).get("sections", {}).get("jobDescription", {}).get("text", "")
+        )
         location_obj = item.get("location") or {}
         location = ", ".join(
-            str(value) for value in (location_obj.get("city"), location_obj.get("region"), location_obj.get("country"))
+            str(value)
+            for value in (
+                location_obj.get("city"),
+                location_obj.get("region"),
+                location_obj.get("country"),
+            )
             if value
         )
         url = item.get("ref") or item.get("applyUrl")
@@ -353,6 +689,21 @@ def _normalize_api_job(
         return None
     description_text = plain_text(description, settings.max_job_description_chars)
     raw_location = plain_text(location, 1_000)
+    workplace = infer_workplace(raw_location, description_text)
+    if kind in {
+        "remoteok_json",
+        "weworkremotely_rss",
+        "himalayas_api",
+        "remotive_api",
+        "workingnomads_api",
+    } and workplace == "unknown":
+        workplace = "remote"
+    if kind == "ashby":
+        workplace_value = str(item.get("workplaceType") or "").casefold()
+        if workplace_value in {"remote", "hybrid", "onsite"}:
+            workplace = "on-site" if workplace_value == "onsite" else workplace_value
+        elif item.get("isRemote") is True:
+            workplace = "remote"
     return NormalizedJob(
         source_id=str(source["id"]),
         source_name=str(source["name"]),
@@ -363,7 +714,7 @@ def _normalize_api_job(
         source_url=safe_url,
         canonical_url=safe_url,
         location_raw=raw_location,
-        workplace_type=infer_workplace(raw_location, description_text),
+        workplace_type=workplace,
         employment_type=_normalize_employment(employment),
         visa_sponsorship=infer_visa_sponsorship(description_text),
         salary_min=salary_min,
@@ -371,6 +722,7 @@ def _normalize_api_job(
         salary_currency=str(currency or "").upper()[:8],
         salary_period=str(period or "")[:40],
         posted_at=parse_date(posted),
+        valid_through=parse_date(valid_through),
         eligibility_status="unknown",
         source_credit=str(source.get("attribution") or source["name"]),
     )
@@ -382,7 +734,9 @@ def _fetch_remote_first(
     settings: Settings,
     database_path,
 ) -> FetchOutcome:
-    roles = _role_slugs(criteria.roles or str((source.get("config") or {}).get("profile_roles", "")))
+    roles = _role_slugs(
+        criteria.roles or str((source.get("config") or {}).get("profile_roles", ""))
+    )
     if not roles:
         return FetchOutcome(
             message="Add one or more target roles to search this role-specific RSS source.",
@@ -395,8 +749,14 @@ def _fetch_remote_first(
     parse_failures = 0
     hosts = {"remotefirstjobs.com"}
     due_roles = [
-        role_slug for role_slug in roles[:4]
-        if role_feed_due(database_path, str(source["id"]), role_slug, int(source.get("interval_seconds") or 21_600))
+        role_slug
+        for role_slug in roles[:4]
+        if role_feed_due(
+            database_path,
+            str(source["id"]),
+            role_slug,
+            int(source.get("interval_seconds") or 21_600),
+        )
     ]
     if not due_roles:
         return FetchOutcome(
@@ -529,7 +889,20 @@ def _parse_rss_feed(
                 name = _xml_local_name(child.tag)
                 if name == "link":
                     item[name] = child.attrib.get("href") or child.text or item.get(name, "")
-                elif name in {"title", "description", "summary", "content", "pubdate", "published", "updated", "guid", "id", "category", "company", "location"}:
+                elif name in {
+                    "title",
+                    "description",
+                    "summary",
+                    "content",
+                    "pubdate",
+                    "published",
+                    "updated",
+                    "guid",
+                    "id",
+                    "category",
+                    "company",
+                    "location",
+                }:
                     value = child.attrib.get("term") or "".join(child.itertext())
                     if name in item and name == "category":
                         item[name] = f"{item[name]}, {value}"
@@ -545,7 +918,11 @@ def _parse_rss_feed(
         content = item.get("description") or item.get("summary") or item.get("content") or ""
         description = plain_text(content, settings.max_job_description_chars)
         company = plain_text(item.get("company") or "", 250)
-        location = plain_text(item.get("location") or ("Remote" if "remote" in title.casefold() else ""), 1_000)
+        if not company and source.get("kind") == "weworkremotely_rss":
+            title, company = _split_board_title(title)
+        location = plain_text(
+            item.get("location") or ("Remote" if "remote" in title.casefold() else ""), 1_000
+        )
         posted = parse_date(
             item.get("pubdate") or item.get("published") or item.get("updated") or ""
         )
@@ -581,6 +958,62 @@ def _number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if 0 <= number <= 1_000_000_000 else None
+
+
+def _source_epoch_date(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        seconds = float(value)
+        if seconds > 10_000_000_000:
+            seconds /= 1000
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat(timespec="seconds")
+    except (OverflowError, OSError, TypeError, ValueError):
+        return parse_date(value)
+
+
+def _salary_range_from_text(value: str) -> tuple[float | None, float | None]:
+    matches = re.findall(r"(?<![A-Za-z])([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kKmM]?)", value)
+    amounts: list[float] = []
+    for number, suffix in matches[:2]:
+        amount = _number(number)
+        if amount is None:
+            continue
+        if suffix.casefold() == "k":
+            amount *= 1_000
+        elif suffix.casefold() == "m":
+            amount *= 1_000_000
+        amounts.append(amount)
+    if not amounts:
+        return None, None
+    if len(amounts) == 1:
+        return amounts[0], amounts[0]
+    return min(amounts), max(amounts)
+
+
+def _salary_period_from_text(value: str) -> str:
+    text = value.casefold()
+    if re.search(r"/\s*(?:hr|hour)|per\s+hour|hourly", text):
+        return "hourly"
+    if re.search(r"/\s*(?:mo|month)|per\s+month|monthly", text):
+        return "monthly"
+    if re.search(r"/\s*(?:wk|week)|per\s+week|weekly", text):
+        return "weekly"
+    if re.search(r"/\s*(?:yr|year)|per\s+year|annual|yearly", text):
+        return "annual"
+    return ""
+
+
+def _split_board_title(value: str) -> tuple[str, str]:
+    """Recover common `Company: Role` and `Role at Company` RSS title formats."""
+    if ":" in value:
+        company, title = value.split(":", 1)
+        if company.strip() and title.strip() and len(company) <= 100:
+            return title.strip(), company.strip()
+    match = re.match(r"^(.*?)\s+at\s+(.+)$", value, re.IGNORECASE)
+    if match:
+        return match.group(1).strip(), match.group(2).strip()
+    return value, ""
 
 
 def _salary_currency_from_text(value: str) -> str:
@@ -659,7 +1092,10 @@ def validate_career_url(url: str) -> tuple[bool, str]:
             return False, "Use an HTTPS careers or public job URL without embedded credentials."
         if parts.port not in (None, 443):
             return False, "Only standard HTTPS port 443 is supported."
-        addresses = {ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
+        addresses = {
+            ipaddress.ip_address(info[4][0])
+            for info in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        }
         if not addresses or any(not address.is_global for address in addresses):
             return False, "The careers URL must resolve only to public internet addresses."
         return True, ""
@@ -681,7 +1117,9 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
         from scrapling.spiders import Request as ScraplingRequest
         from scrapling.spiders import Spider
     except ImportError as exc:
-        raise SourceFetchError("Scrapling is unavailable. Install the project dependencies.") from exc
+        raise SourceFetchError(
+            "Scrapling is unavailable. Install the project dependencies."
+        ) from exc
 
     class BoundedCareerSpider(Spider):
         name = "clue_ai_public_careers"
@@ -712,7 +1150,10 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
                     impersonate=None,
                     stealthy_headers=False,
                     timeout=settings.network_timeout_seconds,
-                    headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
+                    headers={
+                        "User-Agent": self.user_agent,
+                        "Accept": "text/html,application/xhtml+xml",
+                    },
                     retries=0,
                     retry_delay=0,
                     follow_redirects=False,
@@ -725,7 +1166,10 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
                 self.start_urls[0],
                 sid=self._session_manager.default_session_id,
                 callback=self.parse,
-                headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
+                headers={
+                    "User-Agent": self.user_agent,
+                    "Accept": "text/html,application/xhtml+xml",
+                },
             )
 
         async def is_blocked(self, response):
@@ -792,7 +1236,10 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
                 yield response.follow(
                     normalized,
                     callback=self.parse_job_page,
-                    headers={"User-Agent": self.user_agent, "Accept": "text/html,application/xhtml+xml"},
+                    headers={
+                        "User-Agent": self.user_agent,
+                        "Accept": "text/html,application/xhtml+xml",
+                    },
                 )
 
         async def parse_job_page(self, response):
@@ -835,9 +1282,7 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
         spider.not_found_count,
         int((status_counts or {}).get("status_404", 0) or 0),
     )
-    blocked_status = any(
-        key in status_counts for key in ("status_401", "status_403", "status_429")
-    )
+    blocked_status = any(key in status_counts for key in ("status_401", "status_403", "status_429"))
     if blocked_status or getattr(spider, "hit_block", False):
         return FetchOutcome(
             message="The source returned an access or bot challenge.",
@@ -868,7 +1313,9 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
     )
 
 
-def _extract_jsonld_job_postings(response, source: dict[str, Any], settings: Settings) -> list[dict[str, Any]]:
+def _extract_jsonld_job_postings(
+    response, source: dict[str, Any], settings: Settings
+) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for raw in response.css('script[type="application/ld+json"]::text').getall():
         try:
@@ -884,7 +1331,9 @@ def _extract_jsonld_job_postings(response, source: dict[str, Any], settings: Set
                 stack.extend(item["@graph"])
             kind = item.get("@type", "")
             types = kind if isinstance(kind, list) else [kind]
-            if not any(str(value).rstrip("/").rsplit("/", 1)[-1] == "JobPosting" for value in types):
+            if not any(
+                str(value).rstrip("/").rsplit("/", 1)[-1] == "JobPosting" for value in types
+            ):
                 continue
             item.setdefault("url", response.url)
             item.setdefault("_response_url", response.url)
@@ -910,23 +1359,34 @@ def _normalize_crawled_job(
     for location in location_obj:
         address = (location or {}).get("address", {}) if isinstance(location, dict) else {}
         if isinstance(address, dict):
-            locations.append(", ".join(
-                str(value) for value in (
-                    address.get("addressLocality"), address.get("addressRegion"),
-                    address.get("addressCountry")
-                ) if value
-            ))
+            locations.append(
+                ", ".join(
+                    str(value)
+                    for value in (
+                        address.get("addressLocality"),
+                        address.get("addressRegion"),
+                        address.get("addressCountry"),
+                    )
+                    if value
+                )
+            )
     restrictions = item.get("applicantLocationRequirements") or item.get("eligibleRegion") or []
     if not isinstance(restrictions, list):
         restrictions = [restrictions]
     for restriction in restrictions:
         if isinstance(restriction, dict):
-            locations.append(str(restriction.get("name") or restriction.get("addressCountry") or ""))
+            locations.append(
+                str(restriction.get("name") or restriction.get("addressCountry") or "")
+            )
         elif restriction:
             locations.append(str(restriction))
     raw_location = plain_text("; ".join(part for part in locations if part), 1_000)
     description = plain_text(item.get("description") or "", settings.max_job_description_chars)
-    workplace = "remote" if str(item.get("jobLocationType") or "").upper() == "TELECOMMUTE" else infer_workplace(raw_location, description)
+    workplace = (
+        "remote"
+        if str(item.get("jobLocationType") or "").upper() == "TELECOMMUTE"
+        else infer_workplace(raw_location, description)
+    )
     employment = item.get("employmentType") or ""
     base_salary = item.get("baseSalary") or {}
     if isinstance(base_salary, dict):
@@ -963,13 +1423,20 @@ def _normalize_crawled_job(
     )
 
 
-def _extract_html_job_posting(response, source: dict[str, Any], settings: Settings) -> dict[str, Any] | None:
+def _extract_html_job_posting(
+    response, source: dict[str, Any], settings: Settings
+) -> dict[str, Any] | None:
     """Bounded fallback for a linked job detail page without JobPosting JSON-LD."""
     title = response.css("h1::text").get() or response.css("title::text").get()
     title = plain_text(title, 300)
     normalized_title = re.sub(r"\s*[|·–—-]\s*[^|·–—-]+$", "", title).strip()
     if not normalized_title or normalized_title.casefold() in {
-        "careers", "jobs", "open positions", "open roles", "join our team", "work with us"
+        "careers",
+        "jobs",
+        "open positions",
+        "open roles",
+        "join our team",
+        "work with us",
     }:
         return None
 
@@ -999,7 +1466,9 @@ def _extract_html_job_posting(response, source: dict[str, Any], settings: Settin
     )
     return {
         "title": normalized_title,
-        "hiringOrganization": {"name": (source.get("config") or {}).get("company") or source.get("name", "")},
+        "hiringOrganization": {
+            "name": (source.get("config") or {}).get("company") or source.get("name", "")
+        },
         "description": description,
         "jobLocation": {"address": {"addressLocality": location}} if location else {},
         "datePosted": date_posted,

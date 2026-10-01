@@ -48,6 +48,7 @@ from clue_ai.repository import (
     mark_source_for_review,
     monthly_jev_usage,
     remove_user_source,
+    retry_company_board,
     save_jobs,
     saved_jobs,
     set_company_tracked,
@@ -70,6 +71,18 @@ SOURCE_KINDS = {
     "lever": "Lever public board",
     "smartrecruiters": "SmartRecruiters public board",
     "scrapling": "Employer careers page (Scrapling)",
+    "jobicy_api": "Jobicy public API",
+    "remotejobs_api": "RemoteJobs.org public API",
+    "remoteok_json": "Remote OK public JSON feed",
+    "weworkremotely_rss": "We Work Remotely public RSS feed",
+    "himalayas_api": "Himalayas public JSON API",
+    "remotive_api": "Remotive public JSON API",
+    "workingnomads_api": "Working Nomads public JSON feed",
+    "justremote_scrapling": "JustRemote public pages (Scrapling)",
+    "remote_first_rss": "Remote First Jobs role RSS",
+    "startup_rss": "Startup Jobs public RSS feed",
+    "manual_board": "Manual link-out",
+    "manual_x": "Manual X lead source",
 }
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 LOCAL_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -121,10 +134,16 @@ def create_app(
             request_scheme = request.url.scheme.casefold()
             request_port = request.url.port or (443 if request_scheme == "https" else 80)
             fetch_site = request.headers.get("sec-fetch-site", "").casefold()
-            if fetch_site == "cross-site":
-                return Response("Cross-origin form submissions are not accepted.", status_code=403)
             if fetch_site == "same-origin":
                 source_url = ""
+            elif fetch_site == "cross-site":
+                # Embedded local browsers can label a loopback POST cross-site because the
+                # containing app has a different origin. Trust only an exact local Origin.
+                source_url = request.headers.get("origin", "").strip()
+                if not source_url or source_url.casefold() == "null":
+                    return Response(
+                        "Cross-origin form submissions are not accepted.", status_code=403
+                    )
             else:
                 origin = request.headers.get("origin", "").strip()
                 referer = request.headers.get("referer", "").strip()
@@ -805,6 +824,17 @@ def create_app(
     async def untrack_company(company_id: str, request: Request):
         if not set_company_tracked(db_path, company_id, False):
             raise HTTPException(status_code=404, detail="Company not found.")
+        form = dict(await request.form())
+        return RedirectResponse(
+            _safe_return_path(str(form.get("return_to") or "/companies")), status_code=303
+        )
+
+    @app.post("/companies/{company_id}/retry")
+    async def retry_company_source(company_id: str, request: Request):
+        if not retry_company_board(db_path, company_id):
+            raise HTTPException(
+                status_code=409, detail="This company is not a tracked blocked source."
+            )
         form = dict(await request.form())
         return RedirectResponse(
             _safe_return_path(str(form.get("return_to") or "/companies")), status_code=303

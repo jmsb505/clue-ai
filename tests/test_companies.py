@@ -4,7 +4,12 @@ from fastapi.testclient import TestClient
 
 from clue_ai.company_catalog import filter_and_rank_companies, profile_role_codes
 from clue_ai.domain import CandidateProfile
-from clue_ai.repository import list_companies, set_company_tracked
+from clue_ai.repository import (
+    list_companies,
+    retry_company_board,
+    set_company_tracked,
+    update_company_board,
+)
 from clue_ai.web import create_app
 
 ORIGIN = {"Origin": "http://127.0.0.1"}
@@ -80,7 +85,7 @@ def test_companies_page_renders_directory_without_claiming_current_vacancies(set
 
     assert response.status_code == 200
     assert 'aria-current="page"' in response.text
-    assert "PROFILE-MATCHED COMPANY SEEDS" in response.text
+    assert "COMPANY BOARD COVERAGE" in response.text
     assert (
         "an employer's role and location terms still determine whether a job fits." in response.text
     )
@@ -111,3 +116,32 @@ def test_company_tracking_actions_work_through_same_origin_forms(settings):
         )["tracked"]
         == 1
     )
+
+
+def test_blocked_company_source_can_be_retried_from_directory(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    update_company_board(
+        settings.database_path,
+        "qdrant",
+        board_state="blocked",
+        last_state="blocked",
+        board_url="https://jobs.ashbyhq.com/qdrant.tech",
+        provider="ashby",
+        error="HTTP 429.",
+    )
+    page = client.get("/companies?q=Qdrant")
+    retried = client.post(
+        "/companies/qdrant/retry",
+        data={"return_to": "/companies?q=Qdrant"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+
+    assert page.status_code == 200
+    assert "Retry this source" in page.text
+    assert retried.status_code == 303
+    qdrant = next(
+        company for company in list_companies(settings.database_path) if company["id"] == "qdrant"
+    )
+    assert qdrant["board_state"] == "candidate"
+    assert retry_company_board(settings.database_path, "qdrant") is False

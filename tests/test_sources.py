@@ -16,6 +16,8 @@ from clue_ai.sources import (
     _allowed_hosts,
     _connector_url,
     _looks_blocked,
+    _normalize_crawled_job,
+    _parse_json_feed,
     _parse_rss_feed,
     _url_is_allowed,
     fetch_source,
@@ -75,6 +77,333 @@ def test_rss_parser_keeps_direct_link_and_credit(settings, database):
     assert jobs[0].source_url == "https://jobs.example.org/openings/1"
     assert jobs[0].source_credit == "Startup Jobs"
     assert jobs[0].company == "Example Labs"
+
+
+def test_we_work_remotely_rss_splits_company_and_role_title(settings, database):
+    source = get_source(database, "weworkremotely")
+    payload = b"""<rss><channel><item>
+      <title>Example AI: Senior Machine Learning Engineer</title>
+      <link>https://weworkremotely.com/remote-jobs/example-ai-senior-ml-engineer</link>
+      <description>Remote role available worldwide. Build Python and PyTorch services.</description>
+      <pubDate>Tue, 29 Sep 2026 12:00:00 GMT</pubDate>
+    </item></channel></rss>"""
+
+    jobs = _parse_rss_feed(source, payload, settings)
+
+    assert len(jobs) == 1
+    assert jobs[0].title == "Senior Machine Learning Engineer"
+    assert jobs[0].company == "Example AI"
+    assert jobs[0].workplace_type == "remote"
+    assert jobs[0].source_credit == "We Work Remotely"
+
+
+def test_manual_board_sources_are_never_fetched(settings, database):
+    source = get_source(database, "wellfound_manual")
+
+    outcome = fetch_source(source, SearchCriteria(), settings, database)
+
+    assert outcome.skipped
+    assert "never fetched" in outcome.message
+
+
+def test_remotive_public_api_keeps_company_country_salary_and_tags(settings, database, monkeypatch):
+    payload = json.dumps(
+        {
+            "jobs": [
+                {
+                    "id": 42,
+                    "title": "Senior Data Engineer",
+                    "company_name": "Example Analytics",
+                    "candidate_required_location": "Europe",
+                    "description": "Build production Python and SQL data pipelines.",
+                    "url": "https://remotive.com/remote-jobs/data/senior-data-engineer-42",
+                    "publication_date": "2026-09-29T12:00:00",
+                    "job_type": "full_time",
+                    "salary": "€70k - €90k per year",
+                    "category": "Data and Analytics",
+                    "tags": ["Python", "SQL"],
+                }
+            ],
+            "job-count": 1,
+        }
+    ).encode()
+    monkeypatch.setattr("clue_ai.sources._fetch_bytes", lambda *_args: payload)
+    source = get_source(database, "remotive")
+
+    outcome = fetch_source(source, SearchCriteria(), settings, database)
+
+    assert outcome.raw_records == 1
+    assert len(outcome.jobs) == 1
+    job = outcome.jobs[0]
+    assert job.company == "Example Analytics"
+    assert job.title == "Senior Data Engineer"
+    assert job.location_raw == "Europe"
+    assert job.workplace_type == "remote"
+    assert job.salary_min == 70_000
+    assert job.salary_max == 90_000
+    assert job.salary_currency == "EUR"
+    assert job.salary_period == "annual"
+    assert "Tags: Python, SQL" in job.description
+    assert job.source_credit == "Remotive"
+
+
+def test_himalayas_api_searches_role_and_country_and_normalizes_location_expiry_salary(
+    settings, database, monkeypatch
+):
+    pages = {
+        "1": {
+            "jobs": [
+                {
+                    "guid": "himalayas-1",
+                    "title": "ML Platform Engineer",
+                    "companyName": "Example AI",
+                    "locationRestrictions": [{"alpha2": "IT", "name": "Italy"}],
+                    "description": "Build ML infrastructure with Python and Kubernetes.",
+                    "applicationLink": "https://himalayas.app/jobs/ml-platform-engineer",
+                    "pubDate": 1790792682,
+                    "expiryDate": 1793384682,
+                    "employmentType": "Full Time",
+                    "minSalary": 60_000,
+                    "maxSalary": 80_000,
+                    "currency": "EUR",
+                    "salaryPeriod": "annual",
+                    "categories": ["Engineering", "Machine Learning"],
+                }
+            ],
+            "totalCount": 21,
+        },
+        "2": {
+            "jobs": [
+                {
+                    "guid": "himalayas-2",
+                    "title": "Data Analyst",
+                    "companyName": "Example Data",
+                    "locationRestrictions": [],
+                    "description": "Analyze product data with SQL.",
+                    "applicationLink": "https://himalayas.app/jobs/data-analyst",
+                    "pubDate": 1790792682,
+                }
+            ],
+            "totalCount": 21,
+        },
+    }
+    calls = []
+
+    def fake_fetch(url, *_args):
+        calls.append(url)
+        page = parse_qs(urlsplit(url).query).get("page", ["1"])[0]
+        return json.dumps(pages[page]).encode()
+
+    monkeypatch.setattr("clue_ai.sources._fetch_bytes", fake_fetch)
+    monkeypatch.setattr("clue_ai.sources.time.sleep", lambda _seconds: None)
+    source = get_source(database, "himalayas")
+
+    outcome = fetch_source(
+        source,
+        SearchCriteria(roles="Machine Learning Engineer", work_from="Milan, Italy"),
+        settings,
+        database,
+    )
+
+    assert outcome.checked == 2
+    assert len(calls) == 2
+    assert [parse_qs(urlsplit(url).query)["page"] for url in calls] == [["1"], ["2"]]
+    assert all(urlsplit(url).path == "/jobs/api/search" for url in calls)
+    assert all(parse_qs(urlsplit(url).query)["q"] == ["Machine Learning Engineer"] for url in calls)
+    assert all(parse_qs(urlsplit(url).query)["country"] == ["Italy"] for url in calls)
+    assert len(outcome.jobs) == 2
+    job = outcome.jobs[0]
+    assert job.company == "Example AI"
+    assert job.location_raw == "Italy"
+    assert job.salary_min == 60_000
+    assert job.salary_max == 80_000
+    assert job.salary_period == "annual"
+    assert job.valid_through
+    assert "Machine Learning" in job.description
+    assert outcome.jobs[1].location_raw == "Worldwide"
+
+
+def test_himalayas_api_stops_at_daily_page_budget(settings, database, monkeypatch):
+    calls = []
+
+    def fake_fetch(url, *_args):
+        calls.append(url)
+        page = parse_qs(urlsplit(url).query).get("page", ["1"])[0]
+        return json.dumps({"jobs": [{}] * 20, "page": int(page), "totalCount": 1000}).encode()
+
+    monkeypatch.setattr("clue_ai.sources._fetch_bytes", fake_fetch)
+    monkeypatch.setattr("clue_ai.sources.time.sleep", lambda _seconds: None)
+    source = get_source(database, "himalayas")
+
+    from clue_ai.sources import _fetch_himalayas
+
+    outcome = _fetch_himalayas(source, SearchCriteria(roles="Data Engineer"), settings)
+
+    assert outcome.checked == 25
+    assert len(calls) == 25
+    assert "25-page daily cap" in outcome.message
+
+
+def test_himalayas_rate_limit_keeps_completed_search_pages(settings, database, monkeypatch):
+    calls = []
+
+    def fake_fetch(url, *_args):
+        calls.append(url)
+        page = parse_qs(urlsplit(url).query).get("page", ["1"])[0]
+        if page == "2":
+            from clue_ai.sources import SourceFetchError
+
+            raise SourceFetchError("rate limited", status_code=429, blocked=True)
+        return json.dumps(
+            {
+                "jobs": [
+                    {
+                        "guid": "himalayas-partial",
+                        "title": "Data Engineer",
+                        "companyName": "Example",
+                        "applicationLink": "https://himalayas.app/jobs/data-engineer",
+                    }
+                ],
+                "totalCount": 21,
+            }
+        ).encode()
+
+    monkeypatch.setattr("clue_ai.sources._fetch_bytes", fake_fetch)
+    monkeypatch.setattr("clue_ai.sources.time.sleep", lambda _seconds: None)
+    source = get_source(database, "himalayas")
+
+    outcome = fetch_source(source, SearchCriteria(roles="Data Engineer"), settings, database)
+
+    assert outcome.blocked is True
+    assert outcome.checked == 2
+    assert len(outcome.jobs) == 1
+    assert outcome.status_counts == {"status_200": 1, "status_429": 1}
+
+
+def test_working_nomads_public_api_normalizes_country_and_tags(settings, database):
+    source = get_source(database, "workingnomads")
+    raw = [
+        {
+            "url": "https://www.workingnomads.com/job/go/12345/",
+            "title": "AI Research Engineer",
+            "description": "Build evaluation pipelines for language models.",
+            "company_name": "Example Research",
+            "category_name": "Engineering",
+            "tags": "Python, LLM, evaluation",
+            "location": "Italy",
+            "pub_date": "2026-09-29T10:30:00-04:00",
+        }
+    ]
+
+    jobs = _parse_json_feed("workingnomads_api", source, raw, settings)
+
+    assert len(jobs) == 1
+    assert jobs[0].company == "Example Research"
+    assert jobs[0].location_raw == "Italy"
+    assert jobs[0].workplace_type == "remote"
+    assert "Tags: Python, LLM, evaluation" in jobs[0].description
+    assert jobs[0].source_url == "https://www.workingnomads.com/job/go/12345/"
+
+
+def test_justremote_detail_parser_preserves_country_restrictions(settings, database):
+    from clue_ai.scrapling_boards import _parse_justremote_detail
+
+    class Selector:
+        def __init__(self, value="", values=None):
+            self.value = value
+            self.values = values or ([value] if value else [])
+
+        def get(self):
+            return self.value
+
+        def getall(self):
+            return self.values
+
+    class Response:
+        url = "https://justremote.co/remote-developer-jobs/ml-engineer-example-123"
+
+        def css(self, selector):
+            values = {
+                "h1::text": "Machine Learning Engineer",
+                "main": (
+                    "<main><a href='/remote-companies/example-ai'>Example AI</a>"
+                    "<p>Fully Remote</p><p>Only accepting applications from: Italy</p>"
+                    "<h2>Responsibilities</h2><p>Build Python machine learning services and "
+                    "work with a distributed product engineering team.</p></main>"
+                ),
+                "article": "",
+                "main a[href*='/remote-companies/']::text": "Example AI",
+                "main a::text": "Example AI",
+                "time[datetime]::attr(datetime)": "",
+                "meta[property='article:published_time']::attr(content)": "",
+            }
+            return Selector(values.get(selector, ""))
+
+    source = get_source(database, "justremote")
+    item = _parse_justremote_detail(Response(), source, settings)
+
+    assert item is not None
+    normalized = _normalize_crawled_job(source, item, settings)
+    assert normalized is not None
+    assert normalized.company == "Example AI"
+    assert set(normalized.location_raw.replace(";", ",").split(", ")) == {"Italy", "Remote"}
+    assert normalized.workplace_type == "remote"
+    assert normalized.source_url == Response.url
+
+
+def test_justremote_spider_is_robot_aware_and_stays_within_daily_page_caps(
+    settings, database, monkeypatch
+):
+    from scrapling.spiders import Spider
+
+    captured = {}
+
+    def no_network_start(spider):
+        captured["spider"] = spider
+        captured["robots"] = spider.robots_txt_obey
+        captured["concurrent"] = spider.concurrent_requests
+        captured["per_domain"] = spider.concurrent_requests_per_domain
+        captured["delay"] = spider.download_delay
+        captured["retries"] = spider.max_blocked_retries
+        return SimpleNamespace(
+            stats=SimpleNamespace(response_status_count={}, requests_count=1), items=[]
+        )
+
+    monkeypatch.setattr(Spider, "start", no_network_start)
+    outcome = fetch_source(
+        get_source(database, "justremote"),
+        SearchCriteria(roles="AI Engineer", work_from="Italy"),
+        settings,
+        database,
+    )
+
+    spider = captured["spider"]
+    assert outcome.checked == 1
+    assert captured["robots"] is True
+    assert captured["concurrent"] == 4
+    assert captured["per_domain"] == 1
+    assert captured["delay"] == 2.0
+    assert captured["retries"] == 0
+    assert spider.start_urls == ["https://justremote.co/remote-jobs"]
+    assert spider.listing_pages_scheduled == 1
+    assert spider.job_pages_scheduled == 0
+
+    class Response:
+        def follow(self, url, **_kwargs):
+            return url
+
+    response = Response()
+    listing = spider._schedule(response, "https://justremote.co/remote-ai-engineer-jobs?page=2")
+    external = spider._schedule(response, "https://jobs.example.org/role/1")
+    assert listing == "https://justremote.co/remote-ai-engineer-jobs?page=2"
+    assert external is None
+    assert spider.listing_pages_scheduled == 2
+    assert spider.job_pages_scheduled == 0
+
+    for index in range(1, 70):
+        spider._schedule(response, f"https://justremote.co/remote-ml-engineer-{index}-jobs")
+    assert spider.listing_pages_scheduled <= 24
+    assert len(spider.urls_scheduled) <= 60
 
 
 def test_remotejobs_api_normalizes_direct_link_and_refreshes_up_to_four_roles(

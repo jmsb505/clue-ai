@@ -35,15 +35,22 @@ from clue_ai.repository import (
 )
 
 
-def test_default_source_registry_has_five_feeds_and_manual_x_marker(database):
+def test_default_source_registry_has_remote_boards_and_manual_only_linkouts(database):
     sources = list_sources(database)
-    connectors = [item for item in sources if item["kind"] != "manual_x"]
+    manual_kinds = {"manual_x", "manual_board"}
+    connectors = [item for item in sources if item["kind"] not in manual_kinds]
     manual_x = next(item for item in sources if item["kind"] == "manual_x")
+    manual_boards = [item for item in sources if item["kind"] == "manual_board"]
 
     assert {item["kind"] for item in connectors} == {
         "jobicy_api",
         "remotejobs_api",
         "remoteok_json",
+        "weworkremotely_rss",
+        "himalayas_api",
+        "remotive_api",
+        "workingnomads_api",
+        "justremote_scrapling",
         "remote_first_rss",
         "startup_rss",
     }
@@ -54,6 +61,13 @@ def test_default_source_registry_has_five_feeds_and_manual_x_marker(database):
     assert manual_x["state"] == "approved"
     assert manual_x["enabled"] == 0
     assert "never" in manual_x["policy_note"].casefold()
+    assert {item["name"] for item in manual_boards} == {"Dynamite Jobs", "Wellfound"}
+    assert all(item["state"] == "approved" and item["enabled"] == 0 for item in manual_boards)
+    assert all(item["endpoint"].startswith("https://") for item in manual_boards)
+    assert all("manual" in item["policy_note"].casefold() for item in manual_boards)
+    assert not {"manual_x", "manual_board"}.intersection(
+        source["kind"] for source in sources_due(database)
+    )
     remotejobs = next(item for item in sources if item["id"] == "remotejobs")
     assert remotejobs["attribution"] == "Powered by RemoteJobs.org"
     assert remotejobs["interval_seconds"] == 86_400
@@ -227,7 +241,7 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     assert get_profile(database) == CandidateProfile()
     assert get_run(database, "run-delete") is None
     assert all_active_jobs(database) == []
-    assert len(list_sources(database)) == 6
+    assert len(list_sources(database)) == 13
     assert get_source(database, "x_manual")["enabled"] == 0
     assert monthly_jev_usage(database, 4.0)["requests"] == 0
     assert get_source(database, "jobicy")["state"] == "approved"
