@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration remains. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X leads is pushed. PLAN-004 M1 CV-first search is pushed to `main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`.
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration remains. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X leads is pushed. PLAN-004 M1 CV-first search is pushed to `main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`. PLAN-005 M1 local-origin form fix is pushed to `main` at `d2c0a499a62612ad63eece941d0c2289cd6042ee`.
 **Updated:** 2026-10-01
 
 ## Definition gate

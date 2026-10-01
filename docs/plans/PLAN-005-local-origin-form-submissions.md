@@ -1,6 +1,6 @@
 # PLAN-005 — Accept same-app loopback form submissions
 
-**Status:** M1 locally validated; direct-to-main push pending
+**Status:** M1 implemented, validated, and pushed to `origin/main` at `d2c0a499a62612ad63eece941d0c2289cd6042ee`
 **Created:** 2026-10-01
 
 ## Objective
@@ -37,10 +37,11 @@ The owner encountered `Cross-origin form submissions are not accepted.` The resp
 
 **Validation:** Run focused boundary tests, the full pytest suite, Ruff, byte-compilation, `git diff --check`, and a temporary local startup/shutdown check if needed. Use Conda `gen`; do not use a real CV or live Jev request.
 
-**Git checkpoint:** Commit the validated M1 fix directly to `main`, push it, and confirm the remote head.
+**Git checkpoint:** Commit `d2c0a499a62612ad63eece941d0c2289cd6042ee` was pushed directly to `origin/main`; `git ls-remote` confirmed the same SHA.
 
 ## Progress
 
 - 2026-10-01: Reproduced the reported 403 with same-port `localhost` and `::1` form origins posting to the same app on `127.0.0.1`.
 - 2026-10-01: Updated the request boundary to normalize supported loopback aliases while requiring scheme and effective port equality. External host, port mismatch, and scheme mismatch remain rejected.
 - 2026-10-01: Conda `gen` validation passed: 95 tests, Ruff, compilation, and `git diff --check`. No real CV or Jev request was used.
+- 2026-10-01: Commit `d2c0a499a62612ad63eece941d0c2289cd6042ee` was pushed directly to `origin/main`; `git ls-remote` confirmed the same remote SHA.
