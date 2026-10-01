@@ -68,6 +68,8 @@ SOURCE_KINDS = {
     "smartrecruiters": "SmartRecruiters public board",
     "scrapling": "Employer careers page (Scrapling)",
 }
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
+LOCAL_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def create_app(
@@ -110,10 +112,11 @@ def create_app(
     @app.middleware("http")
     async def local_request_boundary(request: Request, call_next):
         hostname = (request.url.hostname or "").lower()
-        if hostname not in {"127.0.0.1", "localhost", "::1", "testserver"}:
+        if hostname not in LOCAL_HOSTS:
             return Response("This app accepts requests from this device only.", status_code=421)
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            request_port = request.url.port or (443 if request.url.scheme == "https" else 80)
+            request_scheme = request.url.scheme.casefold()
+            request_port = request.url.port or (443 if request_scheme == "https" else 80)
             origin = request.headers.get("origin")
             referer = request.headers.get("referer")
             source_url = origin or referer
@@ -122,13 +125,19 @@ def create_app(
                     return Response("A same-origin browser request is required.", status_code=403)
             else:
                 source_parts = urlsplit(source_url)
+                source_hostname = (source_parts.hostname or "").lower()
+                source_scheme = source_parts.scheme.casefold()
                 try:
-                    source_port = source_parts.port or (443 if source_parts.scheme == "https" else 80)
+                    source_port = source_parts.port or (443 if source_scheme == "https" else 80)
                 except ValueError:
                     source_port = -1
+                same_local_host = source_hostname == hostname or (
+                    source_hostname in LOCAL_LOOPBACK_HOSTS and hostname in LOCAL_LOOPBACK_HOSTS
+                )
                 if (
-                    source_parts.scheme not in {"http", "https"}
-                    or (source_parts.hostname or "").lower() != hostname
+                    source_scheme not in {"http", "https"}
+                    or source_scheme != request_scheme
+                    or not same_local_host
                     or source_port != request_port
                 ):
                     return Response("Cross-origin form submissions are not accepted.", status_code=403)

@@ -108,6 +108,37 @@ def test_localhost_and_same_origin_boundaries_reject_cross_origin_requests(setti
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize(
+    "origin",
+    ("http://127.0.0.1:8000", "http://localhost:8000", "http://[::1]:8000"),
+)
+def test_same_port_loopback_aliases_are_accepted_for_local_forms(settings, origin):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
+
+    response = client.post(
+        "/settings/jev-consent",
+        data={"agree": "on"},
+        headers={"Origin": origin},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+
+
+@pytest.mark.parametrize("origin", ("https://127.0.0.1:8000", "http://127.0.0.1:8001"))
+def test_local_form_boundary_rejects_scheme_or_port_mismatch(settings, origin):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
+
+    response = client.post(
+        "/settings/jev-consent",
+        data={"agree": "on"},
+        headers={"Origin": origin},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+
+
 def test_source_management_requires_review_before_enabling(settings):
     client = TestClient(create_app(settings), base_url="http://127.0.0.1")
     response = client.post(
