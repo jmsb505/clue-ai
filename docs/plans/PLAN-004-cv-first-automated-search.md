@@ -1,6 +1,6 @@
 # PLAN-004 — CV-first automated search and Jev validation
 
-**Status:** M1 locally validated; direct-to-main push pending
+**Status:** M1 implemented, validated, and pushed to `origin/main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`
 **Created:** 2026-10-01
 **Last updated:** 2026-10-01
 
@@ -127,7 +127,7 @@ If Jev is not enabled, the search still completes and results explain how to ena
 
 **Applicable specialized skills:** `ui-ux-research`, `frontend-design`, `ponytail-balanced`.
 
-**Expected Git checkpoint:** One coherent M1 implementation commit pushed directly to `main` after all acceptance validation passes; document closeout and remote SHA.
+**Git checkpoint:** M1 implementation commit `ea2b73ab53580acee1558b56c2832d50cd4b4e8f` was pushed directly to `origin/main`; `git ls-remote` confirmed the same remote SHA. This is the implementation milestone commit.
 
 ## Final integration validation
 
@@ -143,6 +143,7 @@ Revert the M1 commit to restore the previous profile-review, separate-search, ma
 - 2026-10-01: Baseline inspection found that upload currently creates a pending draft, roles/language are not fully inferred, and search and Jev scoring are separate user actions.
 - 2026-10-01: Implemented the one-action CV workflow, English/Italian section and role inference, saved-preference reuse, automatic guarded Jev scoring, and a repeat-search path. Added local tests for successful mocked Jev scoring, no-opt-in behavior, criteria defaults/reuse, profile persistence, and rendered results.
 - 2026-10-01: `conda run -n gen python -m pytest -q` passed 90 tests; Ruff, byte-compilation, and `git diff --check` passed. A temporary local startup check rendered the new Home page with a temporary empty data directory; the previous Conda `gen` process and the verification instance were stopped, port 8000 was confirmed free, and temporary data was removed. No live job source or Jev request was made.
+- 2026-10-01: Commit `ea2b73ab53580acee1558b56c2832d50cd4b4e8f` was pushed directly to `origin/main`; `git ls-remote` matched the local main SHA.
 
 ## Implementation discoveries / decisions
 
@@ -153,4 +154,4 @@ Revert the M1 commit to restore the previous profile-review, separate-search, ma
 
 ## Completion evidence
 
-Implementation, synthetic validation, rendered Home inspection, documentation, and bounded server cleanup are complete. Direct-to-main commit/push and remote-head confirmation remain.
+Implementation, synthetic validation, rendered Home inspection, documentation, direct-to-main push, remote-head confirmation, and bounded server cleanup are complete. The live personal CV workflow remains for the owner to exercise; no real CV, job-source request, or Jev request was used during validation.

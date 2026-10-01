@@ -1,6 +1,6 @@
 # Project documentation
 
-**Status:** PLAN-001 M1/M2, M3a, and M3b pushed and remote-verified; PLAN-002 M1/M2 and PLAN-003 M1 are pushed. PLAN-004 M1 (CV-first automatic search and Jev review) is in progress.
+**Status:** PLAN-001 M1/M2, M3a, and M3b pushed and remote-verified; PLAN-002 M1/M2 and PLAN-003 M1 are pushed. PLAN-004 M1 (CV-first automatic search and Jev review) is pushed and remote-verified at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`.
 **Research snapshot:** 2026-10-01
 
 This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. PLAN-002 M1/M2 and PLAN-001 M1/M2/M3a/M3b are pushed to `main`; M3b's verified SHA is recorded above. The owner directs each validated milestone to be committed and pushed to `main`; do not create milestone branches or bypass repository protections. Each external source has its own use, attribution, and refresh conditions.
