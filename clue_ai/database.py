@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from clue_ai.company_catalog import COMPANY_SEEDS
 from clue_ai.domain import CandidateProfile, SearchCriteria, utc_now
 
 DEFAULT_SOURCES = (
@@ -137,6 +138,24 @@ CREATE TABLE IF NOT EXISTS sources (
   last_state TEXT NOT NULL DEFAULT 'never',
   last_error TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS companies (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  homepage_url TEXT NOT NULL,
+  careers_url TEXT NOT NULL DEFAULT '',
+  board_url TEXT NOT NULL DEFAULT '',
+  provider TEXT NOT NULL DEFAULT '',
+  group_id TEXT NOT NULL,
+  role_tags_json TEXT NOT NULL DEFAULT '[]',
+  discovery_source TEXT NOT NULL DEFAULT '',
+  discovery_url TEXT NOT NULL DEFAULT '',
+  tracked INTEGER NOT NULL DEFAULT 1,
+  board_state TEXT NOT NULL DEFAULT 'candidate',
+  last_checked_at TEXT NOT NULL DEFAULT '',
+  last_state TEXT NOT NULL DEFAULT 'never',
+  last_error TEXT NOT NULL DEFAULT '',
+  listing_count INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS source_query_checks (
   source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
   query_hash TEXT NOT NULL,
@@ -255,7 +274,9 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "sources", "is_builtin", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(db, "search_results", "score_reason", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "search_results", "rubric_version", "TEXT NOT NULL DEFAULT ''")
-        _ensure_column(db, "search_results", "eligibility_status", "TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(
+            db, "search_results", "eligibility_status", "TEXT NOT NULL DEFAULT 'unknown'"
+        )
         _ensure_column(db, "search_results", "eligibility_evidence", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "search_results", "freshness_status", "TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(db, "search_results", "freshness_age_days", "INTEGER")
@@ -266,6 +287,25 @@ def initialize(database_path: Path) -> None:
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
         now = utc_now()
         db.execute("INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES (1, ?)", (now,))
+        for company in COMPANY_SEEDS:
+            db.execute(
+                """INSERT OR IGNORE INTO companies
+                   (id, name, homepage_url, careers_url, board_url, provider, group_id,
+                    role_tags_json, discovery_source, discovery_url, tracked, board_state)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'candidate')""",
+                (
+                    company["id"],
+                    company["name"],
+                    company["homepage_url"],
+                    company["careers_url"],
+                    company["board_url"],
+                    company["provider"],
+                    company["group_id"],
+                    json.dumps(company["role_tags"]),
+                    company["discovery_source"],
+                    company["discovery_url"],
+                ),
+            )
         for source in DEFAULT_SOURCES:
             db.execute(
                 """INSERT OR IGNORE INTO sources
@@ -278,9 +318,7 @@ def initialize(database_path: Path) -> None:
             )
 
 
-def _ensure_column(
-    db: sqlite3.Connection, table: str, column: str, definition: str
-) -> None:
+def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
     known = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
     if column not in known:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
@@ -357,6 +395,10 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
         db.execute("DELETE FROM job_sources")
         db.execute("DELETE FROM jobs")
         db.execute("DELETE FROM profile")
+        db.execute(
+            """UPDATE companies SET tracked = 0, board_state = 'candidate',
+               last_checked_at = '', last_state = 'never', last_error = '', listing_count = 0"""
+        )
         db.execute("DELETE FROM sources WHERE is_builtin = 0")
         db.execute(
             """UPDATE sources SET last_checked_at = '', last_state = 'never', last_error = ''

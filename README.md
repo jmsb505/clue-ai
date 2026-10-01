@@ -33,6 +33,7 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 - Local PDF/DOCX parsing, saved editable profile, immediate CV-first search, and repeat searches using the saved profile.
 - Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
 - Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. They start disabled in Review.
+- Profile-matched directory of 80+ Italian, European, AI/data-platform, and global technology employers, with local search-set controls. Automatic multi-company board refresh from this list is tracked in [PLAN-006](docs/plans/PLAN-006-profile-aware-company-board-discovery.md).
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
 - Automatic Jev batches after searches when enabled, with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
 - Manual X.com search links and owner-reviewed job leads. Clue does not scrape X, call its API, or open/resolve pasted links; see [the X lead decision](docs/decisions/0007-x-manual-lead-discovery.md).
@@ -51,6 +52,9 @@ A synthetic backup/restore check confirms that the local profile and CV can be r
 - [Definition gate](docs/readiness/definition-gate.md)
 - [Market and reference review](docs/research/market-and-reference-review.md)
 - [Source discovery and Scrapling review](docs/research/source-discovery-and-crawl-review.md)
+- [Profile-aware company-board research](docs/research/profile-aware-company-board-discovery.md)
+- [Company-board discovery implementation plan](docs/plans/PLAN-006-profile-aware-company-board-discovery.md)
+- [Company-board discovery decision](docs/decisions/0008-profile-aware-company-board-discovery.md)
 - [Architecture overview](docs/architecture/overview.md)
 - [Roadmap](docs/roadmap.md)
 - [Detailed implementation plan](docs/plans/PLAN-001-free-local-source-discovery.md)

@@ -9,9 +9,42 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from clue_ai.company_catalog import GROUP_LABELS, ROLE_LABELS
 from clue_ai.database import connect
 from clue_ai.domain import NormalizedJob, utc_now
 from clue_ai.jobs import canonical_url, job_fingerprint, stable_job_id
+
+
+def list_companies(database_path: Path) -> list[dict[str, Any]]:
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT id, name, homepage_url, careers_url, board_url, provider, group_id,
+                      role_tags_json, discovery_source, discovery_url, tracked, board_state,
+                      last_checked_at, last_state, last_error, listing_count
+               FROM companies ORDER BY name COLLATE NOCASE"""
+        ).fetchall()
+    companies = []
+    for row in rows:
+        company = dict(row)
+        try:
+            company["role_tags"] = json.loads(company.pop("role_tags_json") or "[]")
+        except json.JSONDecodeError:
+            company["role_tags"] = []
+        company["group_label"] = GROUP_LABELS.get(company["group_id"], "Other")
+        company["role_labels"] = [
+            ROLE_LABELS[tag] for tag in company["role_tags"] if tag in ROLE_LABELS
+        ]
+        companies.append(company)
+    return companies
+
+
+def set_company_tracked(database_path: Path, company_id: str, tracked: bool) -> bool:
+    with connect(database_path) as db:
+        cursor = db.execute(
+            "UPDATE companies SET tracked = ? WHERE id = ?",
+            (int(tracked), company_id),
+        )
+    return cursor.rowcount == 1
 
 
 def list_sources(database_path: Path) -> list[dict[str, Any]]:
@@ -67,7 +100,9 @@ def sources_due(database_path: Path, force: bool = False) -> list[dict[str, Any]
     return due
 
 
-def role_feed_due(database_path: Path, source_id: str, role_slug: str, interval_seconds: int) -> bool:
+def role_feed_due(
+    database_path: Path, source_id: str, role_slug: str, interval_seconds: int
+) -> bool:
     query_hash = hashlib.sha256(role_slug.encode("utf-8")).hexdigest()
     with connect(database_path) as db:
         row = db.execute(
@@ -75,7 +110,9 @@ def role_feed_due(database_path: Path, source_id: str, role_slug: str, interval_
             (source_id, query_hash),
         ).fetchone()
     checked = _parse_time(row["checked_at"]) if row else None
-    return checked is None or datetime.now(timezone.utc) - checked >= timedelta(seconds=interval_seconds)
+    return checked is None or datetime.now(timezone.utc) - checked >= timedelta(
+        seconds=interval_seconds
+    )
 
 
 def record_role_feed_check(
@@ -212,7 +249,9 @@ def update_run(
         "status": status,
         "stage": stage,
         "message": message,
-        "checked_sources_json": json.dumps(checked_sources) if checked_sources is not None else None,
+        "checked_sources_json": json.dumps(checked_sources)
+        if checked_sources is not None
+        else None,
         "found_count": found_count,
         "matched_count": matched_count,
         "scored_count": scored_count,
@@ -248,9 +287,7 @@ def get_run(database_path: Path, run_id: str) -> dict[str, Any] | None:
 
 def get_latest_run(database_path: Path) -> dict[str, Any] | None:
     with connect(database_path) as db:
-        row = db.execute(
-            "SELECT id FROM search_runs ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        row = db.execute("SELECT id FROM search_runs ORDER BY created_at DESC LIMIT 1").fetchone()
     return get_run(database_path, row["id"]) if row else None
 
 
@@ -604,9 +641,7 @@ def prune_expired_data(database_path: Path) -> int:
     with connect(database_path) as db:
         query_cutoff = (now - timedelta(days=30)).isoformat(timespec="seconds")
         db.execute("DELETE FROM source_query_checks WHERE checked_at < ?", (query_cutoff,))
-        rules = db.execute(
-            "SELECT id, retention_days FROM sources"
-        ).fetchall()
+        rules = db.execute("SELECT id, retention_days FROM sources").fetchall()
         deleted = 0
         for source in rules:
             cutoff = (now - timedelta(days=max(1, int(source["retention_days"])))).isoformat()
@@ -655,7 +690,14 @@ def reserve_jev_budget(
             """INSERT INTO jev_usage
                (run_id, month_key, model, started_at, reserved_tokens, reserved_usd, status)
                VALUES (?, ?, ?, ?, ?, ?, 'reserved')""",
-            (run_id, month_key, model, now.isoformat(timespec="seconds"), reserved_tokens, reserve_usd),
+            (
+                run_id,
+                month_key,
+                model,
+                now.isoformat(timespec="seconds"),
+                reserved_tokens,
+                reserve_usd,
+            ),
         )
         db.execute("COMMIT")
         return int(cursor.lastrowid), max(0.0, monthly_budget - used - reserve_usd)
@@ -686,9 +728,7 @@ def release_jev_reservation(database_path: Path, usage_id: int, code: str) -> No
 
 
 def monthly_jev_usage(database_path: Path, monthly_budget: float) -> dict[str, float]:
-    rolling_cutoff = (
-        datetime.now(timezone.utc) - timedelta(days=30)
-    ).isoformat(timespec="seconds")
+    rolling_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds")
     with connect(database_path) as db:
         row = db.execute(
             """SELECT COALESCE(SUM(CASE WHEN actual_usd IS NOT NULL
@@ -713,4 +753,8 @@ def _parse_time(value: str | None) -> datetime | None:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+    return (
+        parsed.replace(tzinfo=timezone.utc)
+        if parsed.tzinfo is None
+        else parsed.astimezone(timezone.utc)
+    )

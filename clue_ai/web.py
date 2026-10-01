@@ -7,13 +7,14 @@ import time
 import uuid
 from dataclasses import replace
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from clue_ai.company_catalog import GROUP_LABELS, filter_and_rank_companies
 from clue_ai.config import Settings
 from clue_ai.database import (
     delete_personal_data,
@@ -41,6 +42,7 @@ from clue_ai.repository import (
     get_source,
     has_active_runs,
     hidden_jobs,
+    list_companies,
     list_sources,
     manual_x_leads,
     mark_source_for_review,
@@ -48,6 +50,7 @@ from clue_ai.repository import (
     remove_user_source,
     save_jobs,
     saved_jobs,
+    set_company_tracked,
     set_job_user_state,
     set_source_enabled,
 )
@@ -146,7 +149,9 @@ def create_app(
                     or not same_local_host
                     or source_port != request_port
                 ):
-                    return Response("Cross-origin form submissions are not accepted.", status_code=403)
+                    return Response(
+                        "Cross-origin form submissions are not accepted.", status_code=403
+                    )
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -183,7 +188,9 @@ def create_app(
         profile = get_profile(db_path)
         latest = get_latest_run(db_path)
         sources = list_sources(db_path)
-        enabled_sources = [source for source in sources if source["enabled"] and source["state"] == "approved"]
+        enabled_sources = [
+            source for source in sources if source["enabled"] and source["state"] == "approved"
+        ]
         return render(
             request,
             "home.html",
@@ -231,7 +238,9 @@ def create_app(
         cv_file: UploadFile | None = File(default=None),  # noqa: B008 - FastAPI uses File as parameter metadata.
     ):
         if cv_file is None or not cv_file.filename:
-            return RedirectResponse("/profile?notice=Choose+a+PDF+or+DOCX+file+first.", status_code=303)
+            return RedirectResponse(
+                "/profile?notice=Choose+a+PDF+or+DOCX+file+first.", status_code=303
+            )
         content = await cv_file.read(current_settings.max_cv_bytes + 1)
         try:
             text = extract_resume_text(cv_file.filename, content, current_settings)
@@ -312,9 +321,13 @@ def create_app(
             experience=_form_text(form, "experience", 8_000),
             education=_form_text(form, "education", 4_000),
             languages=_form_text(form, "languages", 2_000),
-            profile_language=_choice(form.get("profile_language"), {"en", "it", "other", "unknown"}),
+            profile_language=_choice(
+                form.get("profile_language"), {"en", "it", "other", "unknown"}
+            ),
             work_authorized_countries=_form_text(form, "work_authorized_countries", 500),
-            requires_sponsorship=_choice(form.get("requires_sponsorship"), {"yes", "no", "unknown"}),
+            requires_sponsorship=_choice(
+                form.get("requires_sponsorship"), {"yes", "no", "unknown"}
+            ),
             cv_filename=cv_filename,
             cv_path=cv_path,
             extracted_text=extracted_text,
@@ -357,9 +370,7 @@ def create_app(
 
             if cv_file is not None and cv_file.filename:
                 content = await cv_file.read(current_settings.max_cv_bytes + 1)
-                extracted_text = extract_resume_text(
-                    cv_file.filename, content, current_settings
-                )
+                extracted_text = extract_resume_text(cv_file.filename, content, current_settings)
                 parsed = parse_candidate_profile(extracted_text)
                 suffix = Path(cv_file.filename).suffix.lower()
                 safe_name = _safe_filename(cv_file.filename, suffix)
@@ -451,9 +462,15 @@ def create_app(
                 requires_sponsorship=profile.requires_sponsorship,
             ),
         )
-        if cv_path and cv_path.is_file() and cv_path.parent.resolve() == current_settings.cv_dir.resolve():
+        if (
+            cv_path
+            and cv_path.is_file()
+            and cv_path.parent.resolve() == current_settings.cv_dir.resolve()
+        ):
             cv_path.unlink()
-        return RedirectResponse("/profile?notice=CV+file+and+extracted+text+removed.", status_code=303)
+        return RedirectResponse(
+            "/profile?notice=CV+file+and+extracted+text+removed.", status_code=303
+        )
 
     @app.get("/search", response_class=HTMLResponse)
     async def search_page(request: Request):
@@ -513,7 +530,9 @@ def create_app(
         if not str(saved_criteria.get("roles") or "").strip():
             saved_criteria["roles"] = profile.target_roles
         roles = str(request.query_params.get("roles", saved_criteria.get("roles", "")))[:500]
-        work_from = str(request.query_params.get("work_from", saved_criteria.get("work_from", "Italy")))[:100]
+        work_from = str(
+            request.query_params.get("work_from", saved_criteria.get("work_from", "Italy"))
+        )[:100]
         workplace = _choice(
             request.query_params.get("workplace", saved_criteria.get("workplace", "remote")),
             {"remote", "hybrid", "onsite", "any"},
@@ -746,30 +765,85 @@ def create_app(
             },
         )
 
+    @app.get("/companies", response_class=HTMLResponse)
+    async def companies_page(request: Request):
+        profile = get_profile(db_path)
+        query = str(request.query_params.get("q") or "")[:100]
+        group_id = str(request.query_params.get("group") or "")
+        if group_id not in GROUP_LABELS:
+            group_id = ""
+        all_companies = list_companies(db_path)
+        companies = filter_and_rank_companies(
+            all_companies, query=query, group_id=group_id, profile=profile
+        )
+        tracked_count = sum(bool(company["tracked"]) for company in all_companies)
+        return render(
+            request,
+            "companies.html",
+            {
+                "active_page": "companies",
+                "companies": companies,
+                "groups": GROUP_LABELS,
+                "selected_group": group_id,
+                "query": query,
+                "return_to": "/companies?" + urlencode({"q": query, "group": group_id}),
+                "tracked_count": tracked_count,
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.post("/companies/{company_id}/track")
+    async def track_company(company_id: str, request: Request):
+        if not set_company_tracked(db_path, company_id, True):
+            raise HTTPException(status_code=404, detail="Company not found.")
+        form = dict(await request.form())
+        return RedirectResponse(
+            _safe_return_path(str(form.get("return_to") or "/companies")), status_code=303
+        )
+
+    @app.post("/companies/{company_id}/untrack")
+    async def untrack_company(company_id: str, request: Request):
+        if not set_company_tracked(db_path, company_id, False):
+            raise HTTPException(status_code=404, detail="Company not found.")
+        form = dict(await request.form())
+        return RedirectResponse(
+            _safe_return_path(str(form.get("return_to") or "/companies")), status_code=303
+        )
+
     @app.post("/sources/add")
     async def add_source_route(request: Request):
         form = dict(await request.form())
         kind = str(form.get("kind") or "")
         if kind not in SOURCE_KINDS:
-            return RedirectResponse("/sources?notice=Choose+a+supported+public+source+type.", status_code=303)
+            return RedirectResponse(
+                "/sources?notice=Choose+a+supported+public+source+type.", status_code=303
+            )
         company = _form_text(form, "company", 120).strip()
         if not company:
-            return RedirectResponse("/sources?notice=Enter+the+company+or+source+name.", status_code=303)
+            return RedirectResponse(
+                "/sources?notice=Enter+the+company+or+source+name.", status_code=303
+            )
         attribution = _form_text(form, "attribution", 120) or company
         config: dict[str, str] = {"company": company}
         if kind == "greenhouse":
             token = _form_text(form, "identifier", 100).strip()
             if not re.fullmatch(r"[A-Za-z0-9_-]+", token):
-                return RedirectResponse("/sources?notice=Enter+a+valid+Greenhouse+board+token.", status_code=303)
+                return RedirectResponse(
+                    "/sources?notice=Enter+a+valid+Greenhouse+board+token.", status_code=303
+                )
             config["board_token"] = token
             endpoint = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
         elif kind == "lever":
             token = _form_text(form, "identifier", 100).strip()
             if not re.fullmatch(r"[A-Za-z0-9_-]+", token):
-                return RedirectResponse("/sources?notice=Enter+a+valid+Lever+site+identifier.", status_code=303)
+                return RedirectResponse(
+                    "/sources?notice=Enter+a+valid+Lever+site+identifier.", status_code=303
+                )
             region = _form_text(form, "lever_region", 16).strip().casefold() or "eu"
             if region not in {"global", "eu"}:
-                return RedirectResponse("/sources?notice=Choose+a+valid+Lever+site+region.", status_code=303)
+                return RedirectResponse(
+                    "/sources?notice=Choose+a+valid+Lever+site+region.", status_code=303
+                )
             host = "api.eu.lever.co" if region == "eu" else "api.lever.co"
             config["site"] = token
             config["region"] = region
@@ -777,9 +851,14 @@ def create_app(
         elif kind == "smartrecruiters":
             token = _form_text(form, "identifier", 100).strip()
             if not re.fullmatch(r"[A-Za-z0-9_-]+", token):
-                return RedirectResponse("/sources?notice=Enter+a+valid+SmartRecruiters+company+identifier.", status_code=303)
+                return RedirectResponse(
+                    "/sources?notice=Enter+a+valid+SmartRecruiters+company+identifier.",
+                    status_code=303,
+                )
             config["company_id"] = token
-            endpoint = f"https://api.smartrecruiters.com/v1/companies/{token}/postings?limit=100&offset=0"
+            endpoint = (
+                f"https://api.smartrecruiters.com/v1/companies/{token}/postings?limit=100&offset=0"
+            )
         else:
             career_url = _form_text(form, "career_url", 2_000).strip()
             valid, message = validate_career_url(career_url)
@@ -830,7 +909,9 @@ def create_app(
     @app.post("/sources/{source_id}/pause")
     async def pause_source(source_id: str):
         mark_source_for_review(db_path, source_id)
-        return RedirectResponse("/sources?notice=Source+paused+and+returned+to+Review.", status_code=303)
+        return RedirectResponse(
+            "/sources?notice=Source+paused+and+returned+to+Review.", status_code=303
+        )
 
     @app.post("/sources/{source_id}/enable")
     async def enable_builtin_source(source_id: str):
@@ -880,7 +961,9 @@ def create_app(
     async def delete_all_data(request: Request):
         form = dict(await request.form())
         if str(form.get("confirmation") or "").strip() != "DELETE":
-            return RedirectResponse("/settings?notice=Type+DELETE+to+confirm+local+data+removal.", status_code=303)
+            return RedirectResponse(
+                "/settings?notice=Type+DELETE+to+confirm+local+data+removal.", status_code=303
+            )
         if not operation_lock.acquire(blocking=False):
             return RedirectResponse(
                 "/settings?notice=Wait+for+the+current+search+or+Jev+scoring+run+to+finish+before+deleting+local+data.",
@@ -895,7 +978,10 @@ def create_app(
             profile = get_profile(db_path)
             cv_path = Path(profile.cv_path) if profile.cv_path else None
             delete_personal_data(db_path, cv_path, current_settings.data_dir)
-            return RedirectResponse("/?notice=Local+profile,+CV,+search+history,+and+job+data+were+removed.", status_code=303)
+            return RedirectResponse(
+                "/?notice=Local+profile,+CV,+search+history,+and+job+data+were+removed.",
+                status_code=303,
+            )
         finally:
             operation_lock.release()
 

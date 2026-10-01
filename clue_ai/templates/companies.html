@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Companies · Clue AI{% endblock %}
+{% block eyebrow %}COMPANY BOARD DIRECTORY{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">A BROADER PLACE TO LOOK</span>
+    <h1>Companies worth<br><em>checking for your work.</em></h1>
+    <p>Browse Italian and European AI employers, data platforms, and larger technology teams. These are company leads, not live vacancies; an employer's role and location terms still determine whether a job fits.</p>
+  </div>
+  <div class="intro-mark intro-mark-sources" aria-hidden="true"><span>⌕</span><i>↗</i></div>
+</section>
+
+<section class="company-discovery-note" aria-label="Company discovery status">
+  <span class="privacy-dot" aria-hidden="true"></span>
+  <div><b>{{ tracked_count }} companies in your local search list</b><p>Your tracked choices are saved on this device. The next crawler milestone connects this directory to official board discovery; a company lead alone does not mean a job is open or available from Italy. Your CV stays local.</p></div>
+</section>
+
+<form class="company-filters" action="/companies" method="get">
+  <label class="company-query">
+    <span>Search companies and role families</span>
+    <input name="q" value="{{ query }}" type="search" placeholder="Try “LLM”, “data”, or a company name">
+  </label>
+  <label class="company-group-filter">
+    <span>Company group</span>
+    <select name="group">
+      <option value="">All groups</option>
+      {% for group_id, label in groups.items() %}<option value="{{ group_id }}" {% if selected_group == group_id %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="button button-dark company-filter-button" type="submit">Filter list <span aria-hidden="true">→</span></button>
+</form>
+
+<div class="company-list-heading">
+  <div><span class="kicker kicker-muted">PROFILE-MATCHED COMPANY SEEDS</span><h2>{{ companies|length }} companies</h2></div>
+  <span class="company-order-note">Closest role-family matches appear first</span>
+</div>
+
+{% if companies %}
+<section class="company-grid" aria-label="Company directory">
+  {% for company in companies %}
+    <article class="company-card">
+      <div class="company-card-top">
+        <span class="company-mark" aria-hidden="true">{{ company.name[:1]|upper }}</span>
+        <div class="company-heading"><h3>{{ company.name }}</h3><span>{{ company.group_label }}</span></div>
+        {% if company.tracked %}<span class="company-track-state company-track-on">In search set</span>{% else %}<span class="company-track-state">Not tracked</span>{% endif %}
+      </div>
+      {% if company.profile_match_count %}<p class="company-fit">{{ company.profile_match_count }} role families match your saved profile</p>{% else %}<p class="company-fit company-fit-muted">Role-family match will improve as your profile has more detail</p>{% endif %}
+      <div class="company-tags">
+        {% for role in company.role_labels %}<span>{{ role }}</span>{% endfor %}
+      </div>
+      <div class="company-board-status">
+        <b>{% if company.last_checked_at %}{{ company.listing_count }} current listings · checked{% elif company.board_url %}Official board identified · awaiting first check{% elif company.careers_url %}Careers page ready to resolve{% else %}Official careers page to discover{% endif %}</b>
+        {% if company.provider %}<span>Board type observed: {{ company.provider }}</span>{% endif %}
+        {% if company.last_checked_at %}<span>Last checked {{ company.last_checked_at[:16].replace('T', ' ') }} UTC{% if company.last_state %} · {{ company.last_state }}{% endif %}</span>{% endif %}
+        {% if company.last_error %}<span class="company-board-error">{{ company.last_error }}</span>{% endif %}
+      </div>
+      <div class="company-card-footer">
+        <div class="company-links">
+          <a href="{{ company.homepage_url }}" target="_blank" rel="noopener noreferrer">Company site <span aria-hidden="true">↗</span></a>
+          {% if company.careers_url %}<a href="{{ company.careers_url }}" target="_blank" rel="noopener noreferrer">Careers page <span aria-hidden="true">↗</span></a>
+          {% elif company.board_url %}<a href="{{ company.board_url }}" target="_blank" rel="noopener noreferrer">Official job board <span aria-hidden="true">↗</span></a>{% endif %}
+        </div>
+        {% if company.tracked %}
+          <form action="/companies/{{ company.id }}/untrack" method="post"><input type="hidden" name="return_to" value="{{ return_to }}"><button class="quiet-button" type="submit">Remove from search</button></form>
+        {% else %}
+          <form action="/companies/{{ company.id }}/track" method="post"><input type="hidden" name="return_to" value="{{ return_to }}"><button class="quiet-button" type="submit">Add to search</button></form>
+        {% endif %}
+      </div>
+      <p class="company-provenance">{{ company.discovery_source }} · <a href="{{ company.discovery_url }}" target="_blank" rel="noopener noreferrer">discovery context ↗</a></p>
+    </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="panel company-empty"><h2>No companies match those filters.</h2><p>Try another name or show all company groups.</p><a class="text-link" href="/companies">Clear filters <span aria-hidden="true">→</span></a></section>
+{% endif %}
+{% endblock %}

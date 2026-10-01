@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>{% block title %}Clue AI{% endblock %}</title>
-    <link rel="stylesheet" href="/static/app.css?v=6">
+    <link rel="stylesheet" href="/static/app.css?v=7">
   <script src="/static/app.js" defer></script>
 </head>
 <body {% if status_url %}data-status-url="{{ status_url }}"{% endif %}>
@@ -36,6 +36,9 @@
       </nav>
       <p class="rail-label rail-label-spaced">WORKSPACE</p>
       <nav class="main-nav" aria-label="Workspace">
+        <a href="/companies" class="{% if active_page == 'companies' %}is-active{% endif %}" {% if active_page == 'companies' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">⌂</span><span>Companies</span>
+        </a>
         <a href="/sources" class="{% if active_page == 'sources' %}is-active{% endif %}" {% if active_page == 'sources' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⌁</span><span>Sources</span>
         </a>

@@ -32,7 +32,19 @@ IN_APP_BROWSER_SAME_ORIGIN = {"Origin": "null", "Sec-Fetch-Site": "same-origin"}
 def test_local_views_render_without_a_jev_key(settings):
     client = TestClient(create_app(settings), base_url="http://127.0.0.1")
 
-    for route in ("/", "/profile", "/search", "/x-leads", "/saved", "/hidden", "/sources", "/settings", "/privacy", "/health"):
+    for route in (
+        "/",
+        "/profile",
+        "/search",
+        "/x-leads",
+        "/saved",
+        "/hidden",
+        "/companies",
+        "/sources",
+        "/settings",
+        "/privacy",
+        "/health",
+    ):
         response = client.get(route)
         assert response.status_code == 200, route
     assert client.get("/health").json() == {"status": "ok", "storage": "local"}
@@ -46,6 +58,7 @@ def test_local_views_render_without_a_jev_key(settings):
         ("/search", "/search"),
         ("/saved", "/saved"),
         ("/hidden", "/hidden"),
+        ("/companies", "/companies"),
         ("/sources", "/sources"),
         ("/settings", "/settings"),
     ),
@@ -67,7 +80,7 @@ def test_result_status_poller_only_runs_for_active_searches(settings):
     save_search_run(settings.database_path, "run-polling", SearchCriteria())
     active = client.get("/searches/run-polling")
     assert active.status_code == 200
-    assert '/static/poll.js' in active.text
+    assert "/static/poll.js" in active.text
 
     update_run(
         settings.database_path,
@@ -79,7 +92,7 @@ def test_result_status_poller_only_runs_for_active_searches(settings):
     )
     complete = client.get("/searches/run-polling")
     assert complete.status_code == 200
-    assert '/static/poll.js' not in complete.text
+    assert "/static/poll.js" not in complete.text
 
 
 def test_jev_settings_state_external_data_and_local_budget_limits(settings):
@@ -94,7 +107,10 @@ def test_jev_settings_state_external_data_and_local_budget_limits(settings):
     assert "Clue does not read or control account refill settings" in response.text
     assert "I understand which profile facts and listing details leave this device" in response.text
     assert "I have reviewed the data disclosure and TypeSafe terms above" not in response.text
-    assert "The built-in connector definitions and manual X lead marker remain." in response.text
+    assert (
+        "The built-in company directory, connector definitions, and manual X lead marker remain."
+        in response.text
+    )
 
 
 def test_localhost_and_same_origin_boundaries_reject_cross_origin_requests(settings):
@@ -104,7 +120,9 @@ def test_localhost_and_same_origin_boundaries_reject_cross_origin_requests(setti
 
     assert remote.get("/").status_code == 421
     response = local.post(
-        "/settings/jev-consent", data={"agree": "on"}, headers={"Origin": "https://attacker.example"}
+        "/settings/jev-consent",
+        data={"agree": "on"},
+        headers={"Origin": "https://attacker.example"},
     )
     assert response.status_code == 403
 
@@ -192,7 +210,9 @@ def test_source_management_requires_review_before_enabling(settings):
         follow_redirects=False,
     )
     source_id = next(
-        item["id"] for item in list_sources(settings.database_path) if item["id"].startswith("user-")
+        item["id"]
+        for item in list_sources(settings.database_path)
+        if item["id"].startswith("user-")
     )
     source = get_source(settings.database_path, source_id)
     assert response.status_code == 303
@@ -254,16 +274,12 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
         "reviewed": "on",
     }
     unsafe = dict(base_form, job_url="https://t.co/short")
-    rejected = client.post(
-        "/x-leads/add", data=unsafe, headers=ORIGIN, follow_redirects=False
-    )
+    rejected = client.post("/x-leads/add", data=unsafe, headers=ORIGIN, follow_redirects=False)
     assert rejected.status_code == 303
     assert "shortened" in rejected.headers["location"]
     assert manual_x_leads(settings.database_path) == []
 
-    saved = client.post(
-        "/x-leads/add", data=base_form, headers=ORIGIN, follow_redirects=False
-    )
+    saved = client.post("/x-leads/add", data=base_form, headers=ORIGIN, follow_redirects=False)
     assert saved.status_code == 303
     lead = manual_x_leads(settings.database_path)[0]
     assert lead["post_url"] == "https://x.com/hiring/status/123456789"
@@ -281,7 +297,9 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
     set_source_enabled(settings.database_path, "x_manual", True)
     assert get_source(settings.database_path, "x_manual")["enabled"] == 0
     assert "x_manual" not in {source["id"] for source in sources_due(settings.database_path)}
-    outcome = fetch_source(get_source(settings.database_path, "x_manual"), SearchCriteria(), settings)
+    outcome = fetch_source(
+        get_source(settings.database_path, "x_manual"), SearchCriteria(), settings
+    )
     assert outcome.skipped
     assert "never fetched" in outcome.message
 
@@ -291,7 +309,9 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
     monkeypatch.setattr(
         services,
         "fetch_source",
-        lambda *_args, **_kwargs: FetchOutcome(message="Fixture; no network request.", skipped=True),
+        lambda *_args, **_kwargs: FetchOutcome(
+            message="Fixture; no network request.", skipped=True
+        ),
     )
     searched = client.post(
         "/search",
@@ -330,9 +350,7 @@ def test_lever_source_form_records_the_selected_region(settings):
     assert source["config"]["region"] == "eu"
 
 
-def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(
-    settings, monkeypatch
-):
+def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(settings, monkeypatch):
     from clue_ai import services
 
     client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
@@ -435,7 +453,13 @@ def test_cv_upload_is_held_for_review_then_saved_locally_and_removable(settings)
     client = TestClient(create_app(settings), base_url="http://127.0.0.1")
     extracted = client.post(
         "/profile/extract",
-        files={"cv_file": ("synthetic.docx", output.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        files={
+            "cv_file": (
+                "synthetic.docx",
+                output.getvalue(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
         headers=ORIGIN,
         follow_redirects=False,
     )

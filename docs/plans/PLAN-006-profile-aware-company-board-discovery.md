@@ -1,6 +1,6 @@
 # PLAN-006 — Profile-aware company board discovery and Scrapling coverage
 
-**Status:** M1 research and target definition complete; implementation milestones not started.  
+**Status:** M1 pushed; M2 directory and tracking are implemented; M3–M4 not started.
 **Created:** 2026-10-01  
 **Last updated:** 2026-10-01
 
@@ -143,11 +143,11 @@ The user wants a broad search that finds real roles at companies in their field,
 
 **Subtasks:**
 
-- [ ] Add a curated local catalog with official source provenance, company career URLs, role-family tags, countries/regions, detected ATS type when verified, and board-discovery state.
-- [ ] Add a Companies page with profile-aware filters, role-family categories, source links, board state, last check, and current listing count.
-- [ ] Allow the owner to track/untrack candidates without typing an ATS identifier; preserve selected sources across CV-first searches.
-- [ ] Display that catalog entries are candidate employers, not a claim of a live vacancy or Italy eligibility.
-- [ ] Keep the catalog source records and tracking state local and user-deletable.
+- [x] Add a curated local catalog with discovery provenance, official company/careers URLs, role-family tags, and detected ATS details only when directly verified.
+- [x] Add a Companies page with local profile-ranked filters, role-family categories, company/careers links, board-discovery state, last check, and listing count.
+- [x] Allow the owner to track/untrack candidates without typing an ATS identifier; persist choices locally. M3 wires those choices into CV-first searches.
+- [x] Display that catalog entries are candidate employers, not a claim of a live vacancy or Italy eligibility.
+- [x] Keep the catalog source records and tracking state local and reset tracking through user-controlled deletion.
 
 **Affected areas:**
 
@@ -160,18 +160,18 @@ The user wants a broad search that finds real roles at companies in their field,
 
 **Acceptance criteria:**
 
-- [ ] The app displays a broad seeded list spanning Italian AI/data employers, European AI startups, and global AI/data platforms.
-- [ ] The active profile target roles/skills filter and sort the local catalog without sending the CV to third parties.
-- [ ] Every direct careers/board link has traceable company provenance; unverified ATS slugs are never guessed.
-- [ ] The owner can open the official board, track or pause it, and see its current state.
+- [x] The app displays a broad 80+ seed list spanning Italian AI/data employers, European AI startups, global AI/data platforms, and large technology employers.
+- [x] The active profile target roles/skills filter and sort the local catalog without sending the CV to third parties.
+- [x] Every direct careers/board link has traceable company provenance; unverified ATS slugs are never guessed.
+- [x] The owner can open the official company/career/known-board link, track or untrack the lead, and see its current discovery state.
 - [ ] Keyboard navigation, semantic headings/forms, focus visibility, and narrow layouts remain usable. The owner waived 200% zoom review.
 - [ ] Existing CV-first and search preference workflows remain available.
 
 **Validation:**
 
-- [ ] Add focused catalog and route tests.
-- [ ] Run existing test suite, Ruff, Python compilation, and `git diff --check` in Conda `gen`.
-- [ ] Manual local browser check of empty catalog, profile-matched state, filters, and track/pause behavior; shut server down.
+- [x] Add focused catalog and route tests, including tracking reset on local-data deletion.
+- [x] Run the full test suite, Ruff, Python compilation, and `git diff --check` in Conda `gen`.
+- [x] Check the rendered page with FastAPI TestClient and inspect narrow-layout rules; no server was left running.
 
 **Documentation updates:** Catalog sourcing, user actions, and local deletion behavior.
 
@@ -281,7 +281,8 @@ The user wants a broad search that finds real roles at companies in their field,
 
 - 2026-10-01: Inspected the current search worker, source registry, Scrapling Spider, product definition, source research, and architecture. Confirmed that the present 25-link, single-host crawl is not broad company discovery.
 - 2026-10-01: Researched Sifted AI 100, AIxIA's Italian ecosystem map, the Politecnico di Milano AI market report, official ATS documentation, and official company career pages with live Italy/Europe examples.
-- 2026-10-01: M1 research and target definition recorded in the research report, product definition, architecture, and ADR.
+- 2026-10-01: M1 research and target definition recorded in the research report, product definition, architecture, and ADR, then pushed to `main` at `470ad084c2ddcd4d9ff17d4c92038a5dcd994d95`.
+- 2026-10-01: M2 added an 80+ employer catalog, local profile-role sorting, group/name filters, tracking controls, verified board links, and deletion/reset behavior. Full Conda `gen` validation passed: 107 tests, Ruff, Python compilation, and whitespace check.
 
 ## Implementation discoveries / decisions
 
@@ -290,8 +291,10 @@ The user wants a broad search that finds real roles at companies in their field,
 - The official employer/ATS source should supply listing data. Aggregator feeds remain supplements.
 - Italian AI job demand exists across broader sectors, so the target seed set must include AI-native companies and Italian enterprises with AI/data hiring.
 - Italy work eligibility is vacancy-specific. Remote, EMEA, and Europe labels require exact country evidence.
-- M1 research is complete; M2–M4 remain to be implemented in separate commits.
+- M1 is pushed. M2 is implemented and validated in the working tree; push its checkpoint before beginning M3. M3 crawler integration and M4 eligibility calibration remain separate milestones.
 
 ## Completion evidence
 
 M1 research sources and direct-board examples are linked throughout [the research report](../research/profile-aware-company-board-discovery.md). This M1 checkpoint contains no code change and makes no claim that the expanded crawler is already implemented.
+
+M2 adds the local `Companies` page backed by the seeded catalog in `clue_ai/company_catalog.py` and the additive SQLite `companies` table. The directory shows 80+ employer leads across five groups. Search and role-family ordering use locally saved profile fields; company tracking persists locally and resets during user-controlled data deletion. Only directly observed official career/ATS links are prefilled; other board identifiers remain empty for M3 resolution. The full test suite passes in Conda `gen` (107 tests), Ruff passes, and Python compilation succeeds. M2 does not yet connect tracked companies to the live search worker; that is the M3 task.

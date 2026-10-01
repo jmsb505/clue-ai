@@ -18,6 +18,7 @@ from clue_ai.repository import (
     get_run,
     get_run_results,
     get_source,
+    list_companies,
     list_sources,
     monthly_jev_usage,
     prune_expired_data,
@@ -27,6 +28,7 @@ from clue_ai.repository import (
     save_jobs_with_report,
     save_run_results,
     saved_jobs,
+    set_company_tracked,
     set_job_user_state,
     settle_jev_usage,
     sources_due,
@@ -46,7 +48,9 @@ def test_default_source_registry_has_five_feeds_and_manual_x_marker(database):
         "startup_rss",
     }
     assert all(item["state"] == "approved" and item["enabled"] for item in connectors)
-    assert all(item["attribution"] and item["endpoint"].startswith("https://") for item in connectors)
+    assert all(
+        item["attribution"] and item["endpoint"].startswith("https://") for item in connectors
+    )
     assert manual_x["state"] == "approved"
     assert manual_x["enabled"] == 0
     assert "never" in manual_x["policy_note"].casefold()
@@ -54,6 +58,18 @@ def test_default_source_registry_has_five_feeds_and_manual_x_marker(database):
     assert remotejobs["attribution"] == "Powered by RemoteJobs.org"
     assert remotejobs["interval_seconds"] == 86_400
     assert remotejobs["retention_days"] == 14
+
+
+def test_delete_personal_data_resets_company_tracking(settings, database):
+    from clue_ai.database import delete_personal_data
+
+    assert set_company_tracked(database, "aindo", True)
+
+    delete_personal_data(database, None, settings.data_dir)
+
+    aindo = next(company for company in list_companies(database) if company["id"] == "aindo")
+    assert aindo["tracked"] == 0
+    assert aindo["board_state"] == "candidate"
 
 
 def test_distinct_manual_x_urls_are_not_fuzzy_merged_by_role_and_company(database):
@@ -201,9 +217,7 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     )
     save_search_run(database, "run-delete", SearchCriteria())
     assert save_jobs(database, [make_job()]) == 1
-    usage_id, _ = reserve_jev_budget(
-        database, "run-delete", "jev-1.13.0", 80_000, 0.042, 4.0
-    )
+    usage_id, _ = reserve_jev_budget(database, "run-delete", "jev-1.13.0", 80_000, 0.042, 4.0)
     assert usage_id is not None
     set_jev_consent(database, True)
 

@@ -74,7 +74,7 @@ These are working defaults that complete the pilot definition; they can be revis
 4. Ordinary software applies exact user-defined constraints. Missing listing data remains “unknown” unless the user chooses to treat it as a hard exclusion.
 5. After hard filters, Jev automatically evaluates bounded, job-related fit questions when the user has enabled the one-time opt-in, a key is configured, the app-side reserve allows the request, and the profile/listing language is supported. Otherwise, listings remain available with a clear unscored reason.
 6. The user reviews match details, saves or dismisses jobs, and opens the original source page. The user decides whether to apply on the original site; Clue never submits an application. A manual X lead, if used separately, keeps its own provenance and is not part of automated discovery.
-7. The user can revise their local profile or search and delete the saved CV, profile, preferences, indexed jobs, and results through product controls.
+7. The user can revise their local profile or search and delete the saved CV, profile, preferences, tracked-company choices, indexed jobs, and results through product controls.
 
 ## Jev's role in matching
 
