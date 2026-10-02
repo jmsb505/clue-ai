@@ -1,6 +1,6 @@
 # PLAN-011 — Entry-level, paid roles with direct listing links
 
-**Status:** M1 implementation and static validation passed; Git checkpoint pending
+**Status:** M1 implemented, statically validated, and pushed to `main` in `4e64f5e`
 **Created:** 2026-10-02
 **Last updated:** 2026-10-02
 
@@ -116,7 +116,7 @@ The owner clarified that the intended search is for entry-level roles: junior jo
 
 ## Final integration validation
 
-Run the static checks in M1 using Conda `gen`, inspect the saved criteria and Jev payload code paths, confirm result links use source listing URLs, inspect the final staged diff, and verify the commit on remote `main`. Do not trigger crawling or a TypeSafe request.
+Conda `gen` Ruff, byte-compilation, Jinja parsing, both staged and working-tree diff checks, code-path inspection, and the scoped push to `origin/main` at `4e64f5e` are complete. No crawl or TypeSafe request was triggered.
 
 ## Rollback / recovery
 
@@ -126,7 +126,7 @@ Revert the scoped M1 commit to remove the two criteria and result action. The cr
 
 - [x] Confirmed the existing code supports full-candidate Jev evaluation and persists per-source listing URLs.
 - [x] Recorded the owner's fixed entry-level and paid-only requirements and the need for an obvious listing link.
-- [x] Implement M1 and record its local static validation; push the scoped checkpoint to `main` next.
+- [x] Implement and statically validate M1; push the scoped checkpoint directly to `main` (`4e64f5e`).
 
 ## Implementation discoveries / decisions
 
@@ -137,4 +137,4 @@ Revert the scoped M1 commit to remove the two criteria and result action. The cr
 
 ## Completion evidence
 
-Conda `gen` Ruff passed for `domain.py`, `filters.py`, and `jev.py`; byte-compilation passed for the changed Python modules; Jinja parsed the search and results templates; repository-wide `git diff --check` passed. Code inspection confirmed that request parsing hard-codes the required criteria, the saved dataclass includes them, Jev receives both, and result collection is not gated by them. No unit suite, crawl, Jev request, or live browser workflow was run. The scoped Git checkpoint is pending.
+Conda `gen` Ruff passed for `domain.py`, `filters.py`, `jev.py`, and the updated Jev version assertion; byte-compilation passed for the changed Python modules; Jinja parsed the home, search, and results templates; staged and working-tree `git diff --check` passed. Code inspection confirmed that request parsing hard-codes the required criteria, the saved dataclass includes them, Jev receives both, and result collection is not gated by them. Commit `4e64f5e` was pushed to `origin/main`. No unit suite, crawl, Jev request, or live browser workflow was run.
