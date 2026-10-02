@@ -660,7 +660,7 @@ def get_run_result_counts(database_path: Path, run_id: str) -> dict[str, int]:
                  WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0""",
             (run_id,),
         ).fetchone()
-    return {key: int(row[key] or 0) for key in row}
+    return {key: int(value or 0) for key, value in dict(row).items()}
 
 
 def get_run_results(
