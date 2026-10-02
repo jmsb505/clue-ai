@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from clue_ai.company_catalog import GROUP_LABELS, ROLE_LABELS
+from clue_ai.crawl_policy import (
+    QUERY_ERROR_RETRY_SECONDS,
+    SOURCE_ERROR_RETRY_SECONDS,
+    TRANSIENT_COMPANY_ERROR_STATES,
+)
 from clue_ai.database import connect
 from clue_ai.domain import NormalizedJob, utc_now
 from clue_ai.jobs import canonical_url, job_fingerprint, stable_job_id
@@ -55,7 +60,7 @@ def set_company_tracked(database_path: Path, company_id: str, tracked: bool) -> 
 def companies_due(
     database_path: Path,
     *,
-    interval_seconds: int = 86_400,
+    interval_seconds: int = 21_600,
     limit: int = 100,
     force: bool = False,
 ) -> list[dict[str, Any]]:
@@ -71,10 +76,19 @@ def companies_due(
     for row in rows:
         company = dict(row)
         checked = _parse_time(company.get("last_checked_at"))
+        last_state = str(company.get("last_state") or "")
+        transient_error = last_state in TRANSIENT_COMPANY_ERROR_STATES or bool(
+            re.fullmatch(r"http_5\d{2}", last_state)
+        )
+        refresh_interval = (
+            SOURCE_ERROR_RETRY_SECONDS
+            if transient_error
+            else max(3_600, interval_seconds)
+        )
         if (
             force
             or checked is None
-            or now - checked >= timedelta(seconds=max(3600, interval_seconds))
+            or now - checked >= timedelta(seconds=refresh_interval)
         ):
             try:
                 company["role_tags"] = json.loads(company.pop("role_tags_json") or "[]")
@@ -208,7 +222,11 @@ def sources_due(database_path: Path, force: bool = False) -> list[dict[str, Any]
             due.append(source)
             continue
         checked = _parse_time(source.get("last_checked_at"))
-        interval = max(3_600, int(source.get("interval_seconds") or 21_600))
+        interval = (
+            SOURCE_ERROR_RETRY_SECONDS
+            if source.get("last_state") == "error"
+            else max(3_600, int(source.get("interval_seconds") or 21_600))
+        )
         if force or checked is None or now - checked >= timedelta(seconds=interval):
             due.append(source)
     return due
@@ -220,25 +238,35 @@ def role_feed_due(
     query_hash = hashlib.sha256(role_slug.encode("utf-8")).hexdigest()
     with connect(database_path) as db:
         row = db.execute(
-            "SELECT checked_at FROM source_query_checks WHERE source_id = ? AND query_hash = ?",
+            "SELECT checked_at, state FROM source_query_checks WHERE source_id = ? AND query_hash = ?",
             (source_id, query_hash),
         ).fetchone()
     checked = _parse_time(row["checked_at"]) if row else None
+    effective_interval = (
+        QUERY_ERROR_RETRY_SECONDS
+        if row and row["state"] == "error"
+        else max(3_600, int(interval_seconds))
+    )
     return checked is None or datetime.now(timezone.utc) - checked >= timedelta(
-        seconds=interval_seconds
+        seconds=effective_interval
     )
 
 
 def record_role_feed_check(
-    database_path: Path, source_id: str, role_slug: str, checked_at: str | None = None
+    database_path: Path,
+    source_id: str,
+    role_slug: str,
+    checked_at: str | None = None,
+    *,
+    state: str = "ok",
 ) -> None:
     query_hash = hashlib.sha256(role_slug.encode("utf-8")).hexdigest()
     with connect(database_path) as db:
         db.execute(
-            """INSERT INTO source_query_checks (source_id, query_hash, checked_at)
-               VALUES (?, ?, ?) ON CONFLICT(source_id, query_hash)
-               DO UPDATE SET checked_at = excluded.checked_at""",
-            (source_id, query_hash, checked_at or utc_now()),
+            """INSERT INTO source_query_checks (source_id, query_hash, checked_at, state)
+               VALUES (?, ?, ?, ?) ON CONFLICT(source_id, query_hash)
+               DO UPDATE SET checked_at = excluded.checked_at, state = excluded.state""",
+            (source_id, query_hash, checked_at or utc_now(), state[:16]),
         )
 
 
@@ -259,6 +287,12 @@ def record_source_state(
                    last_state = 'blocked', last_error = ? WHERE id = ?""",
                 (checked, safe_message or "Source returned a block response.", source_id),
             )
+        elif state == "error":
+            db.execute(
+                """UPDATE sources SET last_checked_at = ?, last_state = 'error', last_error = ?
+                   WHERE id = ?""",
+                (checked, safe_message, source_id),
+            )
         else:
             db.execute(
                 """UPDATE sources SET last_checked_at = ?, last_state = ?, last_error = ?
@@ -275,7 +309,7 @@ def add_source(
     endpoint: str,
     config: dict[str, Any],
     attribution: str,
-    interval_seconds: int = 86_400,
+    interval_seconds: int = 21_600,
     retention_days: int = 30,
 ) -> str:
     source_id = f"user-{uuid.uuid4().hex[:12]}"
@@ -284,16 +318,16 @@ def add_source(
             """INSERT INTO sources
                (id, name, kind, endpoint, state, enabled, attribution, interval_seconds,
                 retention_days, policy_note, config_json, is_builtin)
-               VALUES (?, ?, ?, ?, 'review', 0, ?, ?, ?, ?, ?, 0)""",
+               VALUES (?, ?, ?, ?, 'approved', 1, ?, ?, ?, ?, ?, 0)""",
             (
                 source_id,
                 name.strip()[:120],
                 kind,
                 endpoint,
                 attribution.strip()[:120],
-                max(21_600, min(int(interval_seconds), 30 * 86_400)),
+                max(3_600, min(int(interval_seconds), 30 * 86_400)),
                 max(1, min(int(retention_days), 90)),
-                "Owner-added source. Review its terms, robots policy, attribution, and retention before enabling.",
+                "Owner-added public source. Automatically enabled for local job discovery; pause it anytime from Sources.",
                 json.dumps(config, ensure_ascii=False),
             ),
         )

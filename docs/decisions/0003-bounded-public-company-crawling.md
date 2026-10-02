@@ -1,6 +1,6 @@
 # ADR 0003: Personal-use crawling of public company job pages
 
-**Status:** ACCEPTED — bounded local crawling policy; source rules remain per-provider  
+**Status:** SUPERSEDED by [ADR 0009](0009-broader-local-public-crawling.md)
 **Date:** 2026-09-30
 
 ## Context
@@ -9,7 +9,7 @@ The owner wants a local personal job search with no recurring spend other than a
 
 ## Decision
 
-Use a local source registry with explicit `Approved`, `Review`, and `Blocked` states. Prefer in order: (1) a documented, $0 API/feed for job discovery; (2) the employer's public job-board endpoint; (3) its job sitemap/RSS/Atom or `JobPosting` JSON-LD; (4) an ordinary, low-rate fetch of the registered public careers page.
+Historical decision: use a local source registry with explicit `Approved`, `Review`, and `Blocked` states. This source qualification and the crawl profile below have been replaced by ADR 0009.
 
 Use Scrapling Spider as the crawler for registered public HTML job and career pages, including employer and ATS pages. Keep it behind a connector boundary; documented APIs and feeds remain direct source connectors. Configure `robots_txt_obey = True`, `concurrent_requests = 4`, `concurrent_requests_per_domain = 1`, and `download_delay = 2.0` seconds as the base crawl profile. Set an identifying User-Agent through ordinary request headers. Scrapling honors stricter robots `Crawl-delay` and `Request-rate` values by raising the delay; keep the explicit concurrency limits because robots compliance does not limit concurrency. Stop on access denials, rate limits, bot challenges, or explicit blocks. Do not use anti-bot bypass, CAPTCHA automation, proxy rotation, TLS/browser impersonation, login automation, or search-engine result scraping.
 

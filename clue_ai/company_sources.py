@@ -10,6 +10,17 @@ from typing import Any, ClassVar
 from urllib.parse import parse_qs, quote, urljoin, urlsplit
 
 from clue_ai.config import Settings
+from clue_ai.crawl_policy import (
+    COMPANY_CHILD_SITEMAP_LIMIT,
+    COMPANY_DYNAMIC_RENDER_LIMIT,
+    COMPANY_HTML_PAGE_LIMIT,
+    COMPANY_SITEMAP_JOB_PAGE_LIMIT,
+    PUBLIC_CRAWL_REFRESH_SECONDS,
+    ROBOTS_TXT_OBEY,
+    SCRAPLING_CONCURRENT_REQUESTS,
+    SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN,
+    SCRAPLING_DOWNLOAD_DELAY_SECONDS,
+)
 from clue_ai.domain import NormalizedJob, SearchCriteria
 from clue_ai.jobs import canonical_url
 from clue_ai.repository import companies_due, update_company_board
@@ -39,9 +50,16 @@ ATS_SUFFIXES = (
     "jobvite.com",
 )
 ATS_LINK_DOMAINS = {*ATS_HOSTS, *ATS_SUFFIXES}
-_CAREER_PATH = re.compile(r"(?i)(?:career|jobs?|roles?|openings?|vacancies|positions?)")
-_JOB_DETAIL_PATH = re.compile(r"(?i)/(?:jobs?|positions?|roles?|openings?|vacancies)/[^/?#]+")
-_JOB_SITEMAP_PATH = re.compile(r"(?i)/(?:jobs?|positions?|roles?|openings?|vacancies)/")
+_CAREER_PATH = re.compile(
+    r"(?i)(?:career|jobs?|roles?|openings?|vacancies|positions?|opportunities|"
+    r"work[-_]?with[-_]?us|join[-_]?us|our[-_]?team)"
+)
+_JOB_DETAIL_PATH = re.compile(
+    r"(?i)/(?:jobs?|positions?|roles?|openings?|vacancies|opportunities)/[^/?#]+"
+)
+_JOB_SITEMAP_PATH = re.compile(
+    r"(?i)/(?:jobs?|positions?|roles?|openings?|vacancies|opportunities)/"
+)
 
 
 @dataclass
@@ -210,11 +228,11 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
 
     class CompanyBoardSpider(Spider):
         name = "clue_ai_company_board_batch"
-        robots_txt_obey = True
+        robots_txt_obey = ROBOTS_TXT_OBEY
         allowed_domains: ClassVar[set[str]] = set(hosts)
-        concurrent_requests = 4
-        concurrent_requests_per_domain = 1
-        download_delay = 2.0
+        concurrent_requests = SCRAPLING_CONCURRENT_REQUESTS
+        concurrent_requests_per_domain = SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN
+        download_delay = SCRAPLING_DOWNLOAD_DELAY_SECONDS
         max_blocked_retries = 0
         logging_level = logging.INFO
         start_urls: ClassVar[tuple[str, ...]] = ()
@@ -238,7 +256,6 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
                 "ordinary",
                 FetcherSession(
                     impersonate=None,
-                    stealthy_headers=False,
                     timeout=settings.network_timeout_seconds,
                     headers={
                         "User-Agent": self.user_agent,
@@ -325,7 +342,10 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
             if not _valid_url(normalized):
                 return None
             self.allowed_domains.add(_public_host(normalized))
-            if meta.get("stage") == "html" and self.pages_by_company.get(company_id, 0) >= 5:
+            if (
+                meta.get("stage") == "html"
+                and self.pages_by_company.get(company_id, 0) >= COMPANY_HTML_PAGE_LIMIT
+            ):
                 return None
             self.scheduled.add(key)
             if meta.get("stage") == "html":
@@ -521,7 +541,7 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
                     internal_careers.append(link)
 
             # Follow official links only. A listed ATS is accepted only if the employer page linked it.
-            for board in ats_links[:2]:
+            for board in ats_links[:10]:
                 existing = self.boards_by_company.get(company_id)
                 if existing and existing["board_url"] == board["board_url"]:
                     continue
@@ -575,7 +595,7 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
                 if request is not None:
                     yield request
 
-            for career_url in internal_careers[:2]:
+            for career_url in internal_careers[:10]:
                 if not self.careers_by_company.get(company_id):
                     self.careers_by_company[company_id] = career_url
                 yield _event("board", company_id, careers_url=career_url)
@@ -586,7 +606,7 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
                     yield request
 
             if self.jobs_by_company.get(company_id, 0) == 0:
-                for job_url in job_details[:4]:
+                for job_url in job_details[:20]:
                     request = self._request(
                         job_url,
                         company_id,
@@ -648,11 +668,11 @@ def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
 
     class CompanySitemapSpider(SitemapSpider):
         name = "clue_ai_company_sitemap_batch"
-        robots_txt_obey = True
+        robots_txt_obey = ROBOTS_TXT_OBEY
         allowed_domains: ClassVar[set[str]] = set(sitemap_hosts.values())
-        concurrent_requests = 4
-        concurrent_requests_per_domain = 1
-        download_delay = 2.0
+        concurrent_requests = SCRAPLING_CONCURRENT_REQUESTS
+        concurrent_requests_per_domain = SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN
+        download_delay = SCRAPLING_DOWNLOAD_DELAY_SECONDS
         max_blocked_retries = 0
         logging_level = logging.INFO
         sitemap_urls: ClassVar[tuple[str, ...]] = ()
@@ -675,7 +695,6 @@ def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
                 "ordinary",
                 FetcherSession(
                     impersonate=None,
-                    stealthy_headers=False,
                     timeout=settings.network_timeout_seconds,
                     headers={
                         "User-Agent": self.user_agent,
@@ -786,7 +805,10 @@ def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
                             continue
                         path = urlsplit(result.url).path.casefold()
                         if path.endswith(("robots.txt", ".xml", ".xml.gz")):
-                            if self.child_sitemaps.get(company_id, 0) >= 3:
+                            if (
+                                self.child_sitemaps.get(company_id, 0)
+                                >= COMPANY_CHILD_SITEMAP_LIMIT
+                            ):
                                 continue
                             self.child_sitemaps[company_id] += 1
                         result.meta["company_id"] = company_id
@@ -807,7 +829,10 @@ def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
             meta = dict(getattr(response, "meta", {}) or {})
             company_id = str(meta.get("company_id") or "")
             expected_host = sitemap_hosts.get(company_id, "")
-            if _public_host(str(url)) != expected_host or self.dispatched.get(company_id, 0) >= 6:
+            if (
+                _public_host(str(url)) != expected_host
+                or self.dispatched.get(company_id, 0) >= COMPANY_SITEMAP_JOB_PAGE_LIMIT
+            ):
                 return None
             request = super()._dispatch(response, url, rules)
             if request is not None:
@@ -893,7 +918,12 @@ def crawl_tracked_companies(
     force: bool = False,
 ) -> CompanyCrawlSummary:
     started_at = time.monotonic()
-    due = companies_due(database_path, limit=100, interval_seconds=86_400, force=force)
+    due = companies_due(
+        database_path,
+        limit=100,
+        interval_seconds=PUBLIC_CRAWL_REFRESH_SECONDS,
+        force=force,
+    )
     summary = CompanyCrawlSummary(companies_checked=len(due))
     if not due:
         summary.elapsed_seconds = round(time.monotonic() - started_at, 2)
@@ -1033,8 +1063,8 @@ def crawl_tracked_companies(
                     error=str(exc),
                 )
 
-    # SitemapSpider adds public job URLs from each employer's own robots.txt; each host gets
-    # at most three sitemap fetches and six job-page requests in this search.
+    # SitemapSpider uses the employer's robots.txt as sitemap discovery metadata; per-company
+    # sitemap and job-page requests remain explicitly bounded by crawl_policy.py.
     needs_sitemap = [
         company
         for company in due
@@ -1051,15 +1081,14 @@ def crawl_tracked_companies(
         sitemap_spider = _make_sitemap_spider(needs_sitemap, settings)
         _run_spider_stream(sitemap_spider, process_event)
 
-    # Render only a few pages that look like client-rendered career shells. Scrapling's ordinary
-    # DynamicFetcher is a fallback, with a strict per-run cap and no stealth or proxies.
+    # Render detected client-rendered career shells with a bounded public-page fallback.
     if dynamic_urls:
         try:
             from scrapling.fetchers import DynamicFetcher
         except ImportError:
             DynamicFetcher = None
         if DynamicFetcher:
-            for company_id, url in list(dynamic_urls.items())[:3]:
+            for company_id, url in list(dynamic_urls.items())[:COMPANY_DYNAMIC_RENDER_LIMIT]:
                 if (
                     jobs_seen.get(company_id, 0)
                     or statuses.get(company_id, {}).get("state") == "blocked"

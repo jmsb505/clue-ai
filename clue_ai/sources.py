@@ -15,6 +15,13 @@ from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsp
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from clue_ai.config import Settings
+from clue_ai.crawl_policy import (
+    ROBOTS_TXT_OBEY,
+    SCRAPLING_CONCURRENT_REQUESTS,
+    SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN,
+    SCRAPLING_DOWNLOAD_DELAY_SECONDS,
+    STANDALONE_CAREER_PAGE_LIMIT,
+)
 from clue_ai.domain import NormalizedJob, SearchCriteria
 from clue_ai.external_links import is_x_host
 from clue_ai.jobs import canonical_url, infer_workplace, parse_date, plain_text
@@ -26,6 +33,15 @@ class SourceFetchError(RuntimeError):
         super().__init__(message)
         self.status_code = status_code
         self.blocked = blocked
+
+
+_CAREER_OR_JOB_PATH = re.compile(
+    r"(?i)(?:career|jobs?|positions?|vacanc|opening|roles?|opportunit|"
+    r"work[-_]?with[-_]?us|join[-_]?us|our[-_]?team)"
+)
+_JOB_DETAIL_PATH = re.compile(
+    r"(?i)/(?:jobs?|job[-_]?openings?|positions?|vacancies|openings?|roles?|opportunities)/[^/]+"
+)
 
 
 @dataclass
@@ -769,12 +785,14 @@ def _fetch_remote_first(
         url = f"https://remotefirstjobs.com/rss/jobs/{quote(role_slug, safe='')}.rss"
         try:
             payload = _fetch_bytes(url, hosts, settings)
+            raw_count = _raw_rss_record_count(payload)
+            parsed = _parse_rss_feed(source, payload, settings)
         except Exception:
-            record_role_feed_check(database_path, str(source["id"]), role_slug)
+            record_role_feed_check(
+                database_path, str(source["id"]), role_slug, state="error"
+            )
             raise
         record_role_feed_check(database_path, str(source["id"]), role_slug)
-        raw_count = _raw_rss_record_count(payload)
-        parsed = _parse_rss_feed(source, payload, settings)
         jobs.extend(parsed)
         response_bytes += len(payload)
         raw_records += raw_count
@@ -839,7 +857,7 @@ def _fetch_remotejobs(
             parsed = _parse_json_feed("remotejobs_api", source, raw, settings)
             jobs.extend(parsed)
         except Exception:
-            record_role_feed_check(database_path, source_id, query_key)
+            record_role_feed_check(database_path, source_id, query_key, state="error")
             raise
         record_role_feed_check(database_path, source_id, query_key)
         response_bytes += len(payload)
@@ -1123,11 +1141,11 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
 
     class BoundedCareerSpider(Spider):
         name = "clue_ai_public_careers"
-        robots_txt_obey = True
+        robots_txt_obey = ROBOTS_TXT_OBEY
         allowed_domains: ClassVar[set[str]] = {host}
-        concurrent_requests = 4
-        concurrent_requests_per_domain = 1
-        download_delay = 2.0
+        concurrent_requests = SCRAPLING_CONCURRENT_REQUESTS
+        concurrent_requests_per_domain = SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN
+        download_delay = SCRAPLING_DOWNLOAD_DELAY_SECONDS
         max_blocked_retries = 0
         logging_level = logging.INFO
         start_urls: ClassVar[list[str]] = []
@@ -1138,7 +1156,8 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
             self.start_urls = [start_url]
             self.allowed_domains = {host}
             self.hit_block = False
-            self.page_limit = 25
+            self.page_limit = STANDALONE_CAREER_PAGE_LIMIT
+            self.scheduled_urls = {canonical_url(start_url)}
             self.raw_records = 0
             self.parse_failures = 0
             self.not_found_count = 0
@@ -1148,7 +1167,6 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
                 "ordinary",
                 FetcherSession(
                     impersonate=None,
-                    stealthy_headers=False,
                     timeout=settings.network_timeout_seconds,
                     headers={
                         "User-Agent": self.user_agent,
@@ -1203,13 +1221,7 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
                 yield entry
             if entries:
                 return
-            is_job_detail = bool(
-                re.search(
-                    r"/(?:jobs?|positions?|vacancies|openings?)/[^/]+",
-                    urlsplit(response.url).path,
-                    re.IGNORECASE,
-                )
-            )
+            is_job_detail = bool(_JOB_DETAIL_PATH.search(urlsplit(response.url).path))
             if is_job_detail:
                 entry = _extract_html_job_posting(response, source, settings)
                 if entry:
@@ -1218,21 +1230,20 @@ def crawl_career_page(source: dict[str, Any], settings: Settings) -> FetchOutcom
                     return
                 self.parse_failures += 1
                 return
-            seen: set[str] = set()
             for href in response.css("a::attr(href)").getall():
                 absolute = urljoin(response.url, str(href))
                 parts = urlsplit(absolute)
                 if parts.scheme != "https" or (parts.hostname or "").lower() != host:
                     continue
                 path = parts.path.casefold()
-                if not re.search(r"/(?:careers?|jobs?|positions?|vacancies|openings?)/[^/]+", path):
+                if not _CAREER_OR_JOB_PATH.search(path):
                     continue
                 normalized = canonical_url(absolute)
-                if not normalized or normalized in seen or normalized == canonical_url(start_url):
+                if not normalized or normalized in self.scheduled_urls:
                     continue
-                seen.add(normalized)
-                if len(seen) >= self.page_limit:
+                if len(self.scheduled_urls) >= self.page_limit:
                     break
+                self.scheduled_urls.add(normalized)
                 yield response.follow(
                     normalized,
                     callback=self.parse_job_page,

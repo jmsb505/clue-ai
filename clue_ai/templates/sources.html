@@ -6,14 +6,14 @@
   <div>
     <span class="kicker kicker-muted">TRANSPARENT BY DESIGN</span>
     <h1>Know where each<br><em>listing came from.</em></h1>
-    <p>Clue checks free public feeds and boards with a supported public path. Sites that disallow automated access remain one-click manual searches.</p>
+    <p>Clue checks free feeds, public job boards, and employer career pages. Add another supported public board when you find one; the next search checks it automatically.</p>
   </div>
   <div class="intro-mark intro-mark-sources" aria-hidden="true"><span>⌁</span><i>↗</i></div>
 </section>
 
 <section class="source-policy-note">
   <span class="source-policy-icon" aria-hidden="true">i</span>
-    <div><b>Respectful, bounded discovery</b><p>Sources refresh no more than their listed schedule. Scrapling follows robots.txt on public pages and stops when a site blocks a request. Clue does not sign in, retry around blocks, or use stealth or proxy tools. Manual boards open only when you choose them.</p></div>
+    <div><b>Broad local discovery</b><p>Scrapling searches public career pages and job links beyond robots.txt exclusions, with wider page and sitemap limits. It uses an identified crawler, an eight-request total limit, at most two requests per host, and a one-second base delay. Explicit denials, rate limits, and anti-bot challenges pause that host; Clue does not sign in or solve challenges. Manual-only boards open when you choose them.</p></div>
 </section>
 
 <section class="source-list-section">
@@ -42,15 +42,9 @@
         {% if source.last_error %}<p class="source-error">{{ source.last_error }}</p>{% endif %}
         {% if source.state == 'review' and not source.is_builtin %}
           <form class="source-approval-form" action="/sources/{{ source.id }}/approve" method="post">
-            <p class="approval-title">Before enabling, confirm you checked this source:</p>
-            <div class="approval-check-grid">
-              <label><input type="checkbox" name="terms_reviewed" value="on" required><span>I reviewed its current terms for personal use and local caching.</span></label>
-              <label><input type="checkbox" name="zero_cost" value="on" required><span>The connector is free at my expected use.</span></label>
-              <label><input type="checkbox" name="attribution_confirmed" value="on" required><span>Attribution and original listing links are preserved.</span></label>
-              <label><input type="checkbox" name="robots_confirmed" value="on" required><span>Robots rules and refresh limits permit this access.</span></label>
-              <label><input type="checkbox" name="public_access_confirmed" value="on" required><span>The page is public; no login, challenge, or access bypass is used.</span></label>
-            </div>
-            <button class="button button-outline button-small" type="submit">Approve this source <span aria-hidden="true">→</span></button>
+            <p class="approval-title">This public source is ready to add.</p>
+            <p class="tiny-note">Clue will check it on your next search. You can pause or remove it from this page.</p>
+            <button class="button button-outline button-small" type="submit">Enable this source <span aria-hidden="true">→</span></button>
           </form>
         {% elif source.is_builtin and source.state == 'approved' and source.enabled %}
           <div class="source-card-actions"><form action="/sources/{{ source.id }}/pause" method="post"><button class="quiet-button" type="submit">Pause source</button></form></div>
@@ -77,9 +71,9 @@
 <section class="panel add-source-panel">
   <div class="panel-header">
     <div><span class="kicker kicker-muted">ADD AN EMPLOYER OR ATS BOARD</span><h2>Look under one more rock</h2></div>
-    <span class="mini-badge">Starts disabled</span>
+    <span class="mini-badge">Active on next search</span>
   </div>
-  <p class="panel-muted">Add an official company career page or its public ATS board. New entries start in Review and stay off until you check the source's terms, crawl rules, credit, and expected cost.</p>
+  <p class="panel-muted">Add a supported public ATS board or HTTPS career page. Clue validates that the address is public, then enables it for the next search. It follows relevant career/job links, keeps the original listing URL, and lets you pause or remove the source any time.</p>
   <form action="/sources/add" method="post" class="source-add-form">
     <div class="form-grid">
       <label class="field">
@@ -118,7 +112,7 @@
         <input name="attribution" maxlength="120" placeholder="Defaults to company name">
       </label>
     </div>
-    <div class="form-end"><span class="tiny-note">One request per host at a time · two-second base delay · robots.txt respected</span><button class="button button-dark" type="submit">Add in Review <span aria-hidden="true">→</span></button></div>
+    <div class="form-end"><span class="tiny-note">Public HTTPS pages · 100 same-host pages · one-second base delay · blocked hosts pause automatically</span><button class="button button-dark" type="submit">Add and enable <span aria-hidden="true">→</span></button></div>
   </form>
 </section>
 {% endblock %}

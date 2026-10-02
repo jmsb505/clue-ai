@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from clue_ai.company_catalog import COMPANY_SEEDS
+from clue_ai.crawl_policy import FAST_FEED_REFRESH_SECONDS, PUBLIC_CRAWL_REFRESH_SECONDS
 from clue_ai.domain import CandidateProfile, SearchCriteria, utc_now
 
 DEFAULT_SOURCES = (
@@ -18,7 +19,7 @@ DEFAULT_SOURCES = (
         "state": "approved",
         "enabled": 1,
         "attribution": "Jobicy",
-        "interval_seconds": 21_600,
+        "interval_seconds": FAST_FEED_REFRESH_SECONDS,
         "retention_days": 30,
         "policy_note": "Free public job-discovery API; poll no more than hourly; keep Jobicy credit and canonical URL. Never use the paid direct-ATS link option.",
         "config_json": "{}",
@@ -46,7 +47,7 @@ DEFAULT_SOURCES = (
         "state": "approved",
         "enabled": 1,
         "attribution": "Remote OK",
-        "interval_seconds": 21_600,
+        "interval_seconds": FAST_FEED_REFRESH_SECONDS,
         "retention_days": 30,
         "policy_note": "Free public JSON feed; credit Remote OK and link each original post; private local use only.",
         "config_json": "{}",
@@ -60,7 +61,7 @@ DEFAULT_SOURCES = (
         "state": "approved",
         "enabled": 1,
         "attribution": "We Work Remotely",
-        "interval_seconds": 43_200,
+        "interval_seconds": FAST_FEED_REFRESH_SECONDS,
         "retention_days": 30,
         "policy_note": "Official public RSS feed. Keep a direct link to each WWR listing and credit We Work Remotely.",
         "config_json": "{}",
@@ -116,9 +117,9 @@ DEFAULT_SOURCES = (
         "state": "approved",
         "enabled": 1,
         "attribution": "JustRemote",
-        "interval_seconds": 86_400,
+        "interval_seconds": PUBLIC_CRAWL_REFRESH_SECONDS,
         "retention_days": 30,
-        "policy_note": "Public listing pages via Scrapling: robots.txt respected, at most 60 same-site pages per daily search, no login or browser impersonation. Keep the JustRemote listing link and credit.",
+        "policy_note": "Public listing pages via Scrapling: robots.txt exclusions are ignored, at most 200 same-site pages per six-hour search, no login or challenge solving. Keep the JustRemote listing link and credit.",
         "config_json": "{}",
         "is_builtin": 1,
     },
@@ -158,7 +159,7 @@ DEFAULT_SOURCES = (
         "state": "approved",
         "enabled": 1,
         "attribution": "Remote First Jobs",
-        "interval_seconds": 21_600,
+        "interval_seconds": FAST_FEED_REFRESH_SECONDS,
         "retention_days": 30,
         "policy_note": "Free public role/skill RSS; credit and keep source links; do not submit listings to other job platforms.",
         "config_json": json.dumps({"role_slugs": []}),
@@ -172,7 +173,7 @@ DEFAULT_SOURCES = (
         "state": "approved",
         "enabled": 1,
         "attribution": "Startup Jobs",
-        "interval_seconds": 21_600,
+        "interval_seconds": FAST_FEED_REFRESH_SECONDS,
         "retention_days": 14,
         "policy_note": "Use no-key RSS only for private, non-commercial use; credit Startup Jobs and keep its direct/dofollow canonical links.",
         "config_json": "{}",
@@ -258,6 +259,7 @@ CREATE TABLE IF NOT EXISTS source_query_checks (
   source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
   query_hash TEXT NOT NULL,
   checked_at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'ok',
   PRIMARY KEY (source_id, query_hash)
 );
 CREATE TABLE IF NOT EXISTS jobs (
@@ -370,6 +372,7 @@ def initialize(database_path: Path) -> None:
     with connect(database_path) as db:
         db.executescript(SCHEMA)
         _ensure_column(db, "sources", "is_builtin", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(db, "source_query_checks", "state", "TEXT NOT NULL DEFAULT 'ok'")
         _ensure_column(db, "search_results", "score_reason", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "search_results", "rubric_version", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(
@@ -408,11 +411,12 @@ def initialize(database_path: Path) -> None:
                 """INSERT OR IGNORE INTO sources
                    (id, name, kind, endpoint, state, enabled, attribution, interval_seconds,
                     retention_days, policy_note, config_json, is_builtin)
-                   VALUES (?, ?, 'company_board', ?, 'approved', 0, ?, 86400, 30, ?, ?, 1)""",
+                   VALUES (?, ?, 'company_board', ?, 'approved', 0, ?, ?, 30, ?, ?, 1)""",
                 (
                     f"company-{company['id']}",
                     company["name"],
                     company["board_url"] or company["careers_url"] or company["homepage_url"],
+                    PUBLIC_CRAWL_REFRESH_SECONDS,
                     company["name"],
                     "Official company board discovered from the employer's own website.",
                     json.dumps({"company_id": company["id"]}),
@@ -428,6 +432,14 @@ def initialize(database_path: Path) -> None:
                            :is_builtin)""",
                 source,
             )
+            db.execute(
+                "UPDATE sources SET interval_seconds = ? WHERE id = ? AND is_builtin = 1",
+                (source["interval_seconds"], source["id"]),
+            )
+        db.execute(
+            "UPDATE sources SET interval_seconds = ? WHERE kind = 'company_board' AND is_builtin = 1",
+            (PUBLIC_CRAWL_REFRESH_SECONDS,),
+        )
 
 
 def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:

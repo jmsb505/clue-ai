@@ -7,6 +7,16 @@ from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlsplit
 
 from clue_ai.config import Settings
+from clue_ai.crawl_policy import (
+    JUSTREMOTE_JOB_PAGE_LIMIT,
+    JUSTREMOTE_LISTING_PAGE_LIMIT,
+    JUSTREMOTE_PAGE_LIMIT,
+    JUSTREMOTE_RESULT_PAGE_LIMIT,
+    ROBOTS_TXT_OBEY,
+    SCRAPLING_CONCURRENT_REQUESTS,
+    SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN,
+    SCRAPLING_DOWNLOAD_DELAY_SECONDS,
+)
 from clue_ai.domain import NormalizedJob
 from clue_ai.jobs import canonical_url, plain_text
 from clue_ai.sources import (
@@ -20,11 +30,6 @@ from clue_ai.sources import (
 _JUSTREMOTE_HOSTS = {"justremote.co", "www.justremote.co"}
 _JUSTREMOTE_DETAIL = re.compile(r"^/remote-[a-z0-9-]+-jobs/[^/]+/?$", re.IGNORECASE)
 _JUSTREMOTE_CATEGORY = re.compile(r"^/remote-[a-z0-9-]+-jobs/?$", re.IGNORECASE)
-_JUSTREMOTE_LISTING_LIMIT = 24
-_JUSTREMOTE_PAGE_LIMIT = 60
-_JUSTREMOTE_JOB_LIMIT = 45
-
-
 def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome:
     """Crawl public JustRemote listing pages and their linked detail pages with Scrapling."""
     endpoint = str(source.get("endpoint") or "https://justremote.co/remote-jobs")
@@ -39,11 +44,11 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
 
     class JustRemoteSpider(Spider):
         name = "clue_ai_justremote_public_board"
-        robots_txt_obey = True
+        robots_txt_obey = ROBOTS_TXT_OBEY
         allowed_domains: ClassVar[set[str]] = set(_JUSTREMOTE_HOSTS)
-        concurrent_requests = 4
-        concurrent_requests_per_domain = 1
-        download_delay = 2.0
+        concurrent_requests = SCRAPLING_CONCURRENT_REQUESTS
+        concurrent_requests_per_domain = SCRAPLING_CONCURRENT_REQUESTS_PER_DOMAIN
+        download_delay = SCRAPLING_DOWNLOAD_DELAY_SECONDS
         max_blocked_retries = 0
         logging_level = logging.INFO
         start_urls: ClassVar[list[str]] = []
@@ -67,7 +72,6 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
                 "ordinary",
                 FetcherSession(
                     impersonate=None,
-                    stealthy_headers=False,
                     timeout=settings.network_timeout_seconds,
                     headers={
                         "User-Agent": self.user_agent,
@@ -108,16 +112,16 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
                 or parts.scheme != "https"
                 or host not in _JUSTREMOTE_HOSTS
                 or normalized in self.urls_scheduled
-                or len(self.urls_scheduled) >= _JUSTREMOTE_PAGE_LIMIT
+                or len(self.urls_scheduled) >= JUSTREMOTE_PAGE_LIMIT
             ):
                 return None
             path = parts.path.rstrip("/") or "/"
             if path == "/remote-jobs" or _JUSTREMOTE_CATEGORY.fullmatch(path):
-                if self.listing_pages_scheduled >= _JUSTREMOTE_LISTING_LIMIT:
+                if self.listing_pages_scheduled >= JUSTREMOTE_LISTING_PAGE_LIMIT:
                     return None
                 self.listing_pages_scheduled += 1
             elif _JUSTREMOTE_DETAIL.fullmatch(path):
-                if self.job_pages_scheduled >= _JUSTREMOTE_JOB_LIMIT:
+                if self.job_pages_scheduled >= JUSTREMOTE_JOB_PAGE_LIMIT:
                     return None
                 self.job_pages_scheduled += 1
             else:
@@ -190,7 +194,7 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
                 if clean_path == "/remote-jobs" or _JUSTREMOTE_CATEGORY.fullmatch(clean_path):
                     page = parse_qs(parts.query).get("page", ["1"])[0]
                     try:
-                        if int(page) <= 5:
+                        if int(page) <= JUSTREMOTE_RESULT_PAGE_LIMIT:
                             listing_links.append(normalized)
                     except ValueError:
                         continue
@@ -244,7 +248,7 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
         jobs=jobs,
         checked=checked,
         message=(
-            f"Scrapling checked {checked} public pages (60-page ceiling; "
+            f"Scrapling checked {checked} public pages (200-page ceiling; "
             f"{spider.listing_pages_scheduled} listing pages and "
             f"{spider.job_pages_scheduled} job-detail pages scheduled)."
         ),

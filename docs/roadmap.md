@@ -1,7 +1,7 @@
 # Roadmap
 
-**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration remains. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X leads is pushed. PLAN-004 M1 CV-first search is pushed to `main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`. PLAN-005 M1 local-origin form fix and Fetch Metadata follow-up are pushed to `main` at `b3b1bc56843866d0cffd8dc834fd93430956b217`.
-**Updated:** 2026-10-01
+**Status:** PLAN-001 M1/M2 and M3a/M3b plus M3c owner-waiver record are pushed to `main`; personal relevance calibration remains. PLAN-002 M1/M2 and accessibility/privacy fixes are pushed. PLAN-003 M1 manual X leads is pushed. PLAN-004 M1 CV-first search is pushed to `main` at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`. PLAN-005 M1 local-origin form fix and Fetch Metadata follow-up are pushed to `main` at `b3b1bc56843866d0cffd8dc834fd93430956b217`. PLAN-007 M1 search history is in progress. PLAN-008 M1 crawling implementation is complete and statically validated; live coverage remains unmeasured.
+**Updated:** 2026-10-02
 
 ## Definition gate
 
@@ -15,7 +15,7 @@ Use [PLAN-001](plans/PLAN-001-free-local-source-discovery.md) to inventory sourc
 
 ## 2. Validate a controlled company-site crawl
 
-On approved sources only, compare documented API/feed retrieval with sitemaps, `JobPosting` JSON-LD, and limited HTML parsing. Implement Scrapling as the replaceable crawl adapter with robots enabled, up to four requests overall and one per domain, a two-second base delay, no stealth/bypass, and no dynamic browser unless permitted and necessary.
+Use Scrapling as the replaceable crawl adapter with `robots.txt` `Disallow` ignored, eight global requests, two per domain, a one-second base delay, bounded public-page traversal, and dynamic rendering for discovered public career shells. Refresh fast feeds hourly, company pages every six hours, and publisher-daily APIs daily. A failed request receives a five-minute retry window instead of the normal success interval.
 
 **Acceptance:** Listing provenance, last-check age, delisting/expiry, duplicates, source-link validity, parse success, blocks, and compute cost are measured. All non-TypeSafe costs remain $0.
 

@@ -32,13 +32,17 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 
 - Local PDF/DOCX parsing, saved editable profile, immediate CV-first search, and repeat searches using the saved profile.
 - Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
-- Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. They start disabled in Review.
+- Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. Supported public HTTPS sources are enabled after host validation and can be paused or removed.
+- Broad Scrapling crawl of public careers pages: robots.txt exclusions ignored, eight global requests, two per host, one-second base delay, 25 company pages, 10 child sitemaps, 50 sitemap job pages, and 20 dynamic pages per company batch. Standalone career pages allow 100 same-host pages; JustRemote allows 200 pages per six-hour refresh.
+- Frequently updated feeds refresh hourly; publisher-daily APIs stay daily. Company pages and JustRemote refresh every six hours. Failed sources can retry after five minutes.
 - Profile-matched directory of 80+ Italian, European, AI/data-platform, and global technology employers, with local search-set controls. Automatic multi-company board refresh from this list is tracked in [PLAN-006](docs/plans/PLAN-006-profile-aware-company-board-discovery.md).
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
 - Automatic Jev batches after searches when enabled, with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
 - Manual X.com search links and owner-reviewed job leads. Clue does not scrape X, call its API, or open/resolve pasted links; see [the X lead decision](docs/decisions/0007-x-manual-lead-discovery.md).
 
 The initial feeds do not cover the whole internet. Open the original listing and verify it is still available and the employer can hire where you live.
+
+Clue does not stop crawling solely because a public page is excluded by `robots.txt`. It does stop a host after an explicit access denial, rate limit, or anti-bot challenge. It does not use login-only content, CAPTCHA solving, proxy rotation, or browser impersonation. See the [current crawl decision](docs/decisions/0009-broader-local-public-crawling.md).
 
 ## Local setup
 

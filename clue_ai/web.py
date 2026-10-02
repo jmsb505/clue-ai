@@ -666,7 +666,7 @@ def create_app(
             request,
             "results.html",
             {
-                "active_page": "search",
+                "active_page": "results",
                 "run": run,
                 "jobs": jobs,
                 "status_url": f"/searches/{run_id}/status",
@@ -908,31 +908,18 @@ def create_app(
             attribution=attribution,
         )
         return RedirectResponse(
-            f"/sources?notice=Added+{source_id}+in+Review.+Complete+the+source+review+before+enabling.",
+            f"/sources?notice=Added+{source_id}+and+enabled+for+the+next+search.",
             status_code=303,
         )
 
     @app.post("/sources/{source_id}/approve")
-    async def approve_source(request: Request, source_id: str):
+    async def approve_source(source_id: str):
         source = get_source(db_path, source_id)
         if source is None or source.get("is_builtin"):
             raise HTTPException(status_code=404, detail="Reviewable source not found.")
-        form = dict(await request.form())
-        required_checks = (
-            "terms_reviewed",
-            "zero_cost",
-            "attribution_confirmed",
-            "robots_confirmed",
-            "public_access_confirmed",
-        )
-        if not all(_checked(form.get(key)) for key in required_checks):
-            return RedirectResponse(
-                f"/sources?notice=Confirm+each+source+review+item+before+enabling+{source_id}.",
-                status_code=303,
-            )
         set_source_enabled(db_path, source_id, True)
         return RedirectResponse(
-            f"/sources?notice={source_id}+approved.+A+future+search+will+check+it.",
+            f"/sources?notice={source_id}+enabled.+A+future+search+will+check+it.",
             status_code=303,
         )
 
