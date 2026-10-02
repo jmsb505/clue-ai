@@ -14,11 +14,12 @@ This repository contains the local personal job-search app, its product definiti
 | What free job sources are candidates and how selected Scrapling crawling will work | [Source discovery and crawl review](research/source-discovery-and-crawl-review.md) and [ADR 0009](decisions/0009-broader-local-public-crawling.md) |
 | Local system boundaries, data flow, and implementation state | [Architecture overview](architecture/overview.md) |
 | Whether the personal local app is defined and what remains before real-CV use | [Definition gate](readiness/definition-gate.md) |
-| Work order and implementation milestone | [Roadmap](roadmap.md), [PLAN-001](plans/PLAN-001-free-local-source-discovery.md), [PLAN-002](plans/PLAN-002-local-first-job-search-app.md), [PLAN-004](plans/PLAN-004-cv-first-automated-search.md), [PLAN-008](plans/PLAN-008-broader-public-crawling.md), [PLAN-009](plans/PLAN-009-full-candidate-jev-assessment.md), and [PLAN-010](plans/PLAN-010-stop-crawls-with-app.md) |
+| Work order and implementation milestone | [Roadmap](roadmap.md), [PLAN-001](plans/PLAN-001-free-local-source-discovery.md), [PLAN-002](plans/PLAN-002-local-first-job-search-app.md), [PLAN-004](plans/PLAN-004-cv-first-automated-search.md), [PLAN-008](plans/PLAN-008-broader-public-crawling.md), [PLAN-009](plans/PLAN-009-full-candidate-jev-assessment.md), [PLAN-010](plans/PLAN-010-stop-crawls-with-app.md), and [PLAN-011](plans/PLAN-011-entry-level-paid-role-filters.md) |
 | Manual X search and job-lead handoff | [PLAN-003](plans/PLAN-003-x-manual-leads.md) and [ADR 0007](decisions/0007-x-manual-lead-discovery.md) |
 | CV-first upload, automatic search, and Jev trigger | [ADR 0008](decisions/0008-cv-first-automatic-search.md) |
 | Full candidate-set Jev assessment | [ADR 0010](decisions/0010-full-candidate-jev-assessment.md) and [PLAN-009](plans/PLAN-009-full-candidate-jev-assessment.md) |
 | Stop active crawls and mark interrupted searches | [ADR 0011](decisions/0011-stop-crawls-with-app.md) and [PLAN-010](plans/PLAN-010-stop-crawls-with-app.md) |
+| Require junior/intern paid roles and direct listing links | [ADR 0012](decisions/0012-entry-level-paid-job-criteria.md) and [PLAN-011](plans/PLAN-011-entry-level-paid-role-filters.md) |
 | Synthetic Jev ranking evidence | [PLAN-001 M3a evaluation](evaluations/PLAN-001-M3-synthetic-jev.md) |
 | Manual local backup and deletion scope | [Backup and deletion guide](operations/local-data-backup-and-deletion.md) |
 | Decision history | [Decisions](decisions/) |

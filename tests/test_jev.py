@@ -158,7 +158,7 @@ def test_synthetic_jev_call_uses_typed_questions_no_retries_and_records_fit(
     assert result.scored_count == 1
     assert scored["score_state"] == "scored"
     assert scored["combined_score"] == 0.75
-    assert scored["rubric_version"] == "fit-v1.1.0"
+    assert scored["rubric_version"] == "fit-v1.2.0"
     assert "candidate@example.com" not in repr(captured["state"])
     assert "RAW CV DATA IS NOT INCLUDED" not in repr(captured["state"])
     assert captured["client_kwargs"]["retry_max_retries"] == 0

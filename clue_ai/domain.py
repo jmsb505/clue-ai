@@ -40,6 +40,8 @@ class CandidateProfile:
 @dataclass
 class SearchCriteria:
     roles: str = ""
+    target_seniority: str = "junior_or_intern"
+    paid_only: bool = True
     work_from: str = "Italy"
     workplace: str = "remote"
     employment_types: str = ""

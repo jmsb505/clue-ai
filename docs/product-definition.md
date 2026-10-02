@@ -23,6 +23,7 @@ The product helps a person find and compare available jobs. It does not choose c
 - Take a CV and explicit guiding parameters as search inputs.
 - Search across a broad set of job boards, employer career pages, and other sources, within terms, licensing, privacy, technical, and cost limits.
 - Use TypeSafe AI's **Jev** model to evaluate every collected listing against the candidate profile and the user's current search criteria.
+- Focus this search on junior roles and internships; positions must be paid.
 - Rank and list current job openings for the user.
 - Do not automate job applications. The user reviews a result and applies through its source if they choose.
 - Keep one saved profile, CV, search preferences, and job index locally on the user's device, with clear controls to delete that data.
@@ -45,7 +46,7 @@ Treat each preference as either a hard constraint, a weighted preference, or an 
 | Work authorization | User-provided countries where the user can work, stored as local context; sponsorship need is a separate search filter |
 | Compensation | Minimum or range, currency, pay period, and how to handle missing salary data |
 | Employment type | Full time, part time, contract, temporary, internship, or other local categories |
-| Seniority and scope | Level, years as a rough hint, responsibility scope, or people-management preference |
+| Seniority and scope | Level, years as a rough hint, responsibility scope, or people-management preference; this search targets junior roles and internships |
 | Skills and credentials | Required and preferred skills, language fluency, licenses, education, certifications |
 | Company and work preferences | Industry, company size, sector, travel, schedule, or user-selected exclusions |
 | Freshness | Posted within a chosen period; exclude seen, saved, or dismissed results |
@@ -62,6 +63,7 @@ These are working defaults that complete the pilot definition; they can be revis
 - Use Milan, Italy as the first search test location, with fully remote work as a hard preference and Italy, EU/EEA, Europe, or worldwide as explicit eligibility scopes. Keep the person's work authorization as a separate user-controlled input.
 - Classify location evidence as `Eligible here`, `Needs verification`, `Not eligible`, or `Unknown`. Italy, EU/EEA, Europe, and worldwide are positive only when stated and not contradicted. Treat EMEA, timezone overlap, or an unqualified “remote” label as `Needs verification` unless the posting also makes Italy eligibility explicit. Exclude an explicit incompatible country restriction from an Italy-only search. Preserve the exact evidence passage and source URL.
 - Default to jobs posted within the last 30 days, with shorter freshness filters available. Show the employer's datePosted, if supplied, separately from the platform's last-checked time.
+- Target junior/entry-level roles and internships, and require paid compensation. Explicit unpaid or volunteer roles conflict; missing pay or unclear seniority remains visible for review and cannot be labeled a confirmed filter match.
 - Call a listing “recently checked” only when the source was checked within the past 24 hours. If a source cannot meet that interval or its terms require a longer refresh, label its age and avoid claiming the listing is live.
 - Target a 30-second 95th-percentile response for a search over an already indexed pilot dataset. Crawling happens out of band, not in the user's request path.
 - Target [WCAG 2.2 AA](https://www.w3.org/TR/WCAG22/) for the responsive interface. Use Jobbie's friendly, card-based scan patterns and keep the original employer/source action clear.
@@ -69,7 +71,7 @@ These are working defaults that complete the pilot definition; they can be revis
 ## Core workflow
 
 1. The user uploads a CV from the local app. Clue extracts the document on-device, saves the original and parsed profile locally, and starts a search without requiring a separate review/save step. The profile remains editable afterward. A saved work-authorization list is local reference; the app does not infer legal eligibility from it.
-2. Clue uses the most recently saved search preferences when available. On first use it derives likely target roles from the CV and defaults to fully remote work from Italy; the user can change location, roles, and other preferences later.
+2. Clue uses the most recently saved search preferences when available. On first use it derives likely target roles from the CV and defaults to fully remote work from Italy, targeting junior or intern roles that are paid; the user can change location, role keywords, and other preferences later.
 3. When a search starts, Clue refreshes due feeds and crawls due company and job-board pages using the local page budgets. It automatically qualifies public official company/ATS routes, normalizes fields, removes duplicates, and records source and freshness information. A search is broad but bounded; it does not recursively crawl unrelated sections or the whole web. X is a separate manual lead path: the user opens an X search link, checks the post and final employer/ATS page in their browser, then enters the lead in Clue.
 4. Each search retains every active, non-hidden listing in the local index after normal expiry cleanup. Jev evaluates each listing against the candidate profile and all current search criteria; role, location, workplace, salary, employment, sponsorship, date, and skill filters must not discard a listing before Jev assesses it. Explicitly missing or ambiguous listing information stays uncertain rather than being inferred as a mismatch.
 5. Jev automatically evaluates bounded, job-related fit and search-filter compatibility when the user has enabled the one-time opt-in, a key is configured, and the app-side reserve allows the request. Otherwise, listings remain available with a clear unscored reason. A filter conflict remains visible in the run for the user's review.
@@ -81,6 +83,8 @@ These are working defaults that complete the pilot definition; they can be revis
 **NORMATIVE:** Jev is the required model for fit validation. The user asked for Jev to evaluate candidate fit against each job listing.
 
 **NORMATIVE:** Jev assesses every active, non-hidden candidate listing in the current local index against the full search criteria as well as the candidate profile. Software may label source, age, and explicit listing facts, but must not use role/location/date string matching to remove a candidate before Jev. Jev's filter-compatibility label is advisory and does not establish legal work authorization or guarantee the job is still open. See [ADR 0010](decisions/0010-full-candidate-jev-assessment.md).
+
+**NORMATIVE:** The target seniority is junior/entry-level or intern, and the position must be paid. Explicit unpaid/volunteer or explicitly mid/senior roles conflict; missing compensation or unclear level stays in `review`. These criteria are assessed by Jev and do not remove candidates before assessment. See [ADR 0012](decisions/0012-entry-level-paid-job-criteria.md).
 
 **WORKING recommendation:** Use typed Jev questions for bounded fit judgments and combine job-related dimensions in ordinary code using the user's stated weights. Exact constraints, permissions, sorting, and data handling remain in ordinary software. The first implementation uses categorical `Choice` questions with five fit levels and a separate `unknown` answer; returned levels are mapped to a normalized 0–1 fit signal and are not calibrated.
 

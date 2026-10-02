@@ -21,7 +21,7 @@ from clue_ai.repository import (
 
 FIT_DIMENSIONS = ("role", "skills", "experience", "preferences")
 FILTER_DIMENSION = "search_filter_fit"
-RUBRIC_VERSION = "fit-v1.1.0"
+RUBRIC_VERSION = "fit-v1.2.0"
 SCORE_LEVELS = {
     "0": "Clear, explicit contradictory evidence in this dimension. Do not use 0 merely because evidence is missing.",
     "1": "Weak alignment: only indirect or minimal evidence supports this dimension.",
@@ -37,6 +37,7 @@ FILTER_STATUS_CHOICES = {
 }
 FILTER_ASSESSMENT_INSTRUCTIONS = (
     "Evaluate this listing against every applicable field in state.search_criteria: target roles, "
+    "target seniority, paid-only compensation, "
     "work-from country, workplace, employment types, minimum salary and currency, sponsorship, "
     "posting age, must-have terms, and the include-unknown choices. Treat work-from country as "
     "the country where the candidate needs the remote role to be allowed, not merely the company's "
@@ -57,7 +58,16 @@ FILTER_ASSESSMENT_INSTRUCTIONS = (
     "or employment type, "
     "clearly insufficient salary, explicit sponsorship mismatch, expired/too-old posting, or "
     "missing required must-have criterion is a conflict; semantically equivalent wording counts "
-    "as evidence. Do not use candidate-fit scores to replace "
+    "as evidence. For target_seniority=junior_or_intern, explicitly junior/entry-level roles and "
+    "internships are in scope; an explicit mid-level or senior-level requirement is a conflict, "
+    "and unclear seniority is review. When paid_only is true, an explicit salary, wage, paid "
+    "stipend, commission, or other monetary compensation is evidence of paid work. Explicit "
+    "unpaid or volunteer work is a conflict; equity-only compensation does not satisfy paid work. "
+    "If the listing contains contradictory pay evidence, return review. If the listing does not "
+    "establish whether the work is paid, return review and never match it to the paid-only "
+    "requirement. The include_unknown_salary choice applies only to an optional minimum salary "
+    "amount and never makes unknown pay count as paid. Do not assume that an internship is paid "
+    "or unpaid without evidence. Do not use candidate-fit scores to replace "
     "the filter assessment."
 )
 
@@ -356,6 +366,8 @@ def _build_request_state(
     candidate["requires_sponsorship"] = str(profile.requires_sponsorship or "unknown")[:20]
     search_criteria = {
         "roles": str(criteria.roles or "").strip()[:500],
+        "target_seniority": "junior_or_intern",
+        "paid_only": True,
         "work_from": str(criteria.work_from or "").strip()[:100],
         "workplace": str(criteria.workplace or "unknown").strip()[:20],
         "employment_types": str(criteria.employment_types or "").strip()[:200],

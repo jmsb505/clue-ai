@@ -137,6 +137,8 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
     }
     return SearchCriteria(
         roles=str(form.get("roles", ""))[:500],
+        target_seniority="junior_or_intern",
+        paid_only=True,
         work_from=str(form.get("work_from", "Italy"))[:100],
         workplace=str(form.get("workplace", "remote"))[:20],
         employment_types=str(form.get("employment_types", ""))[:200],

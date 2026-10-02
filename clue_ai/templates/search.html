@@ -6,7 +6,7 @@
   <div>
     <span class="kicker kicker-muted">STEP 02 · WHAT DOES A GOOD ROLE LOOK LIKE?</span>
     <h1>Set the search.<br><em>Keep the choice.</em></h1>
-    <p>Hard requirements narrow the listings first. Jev can evaluate fit later, only when you ask it to.</p>
+    <p>Clue keeps every collected listing in your results. Jev reviews candidate fit and your requirements when scoring is enabled.</p>
   </div>
   <div class="intro-mark intro-mark-search" aria-hidden="true"><span>02</span><i>⌕</i></div>
 </section>
@@ -68,8 +68,9 @@
   <section class="panel search-panel">
     <div class="panel-header">
       <div><span class="kicker kicker-muted">02 · NON-NEGOTIABLES</span><h2>What should a role include?</h2></div>
-      <span class="mini-badge">Applied before Jev</span>
+      <span class="mini-badge">Jev checks every listing</span>
     </div>
+    <div class="alert alert-soft"><b>Required for this search:</b> junior roles or internships, and paid work only. Jev marks clear conflicts and keeps unclear seniority or pay in Review; no listing is removed before assessment.</div>
     <div class="form-grid">
       <label class="field">
         <span>Must-have terms</span>
@@ -78,7 +79,7 @@
       </label>
       <label class="field">
         <span>Minimum annual salary</span>
-        <small>Only matching annual amounts are compared; other periods stay unknown.</small>
+        <small>Use this for an optional minimum on top of the paid-only requirement. Other pay periods stay unknown.</small>
         <div class="salary-entry">
           <input type="number" name="minimum_salary" min="0" step="1000" value="{{ criteria.minimum_salary }}" placeholder="e.g. 45000">
           <select name="salary_currency" aria-label="Salary currency">
@@ -99,7 +100,7 @@
       <label class="check-field">
         <input type="checkbox" name="include_unknown_salary" value="on" {% if criteria.include_unknown_salary %}checked{% endif %}>
         <span class="check-custom" aria-hidden="true"></span>
-        <span><b>Keep roles with unlisted salary</b><small>Usually useful for a wider search.</small></span>
+        <span><b>Allow unlisted salary for the optional minimum check</b><small>Missing pay stays in Review and never counts as confirmed paid work.</small></span>
       </label>
       <label class="check-field check-field-secondary">
         <input type="checkbox" name="include_unknown_sponsorship" value="on" {% if criteria.include_unknown_sponsorship %}checked{% endif %}>
@@ -114,7 +115,7 @@
       <div><span class="kicker kicker-muted">03 · JEV RANKING</span><h2>Choose what matters most</h2></div>
       <span class="mini-badge">Relative weights</span>
     </div>
-    <p class="panel-muted">These weights apply after hard filters. Each fit dimension is a comparison signal, not the chance of getting hired.</p>
+    <p class="panel-muted">These weights help sort candidate fit after Jev assesses the full listing set. Each dimension is a comparison signal, not the chance of getting hired.</p>
     <div class="weight-grid">
       <label class="weight-control"><span>Role alignment</span><input type="number" name="role_weight" min="0" max="100" value="{{ criteria.role_weight }}"><small>Job title and responsibilities</small></label>
       <label class="weight-control"><span>Skills evidence</span><input type="number" name="skills_weight" min="0" max="100" value="{{ criteria.skills_weight }}"><small>Required skills in the listing</small></label>
