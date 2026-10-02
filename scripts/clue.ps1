@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("start", "stop", "restart", "status")]
+    [ValidateSet("start", "stop", "restart", "status", "reset")]
     [string]$Action = "start"
 )
 
@@ -235,6 +235,19 @@ switch ($Action) {
     "restart" {
         Stop-ClueServer
         Start-ClueServer
+    }
+    "reset" {
+        Stop-ClueServer
+        Push-Location $ProjectRoot
+        try {
+            & (Get-GenPythonPath) -m clue_ai.reset
+            if ($LASTEXITCODE -ne 0) {
+                throw "Clue search reset did not complete."
+            }
+        }
+        finally {
+            Pop-Location
+        }
     }
     "status" {
         $listenerIds = @(Get-ListenerProcessIds)

@@ -22,7 +22,10 @@ Use the same PowerShell window, or another one, to manage the local server:
 .\scripts\clue.ps1 status
 .\scripts\clue.ps1 stop
 .\scripts\clue.ps1 restart
+.\scripts\clue.ps1 reset
 ```
+
+`reset` stops Clue and its crawler processes, backs up the local database under ignored `.data/backups/`, and clears listings, search history, rankings, saved/hidden jobs and crawl/query refresh timers. It keeps your CV, profile, API settings, sources, company selections and Jev spend ledger, and leaves the app stopped. Start Clue again when ready. See the [reset and backup guide](docs/operations/local-data-backup-and-deletion.md).
 
 The helper always runs against Conda `gen`. `stop` and `restart` close Clue and its child processes if a Python server from that environment occupies port 8000. They refuse to stop a non-Python process or a process launched from another environment. An unfinished search is marked stopped, and listings saved before shutdown remain in the local index. Stopping the server does not delete the profile or `.data/` files. The app is not installed as a background service and does not start automatically. See [ADR 0011](docs/decisions/0011-stop-crawls-with-app.md).
 
