@@ -1,6 +1,6 @@
 # PLAN-013 — Tech Europe Jobs and comparable European sources
 
-**Status:** M1 implemented and statically validated; M2 planned
+**Status:** M1 and M2 complete; both checkpoints are pushed to `main`
 **Created:** 2026-10-02
 **Last updated:** 2026-10-02
 
@@ -63,17 +63,17 @@ The owner selected [Tech Europe Jobs](https://jobs.techeurope.io/) because it cu
 
 ### Implementation
 
-- [ ] Review official/public source pages for European startup, AI, Italy, and early-career relevance.
-- [ ] Record evidence, likely incremental value, access/terms status when found, and whether each candidate is an enabled source, manual link-out, or held for review.
-- [ ] Prioritize sources that add junior/intern, paid, AI, and Italy/Europe coverage not already present in Clue's feeds and company crawl.
-- [ ] Update this plan with findings, then commit and push this research checkpoint separately from M1.
+- [x] Review official/public source pages for European startup, AI, Italy, and early-career relevance.
+- [x] Record evidence, likely incremental value, access/terms status when found, and whether each candidate is an enabled source, manual link-out, or held for review.
+- [x] Prioritize sources that add junior/intern, paid, AI, and Italy/Europe coverage not already present in Clue's feeds and company crawl.
+- [x] Update this plan with findings, then commit and push this research checkpoint separately from M1.
 
 ### Acceptance criteria
 
-- [ ] The review covers at least EuropeStartupJobs, EU-Startups Jobs, StartupJobs.it, Y Combinator Europe, and European Tech Opportunities 2027.
-- [ ] It distinguishes observed site features from assumptions about access, reuse, pay, current-open status, and location eligibility.
-- [ ] Sources with no evidenced API/feed or unclear access terms are not silently switched on; sources that prohibit automated collection remain manual-only.
-- [ ] Findings are connected to Clue's existing zero-cost, one-user, Jev-ranked search workflow.
+- [x] The review covers at least EuropeStartupJobs, EU-Startups Jobs, StartupJobs.it, Y Combinator Europe, and European Tech Opportunities 2027.
+- [x] It distinguishes observed site features from assumptions about access, reuse, pay, current-open status, and location eligibility.
+- [x] Sources with no evidenced API/feed or unclear access terms are not silently switched on; sources that prohibit automated collection remain manual-only.
+- [x] Findings are connected to Clue's existing zero-cost, one-user, Jev-ranked search workflow.
 
 ## Delivery
 
@@ -81,4 +81,6 @@ The owner has explicitly directed validated progress to be committed and pushed 
 
 ## Validation record
 
-Conda `gen` Ruff passed for the changed Python files and source-registry contract; Python syntax compilation passed for the changed Python modules; and `git diff --check` passed. A code-path review confirmed that the new built-in entry reaches the existing search/source coverage flow and that Jev sees normalized retained jobs through the common assessment pipeline. The existing source-registry expectations were updated but not executed. No source request, live crawl, Jev request, test suite, or local server start was performed. The Tech Europe terms page linked from the site was not retrievable through the review browser; this owner-selected connector is restricted to the public pages described in ADR 0014.
+M1 static validation: Conda `gen` Ruff passed for the changed Python files and source-registry contract; Python syntax compilation passed for the changed Python modules; and `git diff --check` passed. A code-path review confirmed that the new built-in entry reaches the existing search/source coverage flow and that Jev sees normalized retained jobs through the common assessment pipeline. The existing source-registry expectations were updated but not executed. No source request, live crawl, Jev request, test suite, or local server start was performed. The Tech Europe terms page linked from the site was not retrievable through the review browser; this owner-selected connector is restricted to the public pages described in ADR 0014.
+
+M2 evidence review: Tech Europe Jobs, EuropeStartupJobs, European Tech Opportunities 2027, StartupJobs.it and its terms, EU-Startups Jobs, Y Combinator Europe Jobs, AI Startup Jobs, Job.careers, HanseaTech, and UnicornJobs were reviewed using their public pages and published project documentation. The source research records strengths, geography/seniority limitations, API/description coverage, and source-use evidence. No accounts, subscriptions, source requests, API calls from Clue, live crawls, or Jev requests were made for the comparison. `git diff --check` passed for the M2 documentation changes.
