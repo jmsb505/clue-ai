@@ -22,7 +22,7 @@ The product helps a person find and compare available jobs. It does not choose c
 
 - Take a CV and explicit guiding parameters as search inputs.
 - Search across a broad set of job boards, employer career pages, and other sources, within terms, licensing, privacy, technical, and cost limits.
-- Use TypeSafe AI's **Jev** model for the candidate-to-listing fit evaluation.
+- Use TypeSafe AI's **Jev** model to evaluate every collected listing against the candidate profile and the user's current search criteria.
 - Rank and list current job openings for the user.
 - Do not automate job applications. The user reviews a result and applies through its source if they choose.
 - Keep one saved profile, CV, search preferences, and job index locally on the user's device, with clear controls to delete that data.
@@ -71,8 +71,8 @@ These are working defaults that complete the pilot definition; they can be revis
 1. The user uploads a CV from the local app. Clue extracts the document on-device, saves the original and parsed profile locally, and starts a search without requiring a separate review/save step. The profile remains editable afterward. A saved work-authorization list is local reference; the app does not infer legal eligibility from it.
 2. Clue uses the most recently saved search preferences when available. On first use it derives likely target roles from the CV and defaults to fully remote work from Italy; the user can change location, roles, and other preferences later.
 3. When a search starts, Clue refreshes due feeds and crawls due company and job-board pages using the local page budgets. It automatically qualifies public official company/ATS routes, normalizes fields, removes duplicates, and records source and freshness information. A search is broad but bounded; it does not recursively crawl unrelated sections or the whole web. X is a separate manual lead path: the user opens an X search link, checks the post and final employer/ATS page in their browser, then enters the lead in Clue.
-4. Ordinary software applies exact user-defined constraints. Missing listing data remains “unknown” unless the user chooses to treat it as a hard exclusion.
-5. After hard filters, Jev automatically evaluates bounded, job-related fit questions when the user has enabled the one-time opt-in, a key is configured, the app-side reserve allows the request, and the profile/listing language is supported. Otherwise, listings remain available with a clear unscored reason.
+4. Each search retains every active, non-hidden listing in the local index after normal expiry cleanup. Jev evaluates each listing against the candidate profile and all current search criteria; role, location, workplace, salary, employment, sponsorship, date, and skill filters must not discard a listing before Jev assesses it. Explicitly missing or ambiguous listing information stays uncertain rather than being inferred as a mismatch.
+5. Jev automatically evaluates bounded, job-related fit and search-filter compatibility when the user has enabled the one-time opt-in, a key is configured, and the app-side reserve allows the request. Otherwise, listings remain available with a clear unscored reason. A filter conflict remains visible in the run for the user's review.
 6. The user reviews match details, saves or dismisses jobs, and opens the original source page. The user decides whether to apply on the original site; Clue never submits an application. A manual X lead, if used separately, keeps its own provenance and is not part of automated discovery.
 7. The user can revise their local profile or search and delete the saved CV, profile, preferences, tracked-company choices, indexed jobs, and results through product controls.
 
@@ -80,13 +80,15 @@ These are working defaults that complete the pilot definition; they can be revis
 
 **NORMATIVE:** Jev is the required model for fit validation. The user asked for Jev to evaluate candidate fit against each job listing.
 
+**NORMATIVE:** Jev assesses every active, non-hidden candidate listing in the current local index against the full search criteria as well as the candidate profile. Software may label source, age, and explicit listing facts, but must not use role/location/date string matching to remove a candidate before Jev. Jev's filter-compatibility label is advisory and does not establish legal work authorization or guarantee the job is still open. See [ADR 0010](decisions/0010-full-candidate-jev-assessment.md).
+
 **WORKING recommendation:** Use typed Jev questions for bounded fit judgments and combine job-related dimensions in ordinary code using the user's stated weights. Exact constraints, permissions, sorting, and data handling remain in ordinary software. The first implementation uses categorical `Choice` questions with five fit levels and a separate `unknown` answer; returned levels are mapped to a normalized 0–1 fit signal and are not calibrated.
 
 Jev returns structured decisions, not explanatory prose. It cannot by itself provide trustworthy CV evidence snippets or explain a score in natural language. Build explanations from the parsed CV facts and the original job text, and show the source passages where possible. Distinguish “not found in the CV/listing” from “does not match.” Show uncertainty where evidence is missing or Jev is unsure.
 
 Call the result a **fit score** or **match score**, never a hiring probability or prediction that an employer will interview or hire the person. The score is a guide for the user's own review. Do not show a 0–100 number as calibrated until a representative evaluation supports that mapping.
 
-Run Jev automatically after retrieval, deduplication, and hard filters when the one-time opt-in, key, language, and app-side budget gates pass, so calls are spent on plausible postings. Preserve the model/version, rubric, candidate-profile snapshot, listing snapshot, and response needed to reproduce a result, subject to approved retention limits. If Jev is unavailable or returns low-confidence results, label the result accordingly rather than silently substituting another evaluator.
+Run Jev automatically after retrieval, expiry cleanup, and strong-identity deduplication, with all current criteria included in the state. Preserve the model/version, rubric, candidate-profile snapshot, listing snapshot, filter assessment, and response needed to reproduce a result, subject to approved retention limits. If Jev is unavailable or the app reserve is exhausted, keep each remaining listing visible as unassessed rather than silently substituting another evaluator.
 
 ## Results and interaction
 

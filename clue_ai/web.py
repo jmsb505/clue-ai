@@ -38,6 +38,7 @@ from clue_ai.repository import (
     clear_job_user_state,
     get_latest_run,
     get_run,
+    get_run_result_counts,
     get_run_results,
     get_source,
     has_active_runs,
@@ -494,7 +495,9 @@ def create_app(
     @app.get("/search", response_class=HTMLResponse)
     async def search_page(request: Request):
         profile = get_profile(db_path)
-        latest = get_latest_run(db_path)
+        source_run_id = request.query_params.get("from", "")
+        source_run = get_run(db_path, source_run_id) if source_run_id else None
+        latest = get_latest_run(db_path) if source_run is None else source_run
         if latest and latest.get("criteria"):
             criteria = criteria_from_form(latest["criteria"])
         else:
@@ -653,7 +656,39 @@ def create_app(
         run = get_run(db_path, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Search not found.")
-        jobs = [job for job in get_run_results(db_path, run_id) if not job.get("hidden")]
+        result_counts = get_run_result_counts(db_path, run_id)
+        status_views = {
+            "all": None,
+            "match": "match",
+            "review": "review",
+            "conflict": "conflict",
+            "unassessed": "unassessed",
+        }
+        active_view = request.query_params.get("view", "all")
+        if active_view not in status_views:
+            active_view = "all"
+        try:
+            current_page = max(1, int(request.query_params.get("page", "1")))
+        except ValueError:
+            current_page = 1
+        page_size = 50
+        view_status = status_views[active_view]
+        shown_total = (
+            result_counts[view_status + "s"]
+            if view_status in {"match", "conflict"}
+            else result_counts[view_status]
+            if view_status
+            else result_counts["total"]
+        )
+        page_count = max(1, (shown_total + page_size - 1) // page_size)
+        current_page = min(current_page, page_count)
+        jobs = get_run_results(
+            db_path,
+            run_id,
+            filter_status=view_status,
+            limit=page_size,
+            offset=(current_page - 1) * page_size,
+        )
         for job in jobs:
             for source in job.get("sources", []):
                 if source.get("id") == "x_manual":
@@ -669,6 +704,13 @@ def create_app(
                 "active_page": "results",
                 "run": run,
                 "jobs": jobs,
+                "result_counts": result_counts,
+                "active_view": active_view,
+                "shown_total": shown_total,
+                "current_page": current_page,
+                "page_count": page_count,
+                "page_size": page_size,
+                "jev_pending": result_counts["unassessed"] + result_counts["pending_scores"],
                 "status_url": f"/searches/{run_id}/status",
                 "usage": usage,
                 "jev_consented": bool(settings_row.get("jev_consent_at")),

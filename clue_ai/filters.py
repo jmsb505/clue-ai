@@ -20,6 +20,36 @@ def _job_text(job: dict[str, Any]) -> str:
     ).casefold()
 
 
+def annotate_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[dict[str, Any]]:
+    """Attach per-run location and freshness evidence without excluding candidates."""
+    annotated: list[dict[str, Any]] = []
+    for source_job in jobs:
+        job = dict(source_job)
+        eligibility, evidence = classify_location(
+            str(job.get("location_raw") or ""),
+            str(job.get("description") or ""),
+            criteria.work_from,
+        )
+        job["eligibility_status"] = eligibility
+        job["eligibility_evidence"] = evidence
+        job["workplace_label"] = _workplace_label(str(job.get("workplace_type") or "unknown"))
+        source_ids = {str(source.get("id") or "") for source in job.get("sources", [])}
+        if job.get("source_id") == "x_manual" or "x_manual" in source_ids:
+            job["freshness_status"] = "manual"
+            job["freshness_age_days"] = None
+        else:
+            checked_at = _parse_datetime(job.get("last_checked_at"))
+            fresh_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+            job["freshness_status"] = (
+                "recent" if checked_at and checked_at >= fresh_cutoff else "stale"
+            )
+            job["freshness_age_days"] = (
+                max(0, (datetime.now(timezone.utc) - checked_at).days) if checked_at else None
+            )
+        annotated.append(job)
+    return annotated
+
+
 def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     role_terms = terms(criteria.roles)
@@ -31,8 +61,7 @@ def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[di
     except ValueError:
         minimum_salary = None
 
-    for source_job in jobs:
-        job = dict(source_job)
+    for job in annotate_jobs(jobs, criteria):
         text = _job_text(job)
         if role_terms and not any(term in text for term in role_terms):
             continue
@@ -50,28 +79,11 @@ def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[di
             continue
         if criteria.workplace == "hybrid" and job.get("workplace_type") not in {"hybrid", "unknown"}:
             continue
-        eligibility, evidence = classify_location(
-            str(job.get("location_raw") or ""),
-            str(job.get("description") or ""),
-            criteria.work_from,
-        )
+        eligibility = str(job.get("eligibility_status") or "unknown")
         if eligibility == "not_eligible":
             continue
         if eligibility in {"unknown", "needs_verification"} and not criteria.include_unknown_location:
             continue
-        job["eligibility_status"] = eligibility
-        job["eligibility_evidence"] = evidence
-        job["workplace_label"] = _workplace_label(str(job.get("workplace_type") or "unknown"))
-        if job.get("source_id") == "x_manual":
-            job["freshness_status"] = "manual"
-            job["freshness_age_days"] = None
-        else:
-            checked_at = _parse_datetime(job.get("last_checked_at"))
-            fresh_cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-            job["freshness_status"] = "recent" if checked_at and checked_at >= fresh_cutoff else "stale"
-            job["freshness_age_days"] = (
-                max(0, (datetime.now(timezone.utc) - checked_at).days) if checked_at else None
-            )
         if minimum_salary is not None:
             salary_max = job.get("salary_max")
             salary_min = job.get("salary_min")

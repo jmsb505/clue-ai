@@ -451,6 +451,7 @@ def has_active_runs(database_path: Path) -> bool:
 class SaveJobsReport:
     saved: int
     deduplicated: int
+    inserted: int
 
 
 def save_jobs(database_path: Path, jobs: list[NormalizedJob]) -> int:
@@ -478,11 +479,12 @@ def save_jobs_with_report(database_path: Path, jobs: list[NormalizedJob]) -> Sav
                 "SELECT id, canonical_url FROM jobs WHERE canonical_url = ?",
                 (url,),
             ).fetchone()
-            if row is None and fingerprint:
+            if row is None and job.external_id.strip():
                 row = db.execute(
-                    """SELECT id, canonical_url FROM jobs WHERE fingerprint = ?
-                       ORDER BY last_checked_at DESC LIMIT 1""",
-                    (fingerprint,),
+                    """SELECT job.id, job.canonical_url FROM job_sources source
+                       JOIN jobs job ON job.id = source.job_id
+                       WHERE source.source_id = ? AND source.external_id = ? LIMIT 1""",
+                    (job.source_id, job.external_id.strip()),
                 ).fetchone()
             job_id = row["id"] if row else stable_job_id(url)
             primary_url = row["canonical_url"] if row else url
@@ -556,7 +558,11 @@ def save_jobs_with_report(database_path: Path, jobs: list[NormalizedJob]) -> Sav
             )
             saved += 1
         db.execute("COMMIT")
-    return SaveJobsReport(saved=saved, deduplicated=deduplicated)
+    return SaveJobsReport(
+        saved=saved,
+        deduplicated=deduplicated,
+        inserted=saved - deduplicated,
+    )
 
 
 def save_run_results(
@@ -571,14 +577,15 @@ def save_run_results(
         for rank, job in enumerate(jobs, start=1):
             db.execute(
                 """INSERT OR REPLACE INTO search_results
-                   (run_id, job_id, rank, score_state, score_reason,
+                   (run_id, job_id, rank, score_state, filter_status, score_reason,
                     eligibility_status, eligibility_evidence, freshness_status, freshness_age_days)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     run_id,
                     job["id"],
                     rank,
                     score_state,
+                    str(job.get("filter_status") or "unassessed"),
                     score_reason,
                     job.get("eligibility_status", "unknown"),
                     str(job.get("eligibility_evidence") or "")[:1_000],
@@ -600,12 +607,13 @@ def update_score(
     dimensions: dict[str, Any] | None = None,
     evidence: list[str] | None = None,
     rubric_version: str = "",
+    filter_status: str | None = None,
 ) -> None:
     with connect(database_path) as db:
         db.execute(
             """UPDATE search_results SET score_state = ?, score_reason = ?,
                combined_score = ?, confidence = ?, dimensions_json = ?, evidence_json = ?,
-               rubric_version = ?
+               rubric_version = ?, filter_status = COALESCE(?, filter_status)
                WHERE run_id = ? AND job_id = ?""",
             (
                 score_state,
@@ -615,16 +623,68 @@ def update_score(
                 json.dumps(dimensions or {}),
                 json.dumps(evidence or [], ensure_ascii=False),
                 rubric_version[:40],
+                filter_status,
                 run_id,
                 job_id,
             ),
         )
 
 
-def get_run_results(database_path: Path, run_id: str) -> list[dict[str, Any]]:
+def update_filter_status(
+    database_path: Path,
+    run_id: str,
+    job_id: str,
+    filter_status: str,
+) -> None:
+    if filter_status not in {"match", "review", "conflict", "unassessed"}:
+        raise ValueError("Unsupported Jev filter status.")
+    with connect(database_path) as db:
+        db.execute(
+            "UPDATE search_results SET filter_status = ? WHERE run_id = ? AND job_id = ?",
+            (filter_status, run_id, job_id),
+        )
+
+
+def get_run_result_counts(database_path: Path, run_id: str) -> dict[str, int]:
+    with connect(database_path) as db:
+        row = db.execute(
+            """SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN score_state = 'scored' THEN 1 ELSE 0 END) AS scored,
+                       SUM(CASE WHEN score_state != 'scored' THEN 1 ELSE 0 END) AS pending_scores,
+                       SUM(CASE WHEN filter_status = 'match' THEN 1 ELSE 0 END) AS matches,
+                       SUM(CASE WHEN filter_status = 'review' THEN 1 ELSE 0 END) AS review,
+                       SUM(CASE WHEN filter_status = 'conflict' THEN 1 ELSE 0 END) AS conflicts,
+                       SUM(CASE WHEN filter_status = 'unassessed' THEN 1 ELSE 0 END) AS unassessed
+                 FROM search_results r
+                 LEFT JOIN job_user_state u ON u.job_id = r.job_id
+                 WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0""",
+            (run_id,),
+        ).fetchone()
+    return {key: int(row[key] or 0) for key in row}
+
+
+def get_run_results(
+    database_path: Path,
+    run_id: str,
+    *,
+    filter_status: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    valid_statuses = {"match", "review", "conflict", "unassessed"}
+    where = "WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0"
+    params: list[Any] = [run_id]
+    if filter_status in valid_statuses:
+        where += " AND r.filter_status = ?"
+        params.append(filter_status)
+    pagination = ""
+    if limit is not None:
+        pagination = " LIMIT ? OFFSET ?"
+        params.extend((max(1, int(limit)), max(0, int(offset))))
     with connect(database_path) as db:
         rows = db.execute(
-            """SELECT r.rank, r.score_state, r.score_reason, r.combined_score, r.confidence,
+            f"""SELECT r.rank, r.score_state, r.filter_status, r.score_reason,
+                      r.combined_score, r.confidence,
                       r.eligibility_status AS result_eligibility_status,
                       r.eligibility_evidence AS result_eligibility_evidence,
                       r.freshness_status, r.freshness_age_days,
@@ -637,11 +697,13 @@ def get_run_results(database_path: Path, run_id: str) -> list[dict[str, Any]]:
                FROM search_results r
                JOIN jobs j ON j.id = r.job_id
                LEFT JOIN job_user_state u ON u.job_id = j.id
-               WHERE r.run_id = ?
+               {where}
                ORDER BY
+                 CASE r.filter_status WHEN 'match' THEN 0 WHEN 'review' THEN 1
+                      WHEN 'conflict' THEN 2 ELSE 3 END,
                  CASE WHEN r.combined_score IS NULL THEN 1 ELSE 0 END,
-                 r.combined_score DESC, r.rank ASC""",
-            (run_id,),
+                 r.combined_score DESC, r.rank ASC{pagination}""",
+            params,
         ).fetchall()
         jobs = [dict(row) for row in rows]
         for job in jobs:

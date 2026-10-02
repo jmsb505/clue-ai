@@ -46,3 +46,15 @@ The main job of the interface is to help one person move from CV review to a cur
 The FastAPI/Jinja interface has a CV-first upload-to-search path, an editable profile, search criteria and weights, ranked results, saved/hidden listings, source controls, settings, and privacy/deletion views. PLAN-004 M1 verifies upload, local parsing/persistence, immediate search startup, saved-preference reuse, automatic Jev behavior, and consent/key gates with synthetic CVs and mocked source/model responses. No real CV or live source/API call is used in those tests. Earlier browser accessibility-tree and keyboard-focus reviews covered onboarding, profile, search, synthetic results, and settings. Named navigation, current-page state, labeled form controls, descriptive Save/Hide actions, skip navigation, and visible focus were observed. The results poller runs only while a search is active. Reduced motion disables transitions/animations; layouts had no horizontal page overflow at 320px, 640px, or 651px. The owner waived the 200% zoom check. Actual spoken output was not verified because this browser session exposes the accessibility tree but has no system screen-reader playback control.
 
 PLAN-003 adds an X-lead page in the existing Jinja/CSS system with labeled role/location controls, explicit external-link actions, a manual verification checklist, and a separate lead form. M1 route tests cover navigation and the link/import flow. The page does not automatically open X or a submitted job URL; a separate visual or spoken screen-reader review has not been recorded for this page.
+
+## Full-candidate Jev results — 2026-10-02
+
+**Purpose:** Make every collected listing Jev assessed discoverable without turning a thousand-card search into one enormous page.
+
+| Candidate | Product fit, accessibility, and maintenance | Decision |
+|---|---|---|
+| Existing FastAPI/Jinja result page with status counts, native filter links, and 50-item pagination | Reuses the current route, semantic HTML, and project CSS. Link-based status tabs work by keyboard, preserve browser history, and avoid client-side state or a new dependency. Counts expose how many match, need review, conflict, or remain unassessed. | **ADAPT.** Keep the existing stack, add accessible status navigation and pagination, and label fit separately from filter compatibility. |
+| Render every candidate card in one response | Simple initially, but a full local index is already over 1,100 active rows. A single page would be costly to load and difficult to navigate. | **REJECT.** Keep every result in the run but paginate it. |
+| Add a React/data-table library | No existing React runtime; introduces another toolchain and visual defaults for a single-user local app. | **REJECT.** Use native links/forms and the installed Jinja/CSS stack. |
+
+Status names and totals must remain available as text, not color alone. Keep focus visible, use a semantic `nav` with an accessible label and `aria-current`, preserve the current result card headings/links, and make pagination links identify the destination page. No animation or component dependency is needed.

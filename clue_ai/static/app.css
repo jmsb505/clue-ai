@@ -725,3 +725,35 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
   .company-card { padding: 14px; }
   .company-card-footer { align-items: flex-start; flex-direction: column; }
 }
+
+.results-filter-nav {
+  display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 14px;
+  border-bottom: 1px solid #e3e9e4;
+}
+.results-filter-nav a {
+  display: inline-flex; align-items: center; gap: 7px; padding: 9px 11px 10px;
+  border-bottom: 2px solid transparent; color: #758279; font-size: 9px;
+  text-decoration: none; white-space: nowrap;
+}
+.results-filter-nav a:hover, .results-filter-nav a.is-active { color: #315e4b; }
+.results-filter-nav a.is-active { border-bottom-color: #4f8970; font-weight: 700; }
+.results-filter-nav b { color: #7c8d81; font-size: 8px; font-variant-numeric: tabular-nums; }
+.results-filter-nav a:focus-visible, .results-pagination a:focus-visible {
+  border-radius: 3px; outline: 2px solid #347464; outline-offset: 3px;
+}
+.results-view-note { margin: 0 0 11px; color: #87928c; font-size: 9px; }
+.results-snapshot-note { margin: -13px 0 19px; color: #7f8e84; font-size: 9px; line-height: 1.55; }
+.results-pagination {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px;
+  margin: 17px 0 27px; padding: 12px 14px; border: 1px solid #e1e8e2;
+  border-radius: 11px; background: #fff; color: #7d8982; font-size: 9px;
+}
+.results-pagination a { color: #347361; font-weight: 650; text-decoration: none; }
+.results-pagination a:last-child { justify-self: end; }
+.results-pagination a:hover { text-decoration: underline; }
+
+@media (max-width: 600px) {
+  .results-filter-nav { gap: 0; overflow-x: auto; flex-wrap: nowrap; }
+  .results-filter-nav a { padding-inline: 9px; }
+  .results-pagination { gap: 7px; padding-inline: 9px; font-size: 8px; }
+}

@@ -322,6 +322,7 @@ CREATE TABLE IF NOT EXISTS search_results (
   job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   rank INTEGER NOT NULL DEFAULT 0,
   score_state TEXT NOT NULL DEFAULT 'unscored',
+  filter_status TEXT NOT NULL DEFAULT 'unassessed',
   eligibility_status TEXT NOT NULL DEFAULT 'unknown',
   eligibility_evidence TEXT NOT NULL DEFAULT '',
   freshness_status TEXT NOT NULL DEFAULT 'unknown',
@@ -375,6 +376,9 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "source_query_checks", "state", "TEXT NOT NULL DEFAULT 'ok'")
         _ensure_column(db, "search_results", "score_reason", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "search_results", "rubric_version", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(
+            db, "search_results", "filter_status", "TEXT NOT NULL DEFAULT 'unassessed'"
+        )
         _ensure_column(
             db, "search_results", "eligibility_status", "TEXT NOT NULL DEFAULT 'unknown'"
         )

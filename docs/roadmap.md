@@ -37,6 +37,14 @@ PLAN-002 M1 and M2 are pushed to `main`; M2 used one synthetic Jev request (1,57
 
 PLAN-003 M1 implemented a separate manual X search handoff and local lead intake. It does not use Scrapling on X, the X API, or automatic URL fetching. See [PLAN-003](plans/PLAN-003-x-manual-leads.md) and [ADR 0007](decisions/0007-x-manual-lead-discovery.md). PLAN-004 M1 is implemented and pushed to `main`: upload a CV, parse it locally, start a search, then automatically run Jev checks when enabled. See [PLAN-004](plans/PLAN-004-cv-first-automated-search.md).
 
+## 7. Have Jev assess every collected listing
+
+Implement [PLAN-009](plans/PLAN-009-full-candidate-jev-assessment.md) and [ADR 0010](decisions/0010-full-candidate-jev-assessment.md). Snapshot the full active, non-hidden index, pass all profile-safe search criteria to Jev, retain filter conflicts and unknowns in the per-run results, and show filter-match, review, conflict, and unassessed groups. Preserve the $4 rolling app reserve and avoid fuzzy fingerprint-only merges.
+
+**Acceptance:** Jev evaluates every retained candidate against candidate fit and current user criteria; no role/location/date hard prefilter removes listings; all candidates remain paginated and reviewable; exhausted budget or provider errors leave clear unassessed states; strong identity dedupe and local static validation pass.
+
+PLAN-009 M1 implementation is complete and statically validated. Live CV/TypeSafe validation remains an owner-run action.
+
 ## Delivery workflow
 
 Use the `implementation-plan` and `milestone-delivery` workflows for each code milestone. Per the owner's explicit instruction, commit and push each validated milestone directly to `main`; do not create branches. Honor required checks and branch protection, and never bypass a rejection. Pair `ui-ux-research` with a frontend design skill for substantial interface work. Continue using Context7 for current SDK/API documentation. Revisit release-readiness only if public distribution enters scope.

@@ -4,18 +4,20 @@
 {% block content %}
 <section class="results-heading">
   <div>
-    <a class="back-link" href="/search"><span aria-hidden="true">←</span> Edit search</a>
+    <a class="back-link" href="/search?from={{ run.id }}"><span aria-hidden="true">←</span> Edit filters &amp; run again</a>
     <span class="kicker kicker-muted">YOUR SEARCH · {{ run.created_at[:10] }}</span>
     <h1>Roles worth<br><em>a closer look.</em></h1>
     <p>{{ run.message }}</p>
     <p class="results-scope"><b>Search:</b> {{ run.criteria.roles or 'All roles' }} · {{ run.criteria.workplace|title }} · eligible from {{ run.criteria.work_from }}</p>
   </div>
   <div class="results-count-card">
-    <span class="count-number">{{ jobs|length }}</span>
-    <span>matching listings</span>
-    <small>{{ run.found_count }} records fetched in this run</small>
+    <span class="count-number">{{ result_counts.matches }}</span>
+    <span>Jev filter matches</span>
+    <small>of {{ result_counts.total }} visible listings in this search</small>
   </div>
 </section>
+
+<p class="results-snapshot-note">This is the saved result snapshot for this run. Start a new search to assess all currently active listings in your local index.</p>
 
 {% if run.status in ['queued', 'running', 'scoring'] %}
   <section class="progress-panel" role="status" aria-live="polite">
@@ -46,12 +48,18 @@
 </details>
 
 <section class="results-toolbar">
-  <div><span class="kicker kicker-muted">THE SHORTLIST</span><h2>{{ jobs|length }} roles to explore</h2></div>
+  <div><span class="kicker kicker-muted">THE FULL CANDIDATE SET</span><h2>
+    {% if active_view == 'all' %}{{ result_counts.total }} collected listings
+    {% elif active_view == 'match' %}{{ shown_total }} filter matches
+    {% elif active_view == 'review' %}{{ shown_total }} to review
+    {% elif active_view == 'conflict' %}{{ shown_total }} filter conflicts
+    {% else %}{{ shown_total }} not assessed{% endif %}
+  </h2></div>
   <div class="results-actions">
-    {% if jobs and run.status == 'complete' and not run.scored_count %}
+    {% if result_counts.total and run.status == 'complete' and jev_pending %}
       {% if jev_key_configured and jev_consented %}
         <form action="/searches/{{ run.id }}/score" method="post">
-          <button class="button button-dark" type="submit">Score with Jev <span aria-hidden="true">✳</span></button>
+          <button class="button button-dark" type="submit">{% if run.scored_count %}Continue{% else %}Assess{% endif %} with Jev · {{ jev_pending }} pending <span aria-hidden="true">✳</span></button>
         </form>
       {% elif not jev_key_configured %}
         <a class="button button-outline" href="/settings">Set up Jev <span aria-hidden="true">→</span></a>
@@ -63,19 +71,35 @@
   </div>
 </section>
 
-{% if run.scored_count %}
-  <div class="scoring-summary"><span aria-hidden="true">✳</span> {{ run.scored_count }} listings scored with Jev. Fit signals summarize evidence in the supplied profile and listing; they are not hiring probabilities. <small>{{ usage.used_usd|round(4) }} USD / {{ usage.budget_usd|round(2) }} USD app limit over 30 days</small></div>
+<nav class="results-filter-nav" aria-label="Filter listings by Jev assessment">
+  <a class="{% if active_view == 'all' %}is-active{% endif %}" href="/searches/{{ run.id }}" {% if active_view == 'all' %}aria-current="page"{% endif %}>All <b>{{ result_counts.total }}</b></a>
+  <a class="{% if active_view == 'match' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=match" {% if active_view == 'match' %}aria-current="page"{% endif %}>Matches <b>{{ result_counts.matches }}</b></a>
+  <a class="{% if active_view == 'review' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=review" {% if active_view == 'review' %}aria-current="page"{% endif %}>Review <b>{{ result_counts.review }}</b></a>
+  <a class="{% if active_view == 'conflict' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=conflict" {% if active_view == 'conflict' %}aria-current="page"{% endif %}>Conflicts <b>{{ result_counts.conflicts }}</b></a>
+  <a class="{% if active_view == 'unassessed' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=unassessed" {% if active_view == 'unassessed' %}aria-current="page"{% endif %}>Not assessed <b>{{ result_counts.unassessed }}</b></a>
+</nav>
+
+{% if result_counts.total %}
+  <div class="scoring-summary"><span aria-hidden="true">✳</span> Assessment status: {{ result_counts.scored }} candidate fit scores · {{ result_counts.matches }} match your filters · {{ result_counts.review }} need review · {{ result_counts.conflicts }} conflict · {{ result_counts.unassessed }} awaiting a filter assessment. Fit scores and filter status are separate; fit scores are not hiring probabilities. <small>{{ usage.used_usd|round(4) }} USD / {{ usage.budget_usd|round(2) }} USD app limit over 30 days</small></div>
 {% endif %}
 
 {% if not jobs and run.status == 'complete' %}
   <section class="empty-state panel">
     <span class="empty-illustration" aria-hidden="true">⌕</span>
-    <span class="kicker kicker-muted">NOT A DEAD END</span>
-    <h2>No roles matched this time.</h2>
-    <p>Try a broader title, include uncertain location details, or make a must-have optional. Your search history stays here.</p>
-    <a class="button button-dark" href="/search">Adjust the search <span aria-hidden="true">→</span></a>
+    <span class="kicker kicker-muted">{% if result_counts.total %}NO LISTINGS IN THIS VIEW{% else %}NO ACTIVE LISTINGS{% endif %}</span>
+    {% if result_counts.total %}
+      <h2>No listings have this status yet.</h2>
+      <p>Switch to All to review every collected listing and see its current Jev assessment state.</p>
+      <a class="button button-dark" href="/searches/{{ run.id }}">Show all listings <span aria-hidden="true">→</span></a>
+    {% else %}
+      <h2>No active listings were collected.</h2>
+      <p>Broaden a role or search filter, then run a new search. This search and its source coverage remain in your history.</p>
+      <a class="button button-dark" href="/search">Adjust the search <span aria-hidden="true">→</span></a>
+    {% endif %}
   </section>
 {% endif %}
+
+{% if active_view != 'all' and jobs %}<p class="results-view-note">Showing {{ shown_total }} listings in this view, sorted by Jev fit signal.</p>{% endif %}
 
 <section class="job-list" aria-label="Job listings">
   {% for job in jobs %}
@@ -100,6 +124,10 @@
           {% endif %}
         </div>
         <div class="job-tags">
+          {% if job.filter_status == 'match' %}<span class="tag tag-green">Jev: matches filters</span>
+          {% elif job.filter_status == 'review' %}<span class="tag tag-amber">Jev: review filters</span>
+          {% elif job.filter_status == 'conflict' %}<span class="tag tag-warning">Jev: conflicts with filters</span>
+          {% else %}<span class="tag tag-muted">Filter assessment pending</span>{% endif %}
           {% if job.workplace_type == 'remote' %}<span class="tag tag-teal">Remote</span>
           {% elif job.workplace_type == 'hybrid' %}<span class="tag">Hybrid</span>
           {% elif job.workplace_type == 'onsite' %}<span class="tag">On-site</span>
@@ -186,6 +214,14 @@
     </article>
   {% endfor %}
 </section>
+
+{% if page_count > 1 %}
+  <nav class="results-pagination" aria-label="Listing pages">
+    {% if current_page > 1 %}<a href="/searches/{{ run.id }}?view={{ active_view }}&amp;page={{ current_page - 1 }}">← Previous</a>{% else %}<span></span>{% endif %}
+    <span>Page {{ current_page }} of {{ page_count }} · {{ shown_total }} listings</span>
+    {% if current_page < page_count %}<a href="/searches/{{ run.id }}?view={{ active_view }}&amp;page={{ current_page + 1 }}">Next →</a>{% else %}<span></span>{% endif %}
+  </nav>
+{% endif %}
 
 {% if run.status in ['queued', 'running', 'scoring'] %}
   <script defer src="/static/poll.js"></script>

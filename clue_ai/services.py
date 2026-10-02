@@ -7,11 +7,12 @@ from clue_ai.company_sources import crawl_tracked_companies
 from clue_ai.config import Settings
 from clue_ai.database import get_profile
 from clue_ai.domain import utc_now
-from clue_ai.filters import criteria_from_form, filter_jobs
+from clue_ai.filters import annotate_jobs, criteria_from_form
 from clue_ai.jev import score_run
 from clue_ai.repository import (
     all_active_jobs,
     get_run,
+    get_run_result_counts,
     get_run_results,
     prune_expired_data,
     record_source_state,
@@ -68,7 +69,8 @@ def run_search(
                 else:
                     saved_partial = None
                 partial_note = (
-                    f", {saved_partial.saved} listing record(s) saved from completed pages"
+                    f", {saved_partial.inserted} new and {saved_partial.deduplicated} existing "
+                    "listing identities from completed pages"
                     if saved_partial
                     else ""
                 )
@@ -91,7 +93,8 @@ def run_search(
             )
             detail = (
                 f"{len(outcome.jobs)} parsed from {outcome.raw_records} record(s); "
-                f"{save_report.deduplicated} deduplicated; "
+                f"{save_report.inserted} new identities, "
+                f"{save_report.deduplicated} existing identities reused; "
                 f"{outcome.parse_failures} parse failure(s); "
                 f"{outcome.response_bytes} response bytes across {outcome.checked} request(s)"
                 f"{_status_summary(outcome)}."
@@ -103,7 +106,8 @@ def run_search(
                 )
             message_prefix = f"{outcome.message} " if outcome.message else ""
             checked_notes.append(
-                f"{source['name']}: checked; {save_report.saved} listing record(s) indexed. "
+                f"{source['name']}: checked; {save_report.inserted} new listing identities, "
+                f"{save_report.deduplicated} existing identities updated. "
                 f"{message_prefix}{detail}"
             )
         except SourceFetchError as exc:
@@ -131,7 +135,7 @@ def run_search(
     def save_company_jobs(jobs) -> int:
         nonlocal company_raw_records
         company_raw_records += len(jobs)
-        return save_jobs_with_report(database_path, jobs).saved
+        return save_jobs_with_report(database_path, jobs).inserted
 
     def company_progress(message: str) -> None:
         update_run(
@@ -174,21 +178,23 @@ def run_search(
         database_path,
         run_id,
         stage="filtering",
-        message="Filtering the local listing index against your search rules.",
+        message="Preparing every active listing for Jev and your search filters.",
         checked_sources=checked_notes,
         found_count=found_count,
     )
 
     prune_expired_data(database_path)
     indexed = all_active_jobs(database_path)
-    indexed = [job for job in indexed if not job.get("hidden")]
-    matched = filter_jobs(indexed, criteria)
+    candidates = annotate_jobs(
+        [job for job in indexed if not job.get("hidden")],
+        criteria,
+    )
     save_run_results(
         database_path,
         run_id,
-        matched,
+        candidates,
         score_state="unscored",
-        score_reason="Waiting for the automatic Jev fit check.",
+        score_reason="Waiting for Jev to assess profile fit and search filters.",
     )
     if not checked_notes:
         checked_notes.append(
@@ -196,17 +202,23 @@ def run_search(
             if due_sources == []
             else "No source returned a listing."
         )
-    message = f"Search ready: {len(matched)} listings match your hard filters."
+    message = (
+        f"Search ready: {len(candidates)} active listings will be assessed against your filters."
+    )
     if auto_jev:
         update_run(
             database_path,
             run_id,
             status="scoring",
             stage="jev",
-            message="Search complete. Checking Jev settings and fit evidence.",
+            message=(
+                f"Jev is preparing to assess {len(candidates)} listings against your profile "
+                "and search filters."
+            ),
             checked_sources=checked_notes,
             found_count=found_count,
-            matched_count=len(matched),
+            matched_count=0,
+            scored_count=0,
         )
         run_jev_scoring(database_path, settings, run_id)
         return
@@ -215,10 +227,11 @@ def run_search(
         run_id,
         status="complete",
         stage="done",
-        message=message,
+        message=f"{message} Jev was not run for this search.",
         checked_sources=checked_notes,
         found_count=found_count,
-        matched_count=len(matched),
+        matched_count=0,
+        scored_count=0,
         completed=True,
     )
 
@@ -261,20 +274,21 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
         return
     profile = get_profile(database_path)
     criteria = criteria_from_form(run.get("criteria") or {})
-    jobs = [job for job in get_run_results(database_path, run_id) if not job.get("hidden")]
+    jobs = [
+        job
+        for job in get_run_results(database_path, run_id)
+        if job.get("filter_status") == "unassessed" or job.get("score_state") != "scored"
+    ]
     if not jobs:
-        matched_count = int(run.get("matched_count") or 0)
-        message = (
-            f"Search ready: {matched_count} listings match your hard filters. "
-            "There are no listings to score with Jev."
-        )
+        counts = get_run_result_counts(database_path, run_id)
         update_run(
             database_path,
             run_id,
             status="complete",
             stage="done",
-            message=message,
-            scored_count=0,
+            message="Every visible listing has already received a Jev assessment.",
+            matched_count=counts["matches"],
+            scored_count=counts["scored"],
             completed=True,
         )
         return
@@ -287,13 +301,15 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
             profile,
             criteria,
         )
+        counts = get_run_result_counts(database_path, run_id)
         update_run(
             database_path,
             run_id,
             status="complete",
             stage="done",
             message=result.message,
-            scored_count=result.scored_count,
+            matched_count=counts["matches"],
+            scored_count=counts["scored"],
             completed=True,
         )
     except Exception as exc:  # noqa: BLE001 - keep listings usable if Jev processing fails locally.
