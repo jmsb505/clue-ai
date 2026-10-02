@@ -32,9 +32,10 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 
 - Local PDF/DOCX parsing, saved editable profile, immediate CV-first search, and repeat searches using the saved profile.
 - Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
+- Tech Europe Jobs through a six-hour Scrapling crawl of its public technical and Ops listings and directly linked job details (60-page cap); newsletter-gated and account-only listings are not accessed.
 - Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. Supported public HTTPS sources are enabled after host validation and can be paused or removed.
 - Broad Scrapling crawl of public careers pages: robots.txt exclusions ignored, eight global requests, two per host, one-second base delay, 25 company pages, 10 child sitemaps, 50 sitemap job pages, and 20 dynamic pages per company batch. Standalone career pages allow 100 same-host pages; JustRemote allows 200 pages per six-hour refresh.
-- Frequently updated feeds refresh hourly; publisher-daily APIs stay daily. Company pages and JustRemote refresh every six hours. Failed sources can retry after five minutes.
+- Frequently updated feeds refresh hourly; publisher-daily APIs stay daily. Company pages, JustRemote, and Tech Europe refresh every six hours. Failed sources can retry after five minutes.
 - Profile-matched directory of 80+ Italian, European, AI/data-platform, and global technology employers, with local search-set controls. Automatic multi-company board refresh from this list is tracked in [PLAN-006](docs/plans/PLAN-006-profile-aware-company-board-discovery.md).
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
 - Automatic Jev batches after searches when enabled, with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.

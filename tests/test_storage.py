@@ -51,6 +51,7 @@ def test_default_source_registry_has_remote_boards_and_manual_only_linkouts(data
         "remotive_api",
         "workingnomads_api",
         "justremote_scrapling",
+        "techeurope_scrapling",
         "remote_first_rss",
         "startup_rss",
     }
@@ -241,7 +242,7 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     assert get_profile(database) == CandidateProfile()
     assert get_run(database, "run-delete") is None
     assert all_active_jobs(database) == []
-    assert len(list_sources(database)) == 13
+    assert len(list_sources(database)) == 14
     assert get_source(database, "x_manual")["enabled"] == 0
     assert monthly_jev_usage(database, 4.0)["requests"] == 0
     assert get_source(database, "jobicy")["state"] == "approved"

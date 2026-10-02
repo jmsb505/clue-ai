@@ -98,6 +98,10 @@ def fetch_source(
         from clue_ai.scrapling_boards import crawl_justremote
 
         return crawl_justremote(source, settings)
+    if kind == "techeurope_scrapling":
+        from clue_ai.techeurope_scrapling import crawl_techeurope
+
+        return crawl_techeurope(source, settings)
     if kind == "scrapling":
         return crawl_career_page(source, settings)
     if kind not in SOURCE_HOSTS:
