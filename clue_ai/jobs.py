@@ -9,6 +9,8 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from clue_ai.geography import explicit_work_region
+
 
 class _PlainText(HTMLParser):
     def __init__(self) -> None:
@@ -114,6 +116,9 @@ def classify_location(location: str, description: str, work_from: str = "Italy")
     """Classify explicit work-from eligibility; a generic remote label remains uncertain."""
     target = work_from.strip() or "Italy"
     location_text = plain_text(location, 1_000)
+    region_status, region_evidence = explicit_work_region(location_text, description, target)
+    if region_status:
+        return region_status, region_evidence
     description_lines = [plain_text(line, 600) for line in description.splitlines()]
     cue_lines = [
         line for line in description_lines
@@ -122,10 +127,6 @@ def classify_location(location: str, description: str, work_from: str = "Italy")
     evidence_pool = " | ".join(([location_text] if location_text else []) + cue_lines[:80])
     haystack = evidence_pool.casefold()
     target_norm = target.casefold()
-    incompatible = _has_exclusive_other_region(haystack)
-    if incompatible:
-        evidence = _find_pattern_evidence(evidence_pool, incompatible)
-        return "not_eligible", evidence or location_text
     if target_norm and _explicit_location_match(haystack, target_norm):
         evidence = _find_evidence(evidence_pool, target)
         return "eligible", evidence or location_text or target
@@ -133,21 +134,6 @@ def classify_location(location: str, description: str, work_from: str = "Italy")
     if target_countries and any(re.search(pattern, haystack) for pattern in target_countries):
         evidence = _find_pattern_evidence(evidence_pool, target_countries)
         return "eligible", evidence or location_text
-
-    regions = {
-        "worldwide": (
-            r"\bworldwide\b", r"\banywhere in the world\b", r"\bglobally\b",
-            r"\bwork from anywhere\b",
-        ),
-        "europe": (
-            r"\beurope\b", r"\beuropean union\b", r"\beu/eea\b", r"\beea\b",
-            r"\beu countries\b",
-        ),
-    }
-    for region, patterns in regions.items():
-        if any(re.search(pattern, haystack) for pattern in patterns):
-            evidence = _find_pattern_evidence(evidence_pool, patterns)
-            return "eligible", evidence or region
 
     conflicting_country = _location_country_conflict(location_text, target_norm)
     if conflicting_country:
@@ -259,18 +245,6 @@ def _known_countries() -> dict[str, tuple[str, ...]]:
         "czechia": (r"\bczechia\b", r"\bczech republic\b"),
         "romania": (r"\bromania\b", r"\bromanian\b"),
     }
-
-
-def _has_exclusive_other_region(haystack: str) -> tuple[str, ...]:
-    patterns = (
-        r"\b(?:us|u\.s\.|usa|united states|canada|north america)[- ]only\b",
-        r"\bonly (?:in|for|available in) (?:the )?(?:us|u\.s\.|usa|united states|canada)\b",
-        r"\b(?:us|u\.s\.|usa|united states|canada)[- ]based candidates only\b",
-    )
-    for pattern in patterns:
-        if re.search(pattern, haystack):
-            return (pattern,)
-    return ()
 
 
 def _find_evidence(text: str, term: str) -> str:

@@ -1,6 +1,6 @@
 # ADR 0014 — Practical matching and clean-slate searches
 
-**Status:** Accepted
+**Status:** Accepted; confidence cutoff and saved-correction policy superseded by [ADR 0015](0015-explicit-geography-and-jev-decisions.md)
 **Date:** 2026-10-02
 **Related:** [PLAN-014](../plans/PLAN-014-clean-slate-and-practical-matching.md), [ADR 0010](0010-full-candidate-jev-assessment.md), [ADR 0012](0012-entry-level-paid-job-criteria.md), [ADR 0013](0013-ai-domain-weighted-jev-ranking.md)
 

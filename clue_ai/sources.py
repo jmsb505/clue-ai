@@ -711,6 +711,7 @@ def _normalize_api_job(
     raw_location = plain_text(location, 1_000)
     workplace = infer_workplace(raw_location, description_text)
     if kind in {
+        "jobicy_api",
         "remoteok_json",
         "weworkremotely_rss",
         "himalayas_api",

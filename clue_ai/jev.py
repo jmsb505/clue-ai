@@ -10,6 +10,7 @@ from typing import Any
 from clue_ai.config import Settings
 from clue_ai.database import get_settings
 from clue_ai.domain import CandidateProfile, SearchCriteria, utc_now
+from clue_ai.geography import POLICY_VERSION, explicit_work_region
 from clue_ai.repository import (
     monthly_jev_usage,
     release_jev_reservation,
@@ -22,7 +23,6 @@ from clue_ai.repository import (
 
 FIT_DIMENSIONS = ("role", "skills", "experience", "ai_relevance", "preferences")
 RUBRIC_VERSION = "fit-v1.4.0"
-FILTER_DECISION_CONFIDENCE = 0.8
 SCORE_LEVELS = {
     "0": "Clear, explicit contradictory evidence in this dimension. Do not use 0 merely because evidence is missing.",
     "1": "Weak alignment: only indirect or minimal evidence supports this dimension.",
@@ -280,6 +280,7 @@ def score_run(
                         parsed_filter["model"] = returned_model
                         filter_checks[check] = parsed_filter
                         dimensions[key] = parsed_filter
+                apply_location_constraint(filter_checks, job, criteria)
                 fit_status = _combine_filter_checks(filter_checks)
                 if fit_status != "unassessed":
                     filter_assessed += 1
@@ -559,12 +560,30 @@ def _parse_filter_answer(answer: Any) -> dict[str, Any] | None:
     try:
         confidence = float(getattr(answer, "confidence", 0.0))
     except (TypeError, ValueError):
-        confidence = 0.0
+        return {"status": "review", "model_status": choice, "confidence": 0.0, "score": None,
+                "decision_policy": POLICY_VERSION}
+    valid_confidence = math.isfinite(confidence) and 0.0 <= confidence <= 1.0
     if not math.isfinite(confidence):
         confidence = 0.0
     confidence = max(0.0, min(confidence, 1.0))
-    status = choice if confidence >= FILTER_DECISION_CONFIDENCE else "review"
-    return {"status": status, "model_status": choice, "confidence": confidence, "score": None}
+    status = choice if valid_confidence else "review"
+    return {"status": status, "model_status": choice, "confidence": confidence, "score": None,
+            "decision_policy": POLICY_VERSION}
+
+
+def apply_location_constraint(
+    checks: dict[str, dict[str, Any]], job: dict[str, Any], criteria: SearchCriteria
+) -> None:
+    """Retain Jev's answer, but enforce an explicit incompatible work-region fact."""
+    check = checks.get("location")
+    if check is None:
+        return  # A missing answer must remain unassessed, never become a fabricated answer.
+    status, evidence = explicit_work_region(
+        str(job.get("location_raw") or ""), str(job.get("description") or ""), criteria.work_from
+    )
+    if status == "not_eligible":
+        check.update(status="conflict", constraint_source="listing_work_region",
+                     constraint_evidence=evidence, decision_policy=POLICY_VERSION)
 
 
 def _combine_filter_checks(checks: dict[str, dict[str, Any]]) -> str:
@@ -582,9 +601,13 @@ def _filter_evidence(checks: dict[str, dict[str, Any]]) -> list[str]:
         ("conflict", "Jev reports a requirement conflict for"),
         ("review", "Verify these requirements on the original posting"),
     ):
-        labels = [FILTER_CHECK_LABELS[key] for key, value in checks.items() if value["status"] == status]
+        labels = [FILTER_CHECK_LABELS[key] for key, value in checks.items()
+                  if value["status"] == status and not value.get("constraint_source")]
         if labels:
             evidence.append(f"{prefix}: {', '.join(labels)}.")
+    for check in checks.values():
+        if check.get("constraint_source"):
+            evidence.append(f"Explicit listing work-region conflict: {check['constraint_evidence']}.")
     return evidence
 
 

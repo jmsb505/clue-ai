@@ -133,7 +133,7 @@
         <div class="job-tags">
           {% if job.filter_status == 'match' %}<span class="tag tag-green">Jev: matches filters</span>
           {% elif job.filter_status == 'review' %}<span class="tag tag-amber">Jev: review filters</span>
-          {% elif job.filter_status == 'conflict' %}<span class="tag tag-warning">Jev: conflicts with filters</span>
+          {% elif job.filter_status == 'conflict' %}<span class="tag tag-warning">Conflicts with filters</span>
           {% else %}<span class="tag tag-muted">Filter assessment pending</span>{% endif %}
           {% if job.workplace_type == 'remote' %}<span class="tag tag-teal">Remote</span>
           {% elif job.workplace_type == 'hybrid' %}<span class="tag">Hybrid</span>
@@ -181,11 +181,11 @@
             </div>
             <p>Scores summarize comparison evidence on a 0–1 scale. Confidence is the model's confidence in its response, not confidence of getting hired.</p>
             {% if job.filter_checks %}
-              <p><b>Requirement checks</b> · Jev's decisions; verify them on the posting.</p>
+              <p><b>Requirement checks</b> · Jev's decisions with explicit listing-location checks; confidence is shown without a numeric cutoff. Verify details on the posting.</p>
               <ul class="evidence-list">
                 {% for key, label in filter_check_labels.items() %}
                   {% set check = job.filter_checks.get(key) %}
-                  <li><b>{{ label }}:</b> {% if check %}{% if check.status == 'match' %}Supported{% elif check.status == 'conflict' %}Conflicts{% else %}Needs verification{% endif %} · model confidence {{ '%.2f'|format(check.confidence) }}{% if check.model_status != check.status %} (uncertain {{ check.model_status }} kept for review){% endif %}{% else %}Answer pending{% endif %}</li>
+                  <li><b>{{ label }}:</b> {% if check %}{% if check.status == 'match' %}Supported{% elif check.status == 'conflict' %}Conflicts{% else %}Needs verification{% endif %} · model confidence {{ '%.2f'|format(check.confidence) }}{% if check.constraint_source %} · explicit listing restriction: {{ check.constraint_evidence }} (Jev originally: {{ check.model_status }}){% elif check.model_status != check.status %} (invalid response confidence; original decision: {{ check.model_status }}){% endif %}{% else %}Answer pending{% endif %}</li>
                 {% endfor %}
               </ul>
             {% endif %}

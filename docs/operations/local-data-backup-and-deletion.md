@@ -12,6 +12,18 @@ There is no cloud backup feature. A search reset creates a local database snapsh
 
 The Conda `gen` test suite copies a database and synthetic CV from a stopped app into a backup and restore directory, then verifies both can be read. It does not verify encryption settings, a particular external drive, cloud-sync behavior, or Windows account permissions. On 2026-09-30 the owner waived device-encryption verification for the local `.data/` directory and backups.
 
+## Repair saved matching decisions
+
+The October 3 correction recovers retained Jev choices previously downgraded by a local confidence cutoff and enforces explicit work-region restrictions. To repair completed five-check results without another crawl or TypeSafe charge:
+
+```powershell
+.\scripts\clue.ps1 stop
+conda run -n gen python -m clue_ai.repair_matching
+.\scripts\clue.ps1 start
+```
+
+The repair creates `.data/backups/before-matching-repair-*.sqlite3`, preserves raw model choices and candidate fit scores, and updates derived filters/counts with an explicit correction notice. Profile, CV, source timers and spend remain. Repeating the repair does not reinterpret already corrected checks. Active searches must be stopped; invalid retained answers abort and roll back the transaction. Restore the backup with Clue stopped using the database restore precautions below.
+
 ## Deletion scope
 
 ### Start a fresh job search
