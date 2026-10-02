@@ -14,7 +14,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 .\scripts\clue.ps1 start
 ```
 
-Then open http://127.0.0.1:8000. The server binds to this computer only and stays in the foreground; press Ctrl+C in that PowerShell window when you finish. A fresh copy of `.env.example` starts with a blank key; the app works without one. This local checkout's ignored `.env` is owner-configured and is never committed.
+Then open http://127.0.0.1:8000. The server binds to this computer only and stays in the foreground. To stop it, run `.\scripts\clue.ps1 stop` from another PowerShell window; the helper terminates Clue's process tree so active searches and Scrapling/browser workers stop with it. A fresh copy of `.env.example` starts with a blank key; the app works without one. This local checkout's ignored `.env` is owner-configured and is never committed.
 
 Use the same PowerShell window, or another one, to manage the local server:
 
@@ -24,7 +24,7 @@ Use the same PowerShell window, or another one, to manage the local server:
 .\scripts\clue.ps1 restart
 ```
 
-The helper always runs against Conda `gen`. `stop` and `restart` close a Python server from that environment if it occupies port 8000. They refuse to stop a non-Python process or a process launched from another environment. Stopping the server does not delete the profile or `.data/` files. The app is not installed as a background service and does not start automatically.
+The helper always runs against Conda `gen`. `stop` and `restart` close Clue and its child processes if a Python server from that environment occupies port 8000. They refuse to stop a non-Python process or a process launched from another environment. An unfinished search is marked stopped, and listings saved before shutdown remain in the local index. Stopping the server does not delete the profile or `.data/` files. The app is not installed as a background service and does not start automatically. See [ADR 0011](docs/decisions/0011-stop-crawls-with-app.md).
 
 To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure in Settings; Clue does not inspect TypeSafe account terms, billing/refill settings, or other uses of the key. Automatic scoring requires your one-time in-app opt-in and runs after searches while the app-side key, language, and budget gates pass. The app reserves at most USD 4 over 30 days toward your USD 5 owner ceiling; that local limit does not guarantee account-wide charges.
 

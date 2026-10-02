@@ -44,6 +44,49 @@ function Get-GenPythonPath {
     return [System.IO.Path]::GetFullPath([string]$pythonPath[0])
 }
 
+function Complete-InterruptedSearches([string]$PythonPath) {
+    $code = "from clue_ai.config import Settings; from clue_ai.lifecycle import mark_interrupted_runs; database = Settings.from_environment().database_path; print(mark_interrupted_runs(database) if database.is_file() else 0)"
+    Push-Location $ProjectRoot
+    try {
+        $output = & $PythonPath -c $code
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not update interrupted search state using Conda 'gen'."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    $count = 0
+    $countText = @($output | Select-Object -Last 1)
+    if ($countText.Count -gt 0 -and -not [int]::TryParse([string]$countText[0], [ref]$count)) {
+        throw "Could not read the interrupted search count from Conda 'gen'."
+    }
+    if ($count -gt 0) {
+        Write-Host "Marked $count unfinished search run(s) as stopped."
+    }
+}
+
+function Stop-ProcessTree([int]$ProcessId, [string]$ExpectedPythonPath) {
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $process) {
+        return
+    }
+    if ($process.ProcessName -notin @("python", "pythonw") -or -not $process.Path) {
+        throw "PID $ProcessId no longer belongs to a Python process; refusing to stop it."
+    }
+    $processPath = [System.IO.Path]::GetFullPath($process.Path)
+    if (-not [string]::Equals($processPath, $ExpectedPythonPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "PID $ProcessId no longer belongs to Conda 'gen'; refusing to stop it."
+    }
+
+    $taskkillPath = Join-Path $env:SystemRoot "System32\taskkill.exe"
+    $killOutput = & $taskkillPath /PID $ProcessId /T /F 2>&1
+    if ($LASTEXITCODE -ne 0 -and (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
+        throw "Could not stop Clue process tree: $($killOutput -join ' ')"
+    }
+}
+
 function Remove-ManagedPidIfMatches([int]$ProcessId) {
     if (-not (Test-Path -LiteralPath $ManagedPidPath)) {
         return
@@ -74,6 +117,7 @@ function Stop-ClueServer {
         if (Test-Path -LiteralPath $ManagedPidPath) {
             Remove-Item -LiteralPath $ManagedPidPath -Force
         }
+        Complete-InterruptedSearches (Get-GenPythonPath)
         Write-Host "Port $Port is already free."
         return
     }
@@ -95,13 +139,13 @@ function Stop-ClueServer {
             throw "Port $Port is owned by PID $listenerId from '$processPath'. Refusing to stop a process outside the Conda 'gen' environment."
         }
 
-        Write-Host "Stopping the Python server on port $Port (PID $listenerId)."
+        Write-Host "Stopping Clue and its crawler processes on port $Port (PID $listenerId)."
         $wasManaged = $managedPid -eq $listenerId
         if ($wasManaged) {
             Remove-ManagedPidIfMatches $listenerId
         }
         try {
-            Stop-Process -Id $listenerId -Force
+            Stop-ProcessTree $listenerId $genPythonPath
         }
         catch {
             if ($wasManaged) {
@@ -128,7 +172,8 @@ function Stop-ClueServer {
     if ($remaining.Count -gt 0) {
         throw "Port $Port is still in use by PID(s): $($remaining -join ', ')."
     }
-    Write-Host "Port $Port is free. Local profile and .data files were not changed."
+    Complete-InterruptedSearches $genPythonPath
+    Write-Host "Clue and its crawl processes are stopped. Local profile, CV, and indexed listings were not deleted."
 }
 
 function Start-ClueServer {
@@ -147,9 +192,10 @@ function Start-ClueServer {
     }
 
     $genPythonPath = Get-GenPythonPath
+    Complete-InterruptedSearches $genPythonPath
     Push-Location $ProjectRoot
     try {
-        Write-Host "Starting Clue on http://127.0.0.1:$Port. Press Ctrl+C here to stop it."
+        Write-Host "Starting Clue on http://127.0.0.1:$Port. Use '.\scripts\clue.ps1 stop' in another PowerShell window to stop Clue and its crawler processes."
         $process = Start-Process -FilePath $genPythonPath -ArgumentList @("-m", "clue_ai") -WorkingDirectory $ProjectRoot -NoNewWindow -PassThru
         Set-Content -LiteralPath $ManagedPidPath -Value $process.Id -NoNewline
         $process.WaitForExit()
@@ -166,10 +212,16 @@ function Start-ClueServer {
         }
     }
     finally {
-        if ($process) {
-            Remove-ManagedPidIfMatches $process.Id
+        try {
+            if ($process) {
+                Stop-ProcessTree $process.Id $genPythonPath
+                Complete-InterruptedSearches $genPythonPath
+                Remove-ManagedPidIfMatches $process.Id
+            }
         }
-        Pop-Location
+        finally {
+            Pop-Location
+        }
     }
 }
 
