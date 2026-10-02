@@ -1,6 +1,6 @@
 # PLAN-008 — Broader public job-page crawling
 
-**Status:** M1 implementation complete; live coverage evaluation pending
+**Status:** M1 implementation complete; first live workflow completed; progress visibility fix awaits live verification
 **Created:** 2026-10-02
 **Last updated:** 2026-10-02
 
@@ -81,6 +81,7 @@ The owner is using Clue for a personal job search and wants broader source cover
 - [x] Preserve blocked-request detection, zero retries, host boundaries, response-size caps, and source-specific publisher limits.
 - [x] Make frequent-feed refresh windows one hour, company/JustRemote crawl windows six hours, and preserve daily publisher-updated API cadences.
 - [x] Ensure failed requests do not consume a full refresh period; failed feed queries retry after five minutes.
+- [x] Emit page and parsed-record counts during long company crawls; show per-page progress during JavaScript fallback.
 - [x] Update canonical product/architecture/source documentation and record validation.
 
 ### Acceptance criteria
@@ -93,6 +94,7 @@ The owner is using Clue for a personal job search and wants broader source cover
 - [x] Product, architecture, decision, and source-review docs agree on the new policy.
 - [x] Conda `gen` Ruff, byte-compilation, and `git diff --check` pass; app server is stopped.
 - [x] Applied the one-time local cache recovery: cleared two failed Remote First Jobs query stamps and scheduled JustRemote plus 80 tracked company boards for the expanded crawl.
+- [ ] Confirm the browser displays the incremental company-crawl counts during a post-fix run; the owner-reported run completed before this progress update was added.
 
 ### Affected areas
 
@@ -111,6 +113,7 @@ One coherent M1 checkpoint on `main` after static validation. Existing unvalidat
 ## Validation and completion record
 
 - Static validation and source-policy review are required; no test suite or live third-party crawl will be run without the owner's request.
-- 2026-10-02: Conda `gen` Ruff and byte-compilation passed. `git diff --check` passed after removing trailing whitespace. No unit suite or live third-party crawl was run; broad crawl recall, parse yield, and runtime remain unmeasured.
+- 2026-10-02: Initial Conda `gen` Ruff and byte-compilation passed. `git diff --check` passed after removing trailing whitespace. No unit suite or agent-run live crawl was performed; the owner's subsequent live workflow is recorded below.
 - 2026-10-02: Applied the source schedule and query-ledger schema migration to the owner's local `.data/clue.sqlite3`. Removed the two Remote First Jobs query stamps corresponding to HTTP 404 failures, retained its prior successful query stamp and local listings, scheduled the expanded JustRemote crawl, and made 80 tracked company boards due under the expanded profile. Daily publisher sources were left on their daily schedule.
 - 2026-10-02: Stopped the existing Clue server through `scripts/clue.ps1`; port 8000 is free. Start the app again to load the new crawler code.
+- 2026-10-02: The owner-provided run log and local history show a successful end-to-end run in about 3m55s: 718 records fetched, two filtered matches scored. The company sitemap phase took about 97 seconds and transferred about 288 MB across 308 requests. The browser retained the same progress label and fetched count during that phase, making active work look frozen. Added five-second page/record progress updates and per-page JavaScript-render updates; a new live run is still needed to verify the display.

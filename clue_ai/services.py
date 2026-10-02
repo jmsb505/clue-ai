@@ -126,6 +126,13 @@ def run_search(
                 f"{source['name']}: connector error ({type(exc).__name__}); existing listings kept."
             )
 
+    company_raw_records = 0
+
+    def save_company_jobs(jobs) -> int:
+        nonlocal company_raw_records
+        company_raw_records += len(jobs)
+        return save_jobs_with_report(database_path, jobs).saved
+
     def company_progress(message: str) -> None:
         update_run(
             database_path,
@@ -133,7 +140,7 @@ def run_search(
             stage="sources",
             message=message,
             checked_sources=checked_notes,
-            found_count=found_count,
+            found_count=found_count + company_raw_records,
         )
 
     try:
@@ -141,7 +148,7 @@ def run_search(
             database_path,
             settings,
             on_progress=company_progress,
-            save_jobs=lambda jobs: save_jobs_with_report(database_path, jobs).saved,
+            save_jobs=save_company_jobs,
         )
         found_count += company_report.raw_records
         if company_report.companies_checked:
@@ -158,6 +165,7 @@ def run_search(
             )
             checked_notes.append(coverage_note)
     except Exception as exc:  # noqa: BLE001 - existing aggregator results remain usable on crawler failure.
+        found_count += company_raw_records
         checked_notes.append(
             f"Company career search could not finish ({type(exc).__name__}); existing listings kept."
         )

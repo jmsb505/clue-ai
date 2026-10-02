@@ -928,12 +928,28 @@ def crawl_tracked_companies(
     if not due:
         summary.elapsed_seconds = round(time.monotonic() - started_at, 2)
         return summary
+    last_progress_at = started_at
+    phase_label = "public career pages"
     records = {str(company["id"]): company for company in due}
     statuses: dict[str, dict[str, Any]] = {}
     boards: dict[str, dict[str, str]] = {}
     jobs_seen: dict[str, int] = {company_id: 0 for company_id in records}
     dynamic_urls: dict[str, str] = {}
     blocked_api_hosts: set[str] = set()
+
+    def emit_progress(*, force: bool = False) -> None:
+        nonlocal last_progress_at
+        if on_progress is None:
+            return
+        now = time.monotonic()
+        if not force and now - last_progress_at < 5.0:
+            return
+        elapsed = int(now - started_at)
+        on_progress(
+            f"Checking {phase_label}: {summary.pages_checked} pages checked, "
+            f"{summary.raw_records} job records parsed so far ({elapsed}s elapsed)."
+        )
+        last_progress_at = now
 
     def process_event(event: dict[str, Any]) -> None:
         event_type = str(event.get("_clue_event") or "")
@@ -951,10 +967,12 @@ def crawl_tracked_companies(
             summary.raw_records += 1
             if save_jobs:
                 summary.jobs_indexed += save_jobs([job])
+            emit_progress()
             return
         if event_type == "page":
             summary.pages_checked += 1
             summary.response_bytes += int(event.get("response_bytes") or 0)
+            emit_progress()
             return
         if event_type == "board":
             boards[company_id] = {
@@ -978,6 +996,7 @@ def crawl_tracked_companies(
 
     if on_progress:
         on_progress(f"Crawling public career pages for {len(due)} tracked companies.")
+        last_progress_at = time.monotonic()
     spider = _make_company_spider(due, settings)
     _run_spider_stream(spider, process_event)
     for startup_event in getattr(spider, "startup_events", []):
@@ -1074,12 +1093,15 @@ def crawl_tracked_companies(
         and statuses.get(str(company["id"]), {}).get("last_state") != "api_checked"
     ]
     if needs_sitemap:
+        phase_label = "official robots.txt sitemaps and job pages"
         if on_progress:
             on_progress(
                 f"Checking official robots.txt sitemaps for {len(needs_sitemap)} companies without parsed listings."
             )
+            last_progress_at = time.monotonic()
         sitemap_spider = _make_sitemap_spider(needs_sitemap, settings)
         _run_spider_stream(sitemap_spider, process_event)
+        emit_progress(force=True)
 
     # Render detected client-rendered career shells with a bounded public-page fallback.
     if dynamic_urls:
@@ -1088,7 +1110,16 @@ def crawl_tracked_companies(
         except ImportError:
             DynamicFetcher = None
         if DynamicFetcher:
-            for company_id, url in list(dynamic_urls.items())[:COMPANY_DYNAMIC_RENDER_LIMIT]:
+            phase_label = "JavaScript career pages"
+            render_candidates = [
+                (company_id, url)
+                for company_id, url in list(dynamic_urls.items())[:COMPANY_DYNAMIC_RENDER_LIMIT]
+                if not jobs_seen.get(company_id, 0)
+                and statuses.get(company_id, {}).get("state") != "blocked"
+                and url
+                and _valid_url(url)
+            ]
+            for index, (company_id, url) in enumerate(render_candidates, start=1):
                 if (
                     jobs_seen.get(company_id, 0)
                     or statuses.get(company_id, {}).get("state") == "blocked"
@@ -1096,6 +1127,11 @@ def crawl_tracked_companies(
                     or not _valid_url(url)
                 ):
                     continue
+                if on_progress:
+                    on_progress(
+                        f"Rendering JavaScript career page {index} of {len(render_candidates)}."
+                    )
+                    last_progress_at = time.monotonic()
                 try:
                     response = DynamicFetcher.fetch(
                         url,
@@ -1144,6 +1180,7 @@ def crawl_tracked_companies(
                         last_state="dynamic_unavailable",
                         error=f"The optional browser fallback failed ({type(exc).__name__}).",
                     )
+            emit_progress(force=True)
 
     summary.boards_resolved = len(
         {company_id for company_id, board in boards.items() if board.get("board_url")}
