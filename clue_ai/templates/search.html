@@ -115,14 +115,15 @@
       <div><span class="kicker kicker-muted">03 · JEV RANKING</span><h2>Choose what matters most</h2></div>
       <span class="mini-badge">Relative weights</span>
     </div>
-    <p class="panel-muted">These weights help sort candidate fit after Jev assesses the full listing set. Each dimension is a comparison signal, not the chance of getting hired.</p>
+    <p class="panel-muted">These weights sort candidate fit after Jev assesses every listing. AI/ML relevance has the largest default weight; profile-fit roles in other fields still remain eligible and visible.</p>
     <div class="weight-grid">
+      <label class="weight-control"><span>AI / ML relevance</span><input type="number" name="ai_relevance_weight" min="0" max="100" value="{{ criteria.ai_relevance_weight }}"><small>AI/ML is central to the role or stated product</small></label>
       <label class="weight-control"><span>Role alignment</span><input type="number" name="role_weight" min="0" max="100" value="{{ criteria.role_weight }}"><small>Job title and responsibilities</small></label>
       <label class="weight-control"><span>Skills evidence</span><input type="number" name="skills_weight" min="0" max="100" value="{{ criteria.skills_weight }}"><small>Required skills in the listing</small></label>
       <label class="weight-control"><span>Experience scope</span><input type="number" name="experience_weight" min="0" max="100" value="{{ criteria.experience_weight }}"><small>Responsibilities and seniority</small></label>
       <label class="weight-control"><span>Your preferences</span><input type="number" name="preference_weight" min="0" max="100" value="{{ criteria.preference_weight }}"><small>Nice-to-have terms</small></label>
     </div>
-    <p class="tiny-note">Set all weights to zero to give each fit dimension equal weight. Jev scoring is optional and makes a TypeSafe API request.</p>
+    <p class="tiny-note">Defaults: AI/ML 35, role 25, skills 25, experience 10, preferences 5. Set all weights to zero to give each assessed dimension equal weight. Jev scoring is optional and makes a TypeSafe API request.</p>
   </section>
 
   <div class="search-submit-row">

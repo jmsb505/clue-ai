@@ -86,6 +86,8 @@ These are working defaults that complete the pilot definition; they can be revis
 
 **NORMATIVE:** The target seniority is junior/entry-level or intern, and the position must be paid. Explicit unpaid/volunteer or explicitly mid/senior roles conflict; missing compensation or unclear level stays in `review`. These criteria are assessed by Jev and do not remove candidates before assessment. See [ADR 0012](decisions/0012-entry-level-paid-job-criteria.md).
 
+**NORMATIVE:** Prioritize roles with explicit AI/ML work using a separate Jev fit dimension and the largest individual default ranking weight. AI relevance is a preference, not a hard filter: keep strong profile matches in other domains eligible and visible. Assess relevance from the listing's responsibilities and specific product/work context; a company name alone is not enough. Missing domain evidence is unknown. See [ADR 0013](decisions/0013-ai-domain-weighted-jev-ranking.md).
+
 **WORKING recommendation:** Use typed Jev questions for bounded fit judgments and combine job-related dimensions in ordinary code using the user's stated weights. Exact constraints, permissions, sorting, and data handling remain in ordinary software. The first implementation uses categorical `Choice` questions with five fit levels and a separate `unknown` answer; returned levels are mapped to a normalized 0–1 fit signal and are not calibrated.
 
 Jev returns structured decisions, not explanatory prose. It cannot by itself provide trustworthy CV evidence snippets or explain a score in natural language. Build explanations from the parsed CV facts and the original job text, and show the source passages where possible. Distinguish “not found in the CV/listing” from “does not match.” Show uncertainty where evidence is missing or Jev is unsure.
@@ -100,7 +102,7 @@ Each result should make these fields easy to scan:
 
 - role, employer, source, original posting link, location and work arrangement;
 - posted date, last checked time, salary and currency when supplied;
-- match score, user-weighted criteria, confidence or evidence status;
+- match score, AI/ML domain relevance, user-weighted criteria, confidence or evidence status;
 - strengths and gaps grounded in CV and job-description evidence;
 - save, dismiss, and open-source actions.
 

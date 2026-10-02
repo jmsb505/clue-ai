@@ -8,6 +8,20 @@ from typing import Any
 from clue_ai.domain import SearchCriteria
 from clue_ai.jobs import classify_location
 
+DEFAULT_FIT_WEIGHTS = {
+    "role": 25,
+    "skills": 25,
+    "experience": 10,
+    "ai_relevance": 35,
+    "preference": 5,
+}
+LEGACY_DEFAULT_FIT_WEIGHTS = {
+    "role": 35,
+    "skills": 35,
+    "experience": 20,
+    "preference": 10,
+}
+
 
 def terms(value: str) -> list[str]:
     return [part.strip().casefold() for part in re.split(r"[,;\n]+", value or "") if part.strip()]
@@ -129,12 +143,24 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
         days = int(form.get("posted_within_days", 30))
     except (TypeError, ValueError):
         days = 30
-    weights = {
+    legacy_weights = {
         name: _integer(form.get(f"{name}_weight"), default)
-        for name, default in {
-            "role": 35, "skills": 35, "experience": 20, "preference": 10
-        }.items()
+        for name, default in LEGACY_DEFAULT_FIT_WEIGHTS.items()
     }
+    if "ai_relevance_weight" in form:
+        weights = {
+            name: _integer(form.get(f"{name}_weight"), default)
+            for name, default in DEFAULT_FIT_WEIGHTS.items()
+        }
+    elif legacy_weights == LEGACY_DEFAULT_FIT_WEIGHTS:
+        weights = DEFAULT_FIT_WEIGHTS.copy()
+    elif not any(legacy_weights.values()):
+        weights = {**legacy_weights, "ai_relevance": 0}
+    else:
+        weights = {
+            **legacy_weights,
+            "ai_relevance": min(100, max(legacy_weights.values()) + 5),
+        }
     return SearchCriteria(
         roles=str(form.get("roles", ""))[:500],
         target_seniority="junior_or_intern",
@@ -154,6 +180,7 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
         role_weight=weights["role"],
         skills_weight=weights["skills"],
         experience_weight=weights["experience"],
+        ai_relevance_weight=weights["ai_relevance"],
         preference_weight=weights["preference"],
     )
 

@@ -287,7 +287,7 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
 .check-field b, .check-field small { display: block; }
 .check-field b { font-size: 9px; font-weight: 660; }
 .check-field small { max-width: 550px; margin-top: 4px; color: #86938c; font-size: 8px; line-height: 1.5; font-weight: 450; }
-.weight-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; margin: 21px 0 12px; }
+.weight-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 11px; margin: 21px 0 12px; }
 .weight-control { display: grid; gap: 7px; padding: 13px; border: 1px solid #e6ebe6; border-radius: 12px; background: #fbfcfa; }
 .weight-control > span { font-size: 9px; font-weight: 680; }
 .weight-control input { width: 72px; height: 32px; padding: 5px 8px; border: 1px solid #dce5dd; border-radius: 8px; font-size: 11px; }

@@ -54,10 +54,11 @@ class SearchCriteria:
     include_unknown_location: bool = True
     include_unknown_salary: bool = True
     include_unknown_sponsorship: bool = True
-    role_weight: int = 35
-    skills_weight: int = 35
-    experience_weight: int = 20
-    preference_weight: int = 10
+    role_weight: int = 25
+    skills_weight: int = 25
+    experience_weight: int = 10
+    ai_relevance_weight: int = 35
+    preference_weight: int = 5
 
     def to_jsonable(self) -> dict[str, Any]:
         return asdict(self)

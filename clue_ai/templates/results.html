@@ -169,7 +169,7 @@
             <summary>How Jev compared this role <span>{% if job.confidence is not none %}signal confidence {{ "%.2f"|format(job.confidence) }}{% endif %}</span></summary>
             <div class="dimension-grid">
               {% for key, dimension in job.dimensions.items() %}
-                <div><span>{{ key|replace('_', ' ')|title }}</span><b>{% if dimension.score is not none %}{{ "%.2f"|format(dimension.score) }}{% else %}Not enough evidence{% endif %}</b></div>
+                <div><span>{% if key == 'ai_relevance' %}AI domain relevance{% else %}{{ key|replace('_', ' ')|title }}{% endif %}</span><b>{% if dimension.score is not none %}{{ "%.2f"|format(dimension.score) }}{% else %}Not enough evidence{% endif %}</b></div>
               {% endfor %}
             </div>
             <p>Scores summarize comparison evidence on a 0–1 scale. Confidence is the model's confidence in its response, not confidence of getting hired.</p>
