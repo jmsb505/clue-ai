@@ -1,6 +1,6 @@
 # PLAN-009 — Full-candidate Jev assessment
 
-**Status:** M1 pushed to `main` at `1f21e87`; live Jev workflow remains for owner verification  
+**Status:** M1 pushed to `main` at `1f21e87`; live Jev workflow remains for owner verification
 **Created:** 2026-10-02
 **Last updated:** 2026-10-02
 
