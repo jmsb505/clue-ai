@@ -1,6 +1,6 @@
 # PLAN-010 — Stop crawl work with the local app
 
-**Status:** M1 implemented and statically validated locally; no live crawl or process-tree smoke run
+**Status:** M1 pushed to `main` at `444ba0e`; static validation passed, no live crawl or process-tree smoke run
 **Created:** 2026-10-02
 **Last updated:** 2026-10-02
 
@@ -124,7 +124,7 @@ Revert the helper and lifecycle changes to restore the single-PID stop behavior.
 - [x] Resolved current FastAPI lifecycle and Scrapling spider-stop documentation through Context7.
 - [x] Implemented process-tree stop and interrupted-run recovery.
 - [x] Run static validation; process-tree smoke and live crawl were not run.
-- [ ] Commit and push the scoped M1 checkpoint.
+- [x] Commit and push the scoped M1 checkpoint to `main` (`444ba0e`).
 
 ## Implementation discoveries / decisions
 
@@ -134,4 +134,4 @@ Revert the helper and lifecycle changes to restore the single-PID stop behavior.
 
 ## Completion evidence
 
-Ruff, Python byte-compilation, PowerShell parsing, `git diff --check`, and local server status passed. No unit suite, synthetic process-tree smoke, live crawl, or Jev request was run. Scoped Git checkpoint remains pending.
+Ruff, Python byte-compilation, PowerShell parsing, `git diff --check`, and local server status passed. Commit `444ba0e` is pushed to `main`. No unit suite, synthetic process-tree smoke, live crawl, or Jev request was run.
