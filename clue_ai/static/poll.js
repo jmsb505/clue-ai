@@ -3,10 +3,8 @@
   if (!statusUrl) return;
   const progressMessage = document.querySelector(".progress-message");
   let stopped = false;
-  let attempts = 0;
   const poll = async () => {
-    if (stopped || attempts > 120) return;
-    attempts += 1;
+    if (stopped) return;
     try {
       const response = await fetch(statusUrl, {
         headers: { Accept: "application/json" },
