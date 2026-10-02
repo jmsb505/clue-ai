@@ -33,6 +33,9 @@
         <a href="/hidden" class="{% if active_page == 'hidden' %}is-active{% endif %}" {% if active_page == 'hidden' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⊘</span><span>Hidden roles</span>
         </a>
+        <a href="/applied" class="{% if active_page == 'applied' %}is-active{% endif %}" {% if active_page == 'applied' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">✓</span><span>Applied roles</span>
+        </a>
       </nav>
       <p class="rail-label rail-label-spaced">WORKSPACE</p>
       <nav class="main-nav" aria-label="Workspace">

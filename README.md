@@ -25,7 +25,7 @@ Use the same PowerShell window, or another one, to manage the local server:
 .\scripts\clue.ps1 reset
 ```
 
-`reset` stops Clue and its crawler processes, backs up the local database under ignored `.data/backups/`, and clears listings, search history, rankings, saved/hidden jobs and crawl/query refresh timers. It keeps your CV, profile, API settings, sources, company selections and Jev spend ledger, and leaves the app stopped. Start Clue again when ready. See the [reset and backup guide](docs/operations/local-data-backup-and-deletion.md).
+`reset` stops Clue and its crawler processes, backs up the local database under ignored `.data/backups/`, and clears listings, search history, rankings, saved/hidden jobs and crawl/query refresh timers. It keeps your CV, profile, application tracker, API settings, sources, company selections and Jev spend ledger, and leaves the app stopped. Start Clue again when ready. See the [reset and backup guide](docs/operations/local-data-backup-and-deletion.md).
 
 The helper always runs against Conda `gen`. `stop` and `restart` close Clue and its child processes if a Python server from that environment occupies port 8000. They refuse to stop a non-Python process or a process launched from another environment. An unfinished search is marked stopped, and listings saved before shutdown remain in the local index. Stopping the server does not delete the profile or `.data/` files. The app is not installed as a background service and does not start automatically. See [ADR 0011](docs/decisions/0011-stop-crawls-with-app.md).
 
@@ -34,6 +34,7 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 ## What is wired
 
 - Local PDF/DOCX parsing, saved editable profile, immediate CV-first search, and repeat searches using the saved profile.
+- Applied roles tracker: mark a result or saved role after applying, retain its date/link, and exclude it from later searches and Jev assessment until undone. Applications survive search resets and listing cleanup; full personal-data deletion clears them.
 - Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
 - Tech Europe Jobs through a six-hour Scrapling crawl of its public technical and Ops listings and directly linked job details (60-page cap); newsletter-gated and account-only listings are not accessed.
 - Owner-added Greenhouse, Lever, SmartRecruiters, and Scrapling careers connectors. Supported public HTTPS sources are enabled after host validation and can be paused or removed.

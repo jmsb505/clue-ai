@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from clue_ai.applications import not_applied_sql, remember_applied_urls
 from clue_ai.company_catalog import GROUP_LABELS, ROLE_LABELS
 from clue_ai.crawl_policy import (
     QUERY_ERROR_RETRY_SECONDS,
@@ -557,6 +558,7 @@ def save_jobs_with_report(database_path: Path, jobs: list[NormalizedJob]) -> Sav
                 ),
             )
             saved += 1
+            remember_applied_urls(db, job_id, primary_url, source_url)
         db.execute("COMMIT")
     return SaveJobsReport(
         saved=saved,
@@ -665,7 +667,7 @@ def update_filter_status(
 def get_run_result_counts(database_path: Path, run_id: str) -> dict[str, int]:
     with connect(database_path) as db:
         row = db.execute(
-            """SELECT COUNT(*) AS total,
+            f"""SELECT COUNT(*) AS total,
                        SUM(CASE WHEN score_state = 'scored' THEN 1 ELSE 0 END) AS scored,
                        SUM(CASE WHEN score_state != 'scored' THEN 1 ELSE 0 END) AS pending_scores,
                        SUM(CASE WHEN filter_status = 'match' THEN 1 ELSE 0 END) AS matches,
@@ -675,8 +677,10 @@ def get_run_result_counts(database_path: Path, run_id: str) -> dict[str, int]:
                        SUM(CASE WHEN filter_status = 'conflict' THEN 1 ELSE 0 END) AS conflicts,
                        SUM(CASE WHEN filter_status = 'unassessed' THEN 1 ELSE 0 END) AS unassessed
                  FROM search_results r
+                 JOIN jobs j ON j.id = r.job_id
                  LEFT JOIN job_user_state u ON u.job_id = r.job_id
-                 WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0""",
+                 WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0
+                 AND {not_applied_sql()}""",
             (run_id,),
         ).fetchone()
     return {key: int(value or 0) for key, value in dict(row).items()}
@@ -691,7 +695,7 @@ def get_run_results(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     valid_statuses = {"match", "review", "conflict", "unassessed"}
-    where = "WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0"
+    where = f"WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0 AND {not_applied_sql()}"
     params: list[Any] = [run_id]
     if filter_status == "opportunities":
         where += " AND r.filter_status IN ('match', 'review')"
@@ -760,7 +764,7 @@ def get_run_results(
 def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
     with connect(database_path) as db:
         rows = db.execute(
-            """SELECT j.*, s.id AS source_id, s.name AS source_name, s.attribution,
+            f"""SELECT j.*, s.id AS source_id, s.name AS source_name, s.attribution,
                       s.state AS source_state, s.last_state AS source_last_state,
                       s.last_checked_at AS source_checked_at,
                       js.source_url, js.context_url, js.source_posted_at,
@@ -769,7 +773,7 @@ def all_active_jobs(database_path: Path) -> list[dict[str, Any]]:
                JOIN job_sources js ON js.job_id = j.id
                JOIN sources s ON s.id = js.source_id
                LEFT JOIN job_user_state u ON u.job_id = j.id
-               WHERE j.is_active = 1
+               WHERE j.is_active = 1 AND {not_applied_sql()}
                ORDER BY j.last_checked_at DESC"""
         ).fetchall()
     grouped: dict[str, dict[str, Any]] = {}
@@ -840,8 +844,8 @@ def clear_job_user_state(database_path: Path, job_id: str) -> None:
 def saved_jobs(database_path: Path) -> list[dict[str, Any]]:
     with connect(database_path) as db:
         rows = db.execute(
-            """SELECT j.* FROM jobs j JOIN job_user_state u ON u.job_id = j.id
-               WHERE u.saved = 1 ORDER BY u.updated_at DESC"""
+            f"""SELECT j.* FROM jobs j JOIN job_user_state u ON u.job_id = j.id
+               WHERE u.saved = 1 AND {not_applied_sql()} ORDER BY u.updated_at DESC"""
         ).fetchall()
         result = [dict(row) for row in rows]
         for job in result:

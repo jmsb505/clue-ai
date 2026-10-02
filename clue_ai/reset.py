@@ -81,7 +81,7 @@ def main() -> None:
     result = reset_search_data(settings.database_path)
     print(f"Reset {result.removed['search_runs']} searches and {result.removed['jobs']} listings.")
     print("Cleared rankings, saved/hidden jobs, query caches and source/company refresh timers.")
-    print("Kept your CV, profile, API settings, source choices and Jev spend history.")
+    print("Kept your CV, profile, application tracker, API settings, source choices and Jev spend history.")
     print(f"Local backup: {result.backup_path}")
     print("Clue remains stopped. Start it when you are ready for a fresh search.")
 

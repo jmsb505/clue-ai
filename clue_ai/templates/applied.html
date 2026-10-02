@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Applied roles · Clue AI{% endblock %}
+{% block eyebrow %}YOUR APPLICATION TRACKER{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">ALREADY SENT · {{ jobs|length }} TRACKED</span>
+    <h1>Your applications,<br><em>in one place.</em></h1>
+    <p>Record applications you send on the employer's site. Applied roles stay out of your search results until you undo their status.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>✓</span><i>↗</i></div>
+</section>
+{% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
+{% if not jobs %}
+  <section class="empty-state panel">
+    <span class="empty-illustration" aria-hidden="true">✓</span>
+    <span class="kicker kicker-muted">READY WHEN YOU ARE</span>
+    <h2>No applications tracked yet.</h2>
+    <p>After applying, choose Mark applied on a search result or saved role. Clue records the date you mark it and keeps the posting link here.</p>
+    <a class="button button-dark" href="/">Find roles <span aria-hidden="true">→</span></a>
+  </section>
+{% else %}
+  <section class="job-list" aria-label="Applied jobs">
+    {% for job in jobs %}
+      <article class="job-card">
+        <div class="job-card-main">
+          <div class="job-card-heading">
+            <div class="company-avatar" aria-hidden="true">{{ (job.company or '?')[0]|upper }}</div>
+            <div class="job-title-group"><h3>{{ job.title }}</h3><p>{{ job.company or 'Company not listed' }}{% if job.location_raw %} · {{ job.location_raw }}{% endif %}</p></div>
+          </div>
+          <div class="job-tags"><span class="tag tag-green">Applied</span><span class="tag">Marked <time datetime="{{ job.applied_at }}">{{ job.applied_at[:16].replace('T', ' ') }} UTC</time></span></div>
+        </div>
+        <div class="job-card-footer">
+          <div class="source-trail"><span class="source-trail-mark" aria-hidden="true">⌁</span><span class="source-trail-links">{% for url in job.urls %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer">{% if loop.first %}Open listing{% else %}Listing {{ loop.index }}{% endif %}<span aria-hidden="true"> ↗</span></a>{% if not loop.last %} · {% endif %}{% endfor %}</span></div>
+          <div class="job-actions"><form action="/applications/{{ job.job_id }}/undo" method="post"><button class="quiet-button" type="submit" aria-label="Undo applied status for {{ job.title }}">Undo applied</button></form></div>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endif %}
+{% endblock %}

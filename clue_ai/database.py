@@ -317,6 +317,21 @@ CREATE TABLE IF NOT EXISTS job_user_state (
   hidden INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS applications (
+  job_id TEXT PRIMARY KEY,
+  canonical_url TEXT NOT NULL,
+  title TEXT NOT NULL,
+  company TEXT NOT NULL DEFAULT '',
+  location_raw TEXT NOT NULL DEFAULT '',
+  applied_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS application_urls (
+  application_id TEXT NOT NULL REFERENCES applications(job_id) ON DELETE CASCADE,
+  url TEXT NOT NULL,
+  PRIMARY KEY (application_id, url)
+);
+CREATE INDEX IF NOT EXISTS idx_applications_url ON applications(canonical_url);
+CREATE INDEX IF NOT EXISTS idx_application_urls_url ON application_urls(url);
 CREATE TABLE IF NOT EXISTS search_runs (
   id TEXT PRIMARY KEY,
   criteria_json TEXT NOT NULL,
@@ -534,6 +549,7 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
         db.execute("DELETE FROM jev_usage")
         db.execute("DELETE FROM source_query_checks")
         db.execute("DELETE FROM job_user_state")
+        db.execute("DELETE FROM applications")
         db.execute("DELETE FROM job_sources")
         db.execute("DELETE FROM jobs")
         db.execute("DELETE FROM profile")

@@ -80,9 +80,11 @@ These are working defaults that complete the pilot definition; they can be revis
 
 ## Jev's role in matching
 
+The owner can mark a result or saved role as Applied after sending an application externally. Applied roles are tracked locally with the date marked and posting links, and excluded from search candidates, visible results/counts and saved-role lists until undone. Application records survive history clearing, source expiry and search resets. Undo preserves other saved/hidden state. Full personal-data deletion clears the tracker. Matching uses retained identity and known posting URLs; a new posting with different identifiers may need a new mark. See [ADR 0016](decisions/0016-durable-applied-tracker.md).
+
 **NORMATIVE:** Jev is the required model for fit validation. The user asked for Jev to evaluate candidate fit against each job listing.
 
-**NORMATIVE:** Jev assesses every active, non-hidden candidate listing in the current local index against the full search criteria as well as the candidate profile. Software may label source, age, and explicit listing facts, but must not use role/location/date string matching to remove a candidate before Jev. Jev's filter-compatibility label is advisory and does not establish legal work authorization or guarantee the job is still open. See [ADR 0010](decisions/0010-full-candidate-jev-assessment.md).
+**NORMATIVE:** Jev assesses every active candidate listing that is neither hidden nor marked applied in the current local index against the full search criteria as well as the candidate profile. Software may label source, age, and explicit listing facts, but must not use role/location/date string matching to remove a candidate before Jev. Jev's filter-compatibility label is advisory and does not establish legal work authorization or guarantee the job is still open. See [ADR 0010](decisions/0010-full-candidate-jev-assessment.md) and [ADR 0016](decisions/0016-durable-applied-tracker.md).
 
 **NORMATIVE:** The target seniority is junior/entry-level or intern, and the position must be paid. Explicit unpaid/volunteer or explicitly mid/senior roles conflict; missing compensation or unclear level stays in `review`. These criteria are assessed by Jev and do not remove candidates before assessment. See [ADR 0012](decisions/0012-entry-level-paid-job-criteria.md).
 

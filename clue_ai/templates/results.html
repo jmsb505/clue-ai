@@ -230,6 +230,10 @@
             <input type="hidden" name="return_to" value="/searches/{{ run.id }}">
             <button class="quiet-button" type="submit" aria-label="Hide {{ job.title }}">Hide</button>
           </form>
+          <form action="/jobs/{{ job.id }}/applied" method="post">
+            <input type="hidden" name="return_to" value="/searches/{{ run.id }}">
+            <button class="quiet-button" type="submit" aria-label="Mark {{ job.title }} as applied">Mark applied</button>
+          </form>
         </div>
       </div>
     </article>

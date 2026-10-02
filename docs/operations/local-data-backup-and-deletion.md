@@ -28,13 +28,15 @@ The repair creates `.data/backups/before-matching-repair-*.sqlite3`, preserves r
 
 ### Start a fresh job search
 
-Run `.\scripts\clue.ps1 reset` from the repository. It stops the server and its crawler process tree, creates a SQLite snapshot under ignored `.data/backups/before-reset-*.sqlite3`, then clears indexed listings, saved/hidden jobs, saved searches/results, per-query refresh records and source/company refresh timestamps in one transaction. Source configurations, enabled choices and tracked-company selections remain. The CV, profile, Jev consent, `.env` and Jev spend ledger remain; deleting a search does not refund an API charge. Old ledger entries lose their search reference but still count toward the rolling limit.
+Run `.\scripts\clue.ps1 reset` from the repository. It stops the server and its crawler process tree, creates a SQLite snapshot under ignored `.data/backups/before-reset-*.sqlite3`, then clears indexed listings, saved/hidden jobs, saved searches/results, per-query refresh records and source/company refresh timestamps in one transaction. Source configurations, enabled choices and tracked-company selections remain. The CV, profile, application tracker with known posting links, Jev consent, `.env` and Jev spend ledger remain; deleting a search does not refund an API charge. Old ledger entries lose their search reference but still count toward the rolling limit.
 
 The app stays stopped after reset. Use `.\scripts\clue.ps1 start` for the next search. Every enabled source starts without a refresh cooldown. The reset refuses unfinished searches; the stop helper first marks interrupted work as stopped. If a reset fails during mutation, the transaction rolls back. Repeating it is safe and creates another local snapshot.
 
 To undo a reset, stop Clue, preserve the current database, and replace it with the `before-reset` snapshot. Ensure no old `clue.sqlite3-wal` or `clue.sqlite3-shm` files from the replaced database remain before opening the snapshot. This snapshot includes the saved profile but not CV files or `.env`, which the reset does not change. These local backups retain old search data until you delete them separately.
 
 ### Remove all personal data
+
+The full personal-data deletion control also deletes application records and their links. Undo applied on the Applied roles page removes one record; it leaves bookmarks/hidden state unchanged. Clearing only search history or using search reset preserves the application tracker. Database backups retain earlier records until separately removed.
 
 The Settings action removes the current profile, CV files, local listings, search history, saved/hidden state, usage ledger, and user-added sources from the active `.data/` directory. It also clears Jev consent and resets tracked-company choices. The built-in company directory and connector definitions remain, but all catalog entries return to untracked. It does not remove `.data/` copies the owner made elsewhere, backups held by the operating system, or data already processed by TypeSafe. Delete manual backups separately when they are no longer wanted. TypeSafe's public agreement allows some customer data to remain in its standard backups under confidentiality terms; the user's account-specific deletion behavior is unknown.
 

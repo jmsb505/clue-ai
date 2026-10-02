@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from clue_ai.applications import applied_jobs, mark_applied, undo_applied
 from clue_ai.company_catalog import GROUP_LABELS, filter_and_rank_companies
 from clue_ai.config import Settings
 from clue_ai.database import (
@@ -785,9 +786,12 @@ def create_app(
 
     @app.post("/jobs/{job_id}/{action}")
     async def job_action(request: Request, job_id: str, action: str):
-        if action not in {"save", "hide", "unsave", "unhide"}:
+        if action not in {"save", "hide", "unsave", "unhide", "applied"}:
             raise HTTPException(status_code=404, detail="Action not found.")
-        if action == "save":
+        if action == "applied":
+            if not mark_applied(db_path, job_id):
+                raise HTTPException(status_code=404, detail="Listing not found.")
+        elif action == "save":
             set_job_user_state(db_path, job_id, "saved")
         elif action == "hide":
             set_job_user_state(db_path, job_id, "hidden")
@@ -796,6 +800,19 @@ def create_app(
         form = dict(await request.form())
         target = _safe_return_path(str(form.get("return_to") or "/"))
         return RedirectResponse(target, status_code=303)
+
+    @app.get("/applied", response_class=HTMLResponse)
+    async def applied_page(request: Request):
+        return render(request, "applied.html", {
+            "active_page": "applied", "jobs": applied_jobs(db_path),
+            "notice": request.query_params.get("notice", ""),
+        })
+
+    @app.post("/applications/{application_id}/undo")
+    async def undo_application(request: Request, application_id: str):
+        if not undo_applied(db_path, application_id):
+            raise HTTPException(status_code=404, detail="Application record not found.")
+        return RedirectResponse("/applied?notice=Applied+status+removed.+The+job+is+eligible+for+search+again.", status_code=303)
 
     @app.get("/saved", response_class=HTMLResponse)
     async def saved_page(request: Request):
