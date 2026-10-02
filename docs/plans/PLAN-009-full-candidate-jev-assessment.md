@@ -1,6 +1,6 @@
 # PLAN-009 — Full-candidate Jev assessment
 
-**Status:** M1 implemented; static validation passed; main checkpoint pending
+**Status:** M1 pushed to `main` at `1f21e87`; live Jev workflow remains for owner verification  
 **Created:** 2026-10-02
 **Last updated:** 2026-10-02
 
@@ -145,7 +145,7 @@ Revert the M1 commit to restore pre-filtered results and fingerprint fallback. T
 - [x] Resolved current TypeSafe documentation: System One evaluates one state against a map of typed questions; existing five-job batch can carry multiple listing assessments.
 - [x] Complete planning and decision documentation checkpoint.
 - [x] Implement and statically validate M1; keep PLAN-007 changes unstaged.
-- [ ] Commit and push M1 to `main` after staging only this milestone's changes.
+- [x] Commit and push M1 to `main` after staging only this milestone's changes (`1f21e87`).
 
 ## Implementation discoveries / decisions
 
@@ -157,4 +157,4 @@ Revert the M1 commit to restore pre-filtered results and fingerprint fallback. T
 
 ## Completion evidence
 
-Ruff, Python byte-compilation, Jinja parsing, and `git diff --check` passed in Conda `gen`. Source inspection confirms all active non-hidden indexed listings are snapshotted without calling `filter_jobs()` as a gate, filter criteria and relevant job facts enter each bounded Jev request, and per-run result retrieval is paginated. No live search, TypeSafe request, or personal CV was sent during validation. The live end-to-end workflow remains for the owner to run after updating/restarting the local app. Direct-to-main checkpoint is pending.
+Ruff, Python byte-compilation, Jinja parsing, and `git diff --check` passed in Conda `gen`. Source inspection confirms all active non-hidden indexed listings are snapshotted without calling `filter_jobs()` as a gate, filter criteria and relevant job facts enter each bounded Jev request, and per-run result retrieval is paginated. Commit `1f21e87` is pushed to `main`. No live search, TypeSafe request, or personal CV was sent during validation. The live end-to-end workflow remains for the owner to run after updating/restarting the local app.
