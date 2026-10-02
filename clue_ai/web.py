@@ -32,6 +32,7 @@ from clue_ai.external_links import (
     normalize_x_status_url,
 )
 from clue_ai.filters import criteria_from_form
+from clue_ai.jev import FILTER_CHECK_LABELS
 from clue_ai.repository import (
     add_source,
     claim_scoring_run,
@@ -658,6 +659,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Search not found.")
         result_counts = get_run_result_counts(db_path, run_id)
         status_views = {
+            "opportunities": "opportunities",
             "all": None,
             "match": "match",
             "review": "review",
@@ -665,12 +667,14 @@ def create_app(
             "unassessed": "unassessed",
         }
         status_count_keys = {
+            "opportunities": "opportunities",
             "match": "matches",
             "review": "review",
             "conflict": "conflicts",
             "unassessed": "unassessed",
         }
-        active_view = request.query_params.get("view", "all")
+        default_view = "opportunities" if result_counts["opportunities"] else "all"
+        active_view = request.query_params.get("view", default_view)
         if active_view not in status_views:
             active_view = "all"
         try:
@@ -709,6 +713,7 @@ def create_app(
                 "run": run,
                 "jobs": jobs,
                 "result_counts": result_counts,
+                "filter_check_labels": FILTER_CHECK_LABELS,
                 "active_view": active_view,
                 "shown_total": shown_total,
                 "current_page": current_page,

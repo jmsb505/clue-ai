@@ -1,6 +1,6 @@
 # PLAN-014 — Clean slate and practical matching
 
-**Status:** M1 validated and delivered in this checkpoint; M2 in progress
+**Status:** Complete; M1 pushed (`777bb48`), M2 validated and delivered in this checkpoint
 **Created / updated:** 2026-10-02
 
 ## Objective and motivation
@@ -38,13 +38,13 @@ Update the reset operations guide, product definition, README and a new decision
 
 **Goal:** Rank related roles broadly and retain uncertainty with inspectable filter decisions.
 
-- [ ] Replace the composite filter question with five scoped typed checks in each existing batch; version rubric.
-- [ ] Preserve clear exclusions; use review for missing facts, preferred experience, uncertain model conflicts and stale-but-not-expired postings.
-- [ ] Rank target roles and AI affinity without exact-title rejection.
-- [ ] Add opportunities counts/query/view and scoped filter details to result cards.
-- [ ] Remove action sentences from inferred CV titles.
-- [ ] Validate mock Jev handling, required/missing answers, ranking, counts, pagination and rendering; update product/decision docs.
-- [ ] Push checkpoint to main, execute the local reset, clean the saved contaminated target roles, verify local data invariants, and leave app stopped.
+- [x] Replace the composite filter question with five scoped typed checks in each existing batch; version rubric.
+- [x] Preserve clear exclusions; use review for missing facts, preferred experience, uncertain model conflicts and stale-but-not-expired postings.
+- [x] Rank target roles and AI affinity without exact-title rejection.
+- [x] Add opportunities counts/query/view and scoped filter details to result cards.
+- [x] Remove action sentences from inferred CV titles.
+- [x] Validate mock Jev handling, required/missing answers, ranking, counts, pagination and rendering; update product/decision docs.
+- [x] Push checkpoint to main, execute the local reset, clean the saved contaminated target roles, verify local data invariants, and leave app stopped.
 
 **Acceptance:** No missing check can yield confirmed match. Clear confident conflicts remain conflict; ambiguous conflicts remain review. High-fit review roles are visible alongside matches, ordered by fit, with exact counts and paginated links. Every check and posting link is inspectable. Reset state has zero indexed jobs/results/runs/query checks and reset source/company timers while preserving profile and spend.
 
@@ -60,3 +60,8 @@ The reset backup resides under ignored `.data/backups/`. Restore the SQLite data
 - Confirmed contaminated inferred target roles and the aggregate filter rubric's opaque decisions.
 - M1: Conda `gen` `pytest -q tests/test_reset.py`: **5 passed**. Focused Ruff and PowerShell parser validation passed. Tests cover ledger detachment, profile/CV/source/company retention, backup readability, refresh eligibility, repeated reset, active-run refusal and transactional rollback.
 - Executed the authorized local reset with the app stopped: removed **15 searches and 1,342 listings** and cleared all query/crawler timers. SQLite backup created under ignored `.data/backups/`. No live crawl or TypeSafe request was made.
+- M2: Focused Conda `gen` validation passed **54 tests**, plus the added filtered second-page test. Coverage includes the five check outcomes, low/invalid confidence, missing answers, filter-only retries without score loss, retained sponsorship and late-description pay details, opportunity counts/order/hidden state, per-check rendering, parsed role cleanup, reset integrity and mocked CV workflow. Updated the existing CV smoke test's obsolete copy assertion and its typed Jev mock; retained its upload/scoring/consent/redaction checks and added the senior conflict assertion.
+- Verified the active local database against the reset backup: all six search/index/query tables empty, source/company timers cleared, source choices/company tracking/settings/spend preserved, CV file present, all other profile fields retained, foreign keys valid. Removed only the contaminated action sentence from target-role suggestions.
+- Additional discovery: saved-result retrieval previously omitted normalized sponsorship and truncated Jev descriptions at 5,000 characters. It now supplies sponsorship and the existing 9,000-character bound so late compensation details are retained.
+- Final integration evidence: exported the staged Git index to an ignored validation directory, confirmed imports came from that snapshot, and ran the focused suite in Conda `gen`: **55 passed**. Ruff passed on all changed Python modules and tests. `git diff --cached --check` passed. The index excludes every pre-existing PLAN-007 hunk; those edits remain in the working tree. The existing CV workflow test now uses typed filter answers rather than invalid numeric filter choices.
+- Final local-state check against the backup passed; the launcher reports **Clue stopped, port 8000 free**. No new live crawl or Jev call was made. Real-world matching quality remains for the owner's next fresh search; no match count is promised.

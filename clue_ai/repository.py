@@ -635,10 +635,27 @@ def update_filter_status(
     run_id: str,
     job_id: str,
     filter_status: str,
+    *,
+    dimensions: dict[str, Any] | None = None,
 ) -> None:
     if filter_status not in {"match", "review", "conflict", "unassessed"}:
         raise ValueError("Unsupported Jev filter status.")
     with connect(database_path) as db:
+        if dimensions is not None:
+            row = db.execute(
+                "SELECT dimensions_json FROM search_results WHERE run_id = ? AND job_id = ?",
+                (run_id, job_id),
+            ).fetchone()
+            if row is not None:
+                existing = {
+                    key: value for key, value in json.loads(row["dimensions_json"]).items()
+                    if not key.startswith("filter_")
+                }
+                existing.update(dimensions)
+                db.execute(
+                    "UPDATE search_results SET dimensions_json = ? WHERE run_id = ? AND job_id = ?",
+                    (json.dumps(existing), run_id, job_id),
+                )
         db.execute(
             "UPDATE search_results SET filter_status = ? WHERE run_id = ? AND job_id = ?",
             (filter_status, run_id, job_id),
@@ -652,6 +669,8 @@ def get_run_result_counts(database_path: Path, run_id: str) -> dict[str, int]:
                        SUM(CASE WHEN score_state = 'scored' THEN 1 ELSE 0 END) AS scored,
                        SUM(CASE WHEN score_state != 'scored' THEN 1 ELSE 0 END) AS pending_scores,
                        SUM(CASE WHEN filter_status = 'match' THEN 1 ELSE 0 END) AS matches,
+                       SUM(CASE WHEN filter_status IN ('match', 'review') THEN 1 ELSE 0 END)
+                           AS opportunities,
                        SUM(CASE WHEN filter_status = 'review' THEN 1 ELSE 0 END) AS review,
                        SUM(CASE WHEN filter_status = 'conflict' THEN 1 ELSE 0 END) AS conflicts,
                        SUM(CASE WHEN filter_status = 'unassessed' THEN 1 ELSE 0 END) AS unassessed
@@ -674,9 +693,16 @@ def get_run_results(
     valid_statuses = {"match", "review", "conflict", "unassessed"}
     where = "WHERE r.run_id = ? AND COALESCE(u.hidden, 0) = 0"
     params: list[Any] = [run_id]
-    if filter_status in valid_statuses:
+    if filter_status == "opportunities":
+        where += " AND r.filter_status IN ('match', 'review')"
+    elif filter_status in valid_statuses:
         where += " AND r.filter_status = ?"
         params.append(filter_status)
+    status_order = (
+        "CASE r.filter_status WHEN 'match' THEN 0 WHEN 'review' THEN 1 "
+        "WHEN 'conflict' THEN 2 ELSE 3 END,"
+        if filter_status != "opportunities" else ""
+    )
     pagination = ""
     if limit is not None:
         pagination = " LIMIT ? OFFSET ?"
@@ -690,7 +716,8 @@ def get_run_results(
                       r.freshness_status, r.freshness_age_days,
                       r.dimensions_json, r.evidence_json, r.rubric_version,
                       j.id, j.title, j.company, j.description, j.location_raw, j.workplace_type,
-                      j.employment_type, j.salary_min, j.salary_max, j.salary_currency,
+                      j.employment_type, j.visa_sponsorship,
+                      j.salary_min, j.salary_max, j.salary_currency,
                       j.salary_period, j.posted_at, j.valid_through, j.eligibility_status,
                       j.eligibility_evidence, j.first_seen_at, j.last_checked_at,
                       COALESCE(u.saved, 0) AS saved, COALESCE(u.hidden, 0) AS hidden
@@ -699,10 +726,10 @@ def get_run_results(
                LEFT JOIN job_user_state u ON u.job_id = j.id
                {where}
                ORDER BY
-                 CASE r.filter_status WHEN 'match' THEN 0 WHEN 'review' THEN 1
-                      WHEN 'conflict' THEN 2 ELSE 3 END,
+                 {status_order}
                  CASE WHEN r.combined_score IS NULL THEN 1 ELSE 0 END,
-                 r.combined_score DESC, r.rank ASC{pagination}""",
+                 r.combined_score DESC,
+                 CASE r.filter_status WHEN 'match' THEN 0 ELSE 1 END, r.rank ASC{pagination}""",
             params,
         ).fetchall()
         jobs = [dict(row) for row in rows]
@@ -723,6 +750,10 @@ def get_run_results(
                     job[field.removesuffix("_json")] = json.loads(job[field])
                 except (TypeError, json.JSONDecodeError):
                     job[field.removesuffix("_json")] = {} if field == "dimensions_json" else []
+            job["filter_checks"] = {
+                key.removeprefix("filter_"): value
+                for key, value in job["dimensions"].items() if key.startswith("filter_")
+            }
     return jobs
 
 

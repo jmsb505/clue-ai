@@ -42,6 +42,7 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 - Profile-matched directory of 80+ Italian, European, AI/data-platform, and global technology employers, with local search-set controls. Automatic multi-company board refresh from this list is tracked in [PLAN-006](docs/plans/PLAN-006-profile-aware-company-board-discovery.md).
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
 - Automatic Jev batches after searches when enabled, with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
+- Potential opportunities combine confirmed matches and jobs needing verification, ranked by fit with AI relevance emphasized. Related titles remain eligible; separate Jev checks make pay, seniority, location, workplace and additional requirement decisions inspectable. Missing facts stay uncertain and explicit conflicts remain flagged. See [ADR 0014](docs/decisions/0014-practical-matching-and-clean-slate.md).
 - Manual X.com search links and owner-reviewed job leads. Clue does not scrape X, call its API, or open/resolve pasted links; see [the X lead decision](docs/decisions/0007-x-manual-lead-discovery.md).
 
 The initial feeds do not cover the whole internet. Open the original listing and verify it is still available and the employer can hire where you live.

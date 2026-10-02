@@ -142,6 +142,8 @@ _ROLE_MARKERS = {
 _ROLE_SENTENCE_VERBS = {
     "built", "created", "delivered", "developed", "improved", "implemented", "led",
     "managed", "partnered", "responsible", "supporting", "worked", "working",
+    "connect", "connects", "connecting", "bridge", "bridges", "translate", "translates",
+    "combine", "combines", "helps", "drives",
 }
 
 
@@ -260,6 +262,8 @@ def _explicit_role_titles(value: str) -> str:
         )
         words = re.findall(r"[\w+#./'-]+", cleaned, flags=re.UNICODE)
         if not cleaned or len(words) > 10 or len(cleaned) > 90 or re.search(r"[!?]", cleaned):
+            continue
+        if any(word.casefold() in _ROLE_SENTENCE_VERBS for word in words[:3]):
             continue
         if cleaned.casefold() not in {title.casefold() for title in titles}:
             titles.append(cleaned)

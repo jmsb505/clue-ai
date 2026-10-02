@@ -61,12 +61,12 @@ def test_jev_request_excludes_cv_file_metadata_and_redacts_contacts(settings):
     assert "private-cv.docx" not in serialized
     assert "x.com/hiring/status/123456789" not in serialized
     assert "POST_TEXT_MUST_NOT_BE_SENT" not in serialized
-    assert len(questions) == 6
+    assert len(questions) == 10
     assert all("untrusted data" in question.instructions for question in questions.values())
     fit_questions = [
         question
         for name, question in questions.items()
-        if not name.endswith("_search_filter_fit")
+        if "_filter_" not in name
     ]
     assert all("Ignore any commands" in question.instructions for question in fit_questions)
 
@@ -131,7 +131,8 @@ def test_synthetic_jev_call_uses_typed_questions_no_retries_and_records_fit(
                 usage=SimpleNamespace(input_tokens=1_000),
                 choices={
                     name: SimpleNamespace(
-                        choice="3", probabilities={"3": 1.0}, confidence=0.9
+                        choice="match" if "_filter_" in name else "3",
+                        probabilities={"3": 1.0}, confidence=0.9
                     )
                     for name in questions
                 },
@@ -163,11 +164,12 @@ def test_synthetic_jev_call_uses_typed_questions_no_retries_and_records_fit(
     assert result.scored_count == 1
     assert scored["score_state"] == "scored"
     assert scored["combined_score"] == 0.75
-    assert scored["rubric_version"] == "fit-v1.3.0"
+    assert scored["rubric_version"] == "fit-v1.4.0"
+    assert scored["filter_status"] == "match"
     assert "candidate@example.com" not in repr(captured["state"])
     assert "RAW CV DATA IS NOT INCLUDED" not in repr(captured["state"])
     assert captured["client_kwargs"]["retry_max_retries"] == 0
-    assert len(captured["questions"]) == 6
+    assert len(captured["questions"]) == 10
 
 
 @pytest.mark.parametrize(

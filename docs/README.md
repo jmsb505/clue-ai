@@ -21,6 +21,7 @@ This repository contains the local personal job-search app, its product definiti
 | Stop active crawls and mark interrupted searches | [ADR 0011](decisions/0011-stop-crawls-with-app.md) and [PLAN-010](plans/PLAN-010-stop-crawls-with-app.md) |
 | Require junior/intern paid roles and direct listing links | [ADR 0012](decisions/0012-entry-level-paid-job-criteria.md) and [PLAN-011](plans/PLAN-011-entry-level-paid-role-filters.md) |
 | Prioritize AI/ML-related roles while retaining profile-fit jobs in other domains | [ADR 0013](decisions/0013-ai-domain-weighted-jev-ranking.md) and [PLAN-012](plans/PLAN-012-ai-domain-weighted-ranking.md) |
+| Reset local search state and broaden matching with inspectable requirements | [ADR 0014](decisions/0014-practical-matching-and-clean-slate.md) and [PLAN-014](plans/PLAN-014-clean-slate-and-practical-matching.md) |
 | Add a bounded Tech Europe Jobs source and review similar European job boards | [ADR 0014](decisions/0014-techeurope-public-job-source.md) and [PLAN-013](plans/PLAN-013-techeurope-and-european-sources.md) |
 | Synthetic Jev ranking evidence | [PLAN-001 M3a evaluation](evaluations/PLAN-001-M3-synthetic-jev.md) |
 | Manual local backup and deletion scope | [Backup and deletion guide](operations/local-data-backup-and-deletion.md) |

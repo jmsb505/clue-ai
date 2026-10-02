@@ -11,8 +11,9 @@
     <p class="results-scope"><b>Search:</b> {{ run.criteria.roles or 'All roles' }}{% if run.criteria.target_seniority == 'junior_or_intern' and run.criteria.paid_only %} · Junior or intern · Paid only{% endif %} · {{ run.criteria.workplace|title }} · eligible from {{ run.criteria.work_from }}</p>
   </div>
   <div class="results-count-card">
-    <span class="count-number">{{ result_counts.matches }}</span>
-    <span>Jev filter matches</span>
+    <span class="count-number">{{ result_counts.opportunities }}</span>
+    <span>Potential opportunities</span>
+    <small>{{ result_counts.matches }} confirmed filter matches · {{ result_counts.review }} need verification</small>
     <small>of {{ result_counts.total }} visible listings in this search</small>
   </div>
 </section>
@@ -49,7 +50,8 @@
 
 <section class="results-toolbar">
   <div><span class="kicker kicker-muted">THE FULL CANDIDATE SET</span><h2>
-    {% if active_view == 'all' %}{{ result_counts.total }} collected listings
+    {% if active_view == 'opportunities' %}{{ shown_total }} potential opportunities
+    {% elif active_view == 'all' %}{{ result_counts.total }} collected listings
     {% elif active_view == 'match' %}{{ shown_total }} filter matches
     {% elif active_view == 'review' %}{{ shown_total }} to review
     {% elif active_view == 'conflict' %}{{ shown_total }} filter conflicts
@@ -72,12 +74,17 @@
 </section>
 
 <nav class="results-filter-nav" aria-label="Filter listings by Jev assessment">
-  <a class="{% if active_view == 'all' %}is-active{% endif %}" href="/searches/{{ run.id }}" {% if active_view == 'all' %}aria-current="page"{% endif %}>All <b>{{ result_counts.total }}</b></a>
+  <a class="{% if active_view == 'opportunities' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=opportunities" {% if active_view == 'opportunities' %}aria-current="page"{% endif %}>Opportunities <b>{{ result_counts.opportunities }}</b></a>
+  <a class="{% if active_view == 'all' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=all" {% if active_view == 'all' %}aria-current="page"{% endif %}>All <b>{{ result_counts.total }}</b></a>
   <a class="{% if active_view == 'match' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=match" {% if active_view == 'match' %}aria-current="page"{% endif %}>Matches <b>{{ result_counts.matches }}</b></a>
   <a class="{% if active_view == 'review' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=review" {% if active_view == 'review' %}aria-current="page"{% endif %}>Review <b>{{ result_counts.review }}</b></a>
   <a class="{% if active_view == 'conflict' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=conflict" {% if active_view == 'conflict' %}aria-current="page"{% endif %}>Conflicts <b>{{ result_counts.conflicts }}</b></a>
   <a class="{% if active_view == 'unassessed' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=unassessed" {% if active_view == 'unassessed' %}aria-current="page"{% endif %}>Not assessed <b>{{ result_counts.unassessed }}</b></a>
 </nav>
+
+{% if active_view == 'opportunities' %}
+  <p class="results-snapshot-note">Ranked by candidate fit, including AI relevance. Jobs needing verification stay in this list; their pay, level or location may still need confirmation. Review does not mean a confirmed paid junior role.</p>
+{% endif %}
 
 {% if result_counts.total %}
   <div class="scoring-summary"><span aria-hidden="true">✳</span> Assessment status: {{ result_counts.scored }} candidate fit scores · {{ result_counts.matches }} match your filters · {{ result_counts.review }} need review · {{ result_counts.conflicts }} conflict · {{ result_counts.unassessed }} awaiting a filter assessment. Fit scores and filter status are separate; fit scores are not hiring probabilities. <small>{{ usage.used_usd|round(4) }} USD / {{ usage.budget_usd|round(2) }} USD app limit over 30 days</small></div>
@@ -90,7 +97,7 @@
     {% if result_counts.total %}
       <h2>No listings have this status yet.</h2>
       <p>Switch to All to review every collected listing and see its current Jev assessment state.</p>
-      <a class="button button-dark" href="/searches/{{ run.id }}">Show all listings <span aria-hidden="true">→</span></a>
+      <a class="button button-dark" href="/searches/{{ run.id }}?view=all">Show all listings <span aria-hidden="true">→</span></a>
     {% else %}
       <h2>No active listings were collected.</h2>
       <p>Broaden a role or search filter, then run a new search. This search and its source coverage remain in your history.</p>
@@ -168,11 +175,20 @@
           <details class="fit-breakdown">
             <summary>How Jev compared this role <span>{% if job.confidence is not none %}signal confidence {{ "%.2f"|format(job.confidence) }}{% endif %}</span></summary>
             <div class="dimension-grid">
-              {% for key, dimension in job.dimensions.items() %}
+              {% for key, dimension in job.dimensions.items() if not key.startswith('filter_') %}
                 <div><span>{% if key == 'ai_relevance' %}AI domain relevance{% else %}{{ key|replace('_', ' ')|title }}{% endif %}</span><b>{% if dimension.score is not none %}{{ "%.2f"|format(dimension.score) }}{% else %}Not enough evidence{% endif %}</b></div>
               {% endfor %}
             </div>
             <p>Scores summarize comparison evidence on a 0–1 scale. Confidence is the model's confidence in its response, not confidence of getting hired.</p>
+            {% if job.filter_checks %}
+              <p><b>Requirement checks</b> · Jev's decisions; verify them on the posting.</p>
+              <ul class="evidence-list">
+                {% for key, label in filter_check_labels.items() %}
+                  {% set check = job.filter_checks.get(key) %}
+                  <li><b>{{ label }}:</b> {% if check %}{% if check.status == 'match' %}Supported{% elif check.status == 'conflict' %}Conflicts{% else %}Needs verification{% endif %} · model confidence {{ '%.2f'|format(check.confidence) }}{% if check.model_status != check.status %} (uncertain {{ check.model_status }} kept for review){% endif %}{% else %}Answer pending{% endif %}</li>
+                {% endfor %}
+              </ul>
+            {% endif %}
           </details>
         {% endif %}
         <details class="job-description">

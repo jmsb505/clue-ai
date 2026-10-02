@@ -20,7 +20,7 @@
     <div class="form-grid">
       <label class="field field-wide">
         <span>Roles you're interested in</span>
-        <small>Use a few job titles separated by commas. Clue uses these for discovery and filtering.</small>
+        <small>Use a few job titles separated by commas. These guide discovery and ranking; related roles stay eligible.</small>
         <input name="roles" maxlength="500" value="{{ criteria.roles }}" placeholder="Product designer, UX researcher, service designer">
       </label>
       <label class="field">
@@ -70,11 +70,11 @@
       <div><span class="kicker kicker-muted">02 · NON-NEGOTIABLES</span><h2>What should a role include?</h2></div>
       <span class="mini-badge">Jev checks every listing</span>
     </div>
-    <div class="alert alert-soft"><b>Required for this search:</b> junior roles or internships, and paid work only. Jev marks clear conflicts and keeps unclear seniority or pay in Review; no listing is removed before assessment.</div>
+    <div class="alert alert-soft"><b>Your focus:</b> junior, graduate, entry-level roles or internships, with paid compensation. Jev checks each requirement separately. Unclear pay, level or location stays in Potential opportunities with a verification label; clear conflicts are flagged.</div>
     <div class="form-grid">
       <label class="field">
         <span>Must-have terms</span>
-        <small>Every term must appear in the listing text.</small>
+        <small>Use actual requirements. Equivalent wording counts; missing evidence stays for review. Put preferences below.</small>
         <textarea name="must_have" rows="3" maxlength="1000" placeholder="Figma, accessibility">{{ criteria.must_have }}</textarea>
       </label>
       <label class="field">

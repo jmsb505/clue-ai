@@ -607,7 +607,12 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
         def system_one(self, *, state, questions):
             sent_states.append(state)
             choices = {
-                name: SimpleNamespace(choice="4", confidence=0.9, probabilities={"4": 1.0})
+                name: SimpleNamespace(
+                    choice=("conflict" if name.endswith("_filter_seniority")
+                            else "review" if name.endswith("_filter_pay")
+                            else "match" if "_filter_" in name else "4"),
+                    confidence=0.9, probabilities={"4": 1.0},
+                )
                 for name in questions
             }
             return SimpleNamespace(
@@ -647,6 +652,8 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
     result = get_run_results(settings.database_path, run_id)[0]
     assert result["score_state"] == "scored"
     assert result["combined_score"] == 1.0
+    assert result["filter_status"] == "conflict"
+    assert result["dimensions"]["filter_seniority"]["status"] == "conflict"
     assert get_settings(settings.database_path)["jev_consent_at"]
     assert len(sent_states) == 1
     assert scoring_stages == [("scoring", "jev")]
@@ -654,7 +661,8 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
     assert "candidate.docx" not in str(sent_states[0])
 
     page = client.get(response.headers["location"])
-    assert "1 listings scored with Jev" in page.text
+    assert "1 candidate fit scores" in page.text
+    assert "Requirement checks" in page.text
     assert "Score with Jev" not in page.text
 
 
