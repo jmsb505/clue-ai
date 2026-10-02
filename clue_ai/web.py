@@ -664,6 +664,12 @@ def create_app(
             "conflict": "conflict",
             "unassessed": "unassessed",
         }
+        status_count_keys = {
+            "match": "matches",
+            "review": "review",
+            "conflict": "conflicts",
+            "unassessed": "unassessed",
+        }
         active_view = request.query_params.get("view", "all")
         if active_view not in status_views:
             active_view = "all"
@@ -674,9 +680,7 @@ def create_app(
         page_size = 50
         view_status = status_views[active_view]
         shown_total = (
-            result_counts[view_status + "s"]
-            if view_status in {"match", "conflict"}
-            else result_counts[view_status]
+            result_counts[status_count_keys[view_status]]
             if view_status
             else result_counts["total"]
         )
