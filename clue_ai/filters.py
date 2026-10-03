@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from clue_ai.domain import SearchCriteria
+from clue_ai.job_focus import focused_roles
 from clue_ai.jobs import classify_location
 
 DEFAULT_FIT_WEIGHTS = {
     "role": 25,
-    "skills": 25,
-    "experience": 10,
-    "ai_relevance": 35,
+    "skills": 15,
+    "experience": 5,
+    "ai_relevance": 50,
     "preference": 5,
 }
 LEGACY_DEFAULT_FIT_WEIGHTS = {
@@ -152,6 +153,8 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
             name: _integer(form.get(f"{name}_weight"), default)
             for name, default in DEFAULT_FIT_WEIGHTS.items()
         }
+        if weights == {"role": 25, "skills": 25, "experience": 10, "ai_relevance": 35, "preference": 5}:
+            weights = DEFAULT_FIT_WEIGHTS.copy()
     elif legacy_weights == LEGACY_DEFAULT_FIT_WEIGHTS:
         weights = DEFAULT_FIT_WEIGHTS.copy()
     elif not any(legacy_weights.values()):
@@ -162,7 +165,7 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
             "ai_relevance": min(100, max(legacy_weights.values()) + 5),
         }
     return SearchCriteria(
-        roles=str(form.get("roles", ""))[:500],
+        roles=focused_roles(str(form.get("roles", ""))),
         target_seniority="junior_or_intern",
         paid_only=True,
         work_from=str(form.get("work_from", "Italy"))[:100],

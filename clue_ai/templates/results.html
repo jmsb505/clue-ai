@@ -96,10 +96,10 @@
     <span class="kicker kicker-muted">{% if result_counts.total %}NO LISTINGS IN THIS VIEW{% else %}NO ACTIVE LISTINGS{% endif %}</span>
     {% if result_counts.total %}
       <h2>No listings have this status yet.</h2>
-      <p>Switch to All to review every collected listing and see its current Jev assessment state.</p>
+      <p>Switch to All to review every candidate retained for this run and see its current Jev assessment state.</p>
       <a class="button button-dark" href="/searches/{{ run.id }}?view=all">Show all listings <span aria-hidden="true">→</span></a>
     {% else %}
-      <h2>No active listings were collected.</h2>
+      <h2>No active candidates remain in this search.</h2>
       <p>Broaden a role or search filter, then run a new search. This search and its source coverage remain in your history.</p>
       <a class="button button-dark" href="/search">Adjust the search <span aria-hidden="true">→</span></a>
     {% endif %}

@@ -34,6 +34,7 @@ from clue_ai.external_links import (
 )
 from clue_ai.filters import criteria_from_form
 from clue_ai.jev import FILTER_CHECK_LABELS
+from clue_ai.job_focus import focused_roles
 from clue_ai.repository import (
     add_source,
     claim_scoring_run,
@@ -428,7 +429,7 @@ def create_app(
                 criteria = criteria_from_form(latest["criteria"])
             else:
                 criteria = SearchCriteria(
-                    roles=profile.target_roles,
+                    roles=focused_roles(profile.target_roles),
                     work_from=str(settings_row.get("default_work_from") or "Italy"),
                     workplace="remote",
                     requires_sponsorship=profile.requires_sponsorship,
@@ -504,7 +505,7 @@ def create_app(
             criteria = criteria_from_form(latest["criteria"])
         else:
             criteria = SearchCriteria(
-                roles=profile.target_roles,
+                roles=focused_roles(profile.target_roles),
                 must_have="",
                 work_from="Italy",
                 requires_sponsorship=profile.requires_sponsorship,

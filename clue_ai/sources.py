@@ -7,7 +7,7 @@ import re
 import socket
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 from urllib.error import HTTPError, URLError
@@ -155,6 +155,40 @@ def fetch_source(
 
 
 def _fetch_himalayas(
+    source: dict[str, Any],
+    criteria: SearchCriteria,
+    settings: Settings,
+    *,
+    max_pages: int = 25,
+) -> FetchOutcome:
+    """Search alternatives independently within the existing total daily page cap."""
+    page_budget = max(1, min(25, max_pages))
+    queries = (_role_queries(criteria.roles) or [""])[:min(4, page_budget)]
+    combined = FetchOutcome()
+    for index, query in enumerate(queries):
+        if index:
+            time.sleep(1.0)
+        budget = page_budget // len(queries) + (index < page_budget % len(queries))
+        outcome = _fetch_himalayas_query(source, replace(criteria, roles=query), settings, max_pages=budget)
+        combined.jobs.extend(outcome.jobs)
+        combined.checked += outcome.checked
+        combined.response_bytes += outcome.response_bytes
+        combined.raw_records += outcome.raw_records
+        combined.parse_failures += outcome.parse_failures
+        for status, count in outcome.status_counts.items():
+            combined.status_counts[status] = combined.status_counts.get(status, 0) + count
+        if outcome.blocked:
+            combined.blocked = True
+            combined.message = outcome.message
+            return combined
+    combined.message = (
+        f"Retrieved {len(combined.jobs)} Himalayas listings from {combined.checked} pages "
+        f"across {len(queries)} alternative AI role queries; total cap {page_budget} pages."
+    )
+    return combined
+
+
+def _fetch_himalayas_query(
     source: dict[str, Any],
     criteria: SearchCriteria,
     settings: Settings,

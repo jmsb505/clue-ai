@@ -22,7 +22,7 @@ from clue_ai.repository import (
 )
 
 FIT_DIMENSIONS = ("role", "skills", "experience", "ai_relevance", "preferences")
-RUBRIC_VERSION = "fit-v1.4.0"
+RUBRIC_VERSION = "fit-v1.5.0"
 SCORE_LEVELS = {
     "0": "Clear, explicit contradictory evidence in this dimension. Do not use 0 merely because evidence is missing.",
     "1": "Weak alignment: only indirect or minimal evidence supports this dimension.",
@@ -39,7 +39,9 @@ FILTER_STATUS_CHOICES = {
 FILTER_ASSESSMENT_INSTRUCTIONS = (
     "Assess only the requirement named in this question. Target role titles are alternatives and "
     "discovery/ranking preferences, not hard constraints; related roles and transferable skills "
-    "remain in scope. AI relevance also affects ranking only. Missing skills, differently worded "
+    "remain in scope within AI engineering, model-building, LLM/agent work, computer vision, "
+    "ML deployment or technical AI integration. Prior analyst experience is candidate evidence, "
+    "not a request for generic analyst work. Missing skills, differently worded "
     "job titles, or limited candidate experience must not by themselves cause a filter conflict. "
     "Use review for missing or ambiguous facts. Use conflict only for explicit contradictory "
     "evidence or a user's explicit include-unknown exclusion. Do not invent listing details, "
@@ -102,7 +104,11 @@ FILTER_CHECK_INSTRUCTIONS = {
 DIMENSION_INSTRUCTIONS = {
     "role": (
         "Assess role alignment between candidate target roles, state.search_criteria.roles, and the job title and responsibilities. "
-        "Role titles are alternatives, not cumulative requirements. Include related roles and transferable responsibilities; "
+        "Role titles are alternatives, not cumulative requirements. Prioritize AI/ML engineering, "
+        "agents/LLMs/RAG, computer vision/NLP, model research and inference/deployment. "
+        "Adjacent backend, platform or data work should actually implement AI/ML systems. "
+        "Do not reward generic analyst/reporting work merely because the CV includes it. "
+        "Include related technical roles and transferable responsibilities; "
         "do not demand exact job-title wording or treat a CV summary sentence as a required title. "
         "Use only job-related evidence in the supplied state."
     ),

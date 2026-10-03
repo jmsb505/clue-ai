@@ -6,7 +6,7 @@
   <div>
     <span class="kicker kicker-muted">STEP 02 · WHAT DOES A GOOD ROLE LOOK LIKE?</span>
     <h1>Set the search.<br><em>Keep the choice.</em></h1>
-    <p>Clue keeps every collected listing in your results. Jev reviews candidate fit and your requirements when scoring is enabled.</p>
+    <p>Clue screens for AI engineering and related technical work locally, then Jev reviews candidate fit and your requirements.</p>
   </div>
   <div class="intro-mark intro-mark-search" aria-hidden="true"><span>02</span><i>⌕</i></div>
 </section>
@@ -20,8 +20,8 @@
     <div class="form-grid">
       <label class="field field-wide">
         <span>Roles you're interested in</span>
-        <small>Use a few job titles separated by commas. These guide discovery and ranking; related roles stay eligible.</small>
-        <input name="roles" maxlength="500" value="{{ criteria.roles }}" placeholder="Product designer, UX researcher, service designer">
+        <small>AI/ML, LLM/agent, computer vision/NLP, ML deployment and technical AI integration roles. Separate titles with commas; related technical work stays eligible.</small>
+        <input name="roles" maxlength="500" value="{{ criteria.roles }}" placeholder="AI Engineer, Machine Learning Engineer, LLM Engineer, MLOps Engineer">
       </label>
       <label class="field">
         <span>Where must the employer allow you to work from?</span>
@@ -68,14 +68,14 @@
   <section class="panel search-panel">
     <div class="panel-header">
       <div><span class="kicker kicker-muted">02 · NON-NEGOTIABLES</span><h2>What should a role include?</h2></div>
-      <span class="mini-badge">Jev checks every listing</span>
+      <span class="mini-badge">AI focus before Jev</span>
     </div>
-    <div class="alert alert-soft"><b>Your focus:</b> junior, graduate, entry-level roles or internships, with paid compensation. Jev checks each requirement separately. Unclear pay, level or location stays in Potential opportunities with a verification label; clear conflicts are flagged.</div>
+    <div class="alert alert-soft"><b>Your focus:</b> paid junior, graduate, entry-level AI engineering roles or internships. Local screening removes unrelated work, explicit senior titles and explicit unpaid positions before indexing or Jev. Missing pay or level stays eligible for Jev to verify. Coverage shows local exclusion counts separately from duplicates.</div>
     <div class="form-grid">
       <label class="field">
         <span>Must-have terms</span>
         <small>Use actual requirements. Equivalent wording counts; missing evidence stays for review. Put preferences below.</small>
-        <textarea name="must_have" rows="3" maxlength="1000" placeholder="Figma, accessibility">{{ criteria.must_have }}</textarea>
+        <textarea name="must_have" rows="3" maxlength="1000" placeholder="Python, model development">{{ criteria.must_have }}</textarea>
       </label>
       <label class="field">
         <span>Minimum annual salary</span>
@@ -93,7 +93,7 @@
       <label class="field field-wide">
         <span>Nice-to-have terms</span>
         <small>Jev can weigh these when you explicitly score a shortlist. Separate a few terms with commas.</small>
-        <input name="nice_to_have" maxlength="1000" value="{{ criteria.nice_to_have }}" placeholder="Climate tech, mentorship, design systems">
+        <input name="nice_to_have" maxlength="1000" value="{{ criteria.nice_to_have }}" placeholder="AI agents, RAG, PyTorch, computer vision, mentorship">
       </label>
     </div>
     <div class="check-row">
@@ -115,7 +115,7 @@
       <div><span class="kicker kicker-muted">03 · JEV RANKING</span><h2>Choose what matters most</h2></div>
       <span class="mini-badge">Relative weights</span>
     </div>
-    <p class="panel-muted">These weights sort candidate fit after Jev assesses every listing. AI/ML relevance has the largest default weight; profile-fit roles in other fields still remain eligible and visible.</p>
+    <p class="panel-muted">These weights rank the AI-focused shortlist after Jev assesses it. Generic analyst, sales, admin and manual AI rating jobs are screened out locally. Adjacent backend, platform and data roles need evidence of actual AI/model implementation.</p>
     <div class="weight-grid">
       <label class="weight-control"><span>AI / ML relevance</span><input type="number" name="ai_relevance_weight" min="0" max="100" value="{{ criteria.ai_relevance_weight }}"><small>AI/ML is central to the role or stated product</small></label>
       <label class="weight-control"><span>Role alignment</span><input type="number" name="role_weight" min="0" max="100" value="{{ criteria.role_weight }}"><small>Job title and responsibilities</small></label>
@@ -123,7 +123,7 @@
       <label class="weight-control"><span>Experience scope</span><input type="number" name="experience_weight" min="0" max="100" value="{{ criteria.experience_weight }}"><small>Responsibilities and seniority</small></label>
       <label class="weight-control"><span>Your preferences</span><input type="number" name="preference_weight" min="0" max="100" value="{{ criteria.preference_weight }}"><small>Nice-to-have terms</small></label>
     </div>
-    <p class="tiny-note">Defaults: AI/ML 35, role 25, skills 25, experience 10, preferences 5. Set all weights to zero to give each assessed dimension equal weight. Jev scoring is optional and makes a TypeSafe API request.</p>
+    <p class="tiny-note">Defaults: AI/ML 50, role 25, skills 15, experience 5, preferences 5. Set all weights to zero to give each assessed dimension equal weight. Jev scoring is optional and makes a TypeSafe API request.</p>
   </section>
 
   <div class="search-submit-row">

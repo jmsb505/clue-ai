@@ -34,6 +34,7 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 ## What is wired
 
 - Local PDF/DOCX parsing, saved editable profile, immediate CV-first search, and repeat searches using the saved profile.
+- Local AI engineering screening before board/company indexing, cached search selection and Jev retries. Unrelated work, explicit senior titles and explicit unpaid jobs are excluded with reason counts in coverage. AI/ML, LLM/agent/RAG, computer vision/NLP, inference/deployment and technical AI integration remain eligible; missing pay or level goes to Jev for verification. Default weights: AI 50, role 25, skills 15, experience 5, preferences 5. Existing broad historical results stay unchanged; start a new search for the focused shortlist. See [ADR 0017](docs/decisions/0017-ai-engineering-prefilter.md).
 - Applied roles tracker: mark a result or saved role after applying, retain its date/link, and exclude it from later searches and Jev assessment until undone. Applications survive search resets and listing cleanup; full personal-data deletion clears them.
 - Jobicy, RemoteJobs.org, Remote OK, role-specific Remote First Jobs RSS, and Startup Jobs RSS. RemoteJobs.org listings display the requested “Powered by RemoteJobs.org” credit.
 - Tech Europe Jobs through a six-hour Scrapling crawl of its public technical and Ops listings and directly linked job details (60-page cap); newsletter-gated and account-only listings are not accessed.

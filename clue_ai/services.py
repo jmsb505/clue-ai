@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from clue_ai.database import get_profile
 from clue_ai.domain import utc_now
 from clue_ai.filters import annotate_jobs, criteria_from_form
 from clue_ai.jev import score_run
+from clue_ai.job_focus import focus_note, focused_jobs
 from clue_ai.repository import (
     all_active_jobs,
     get_run,
@@ -49,6 +51,13 @@ def run_search(
     due_sources = sources_due(database_path)
     checked_notes: list[str] = []
     found_count = 0
+    ingestion_excluded: Counter[str] = Counter()
+
+    def save_focused_jobs(jobs):
+        eligible, excluded = focused_jobs(jobs)
+        ingestion_excluded.update(excluded)
+        return save_jobs_with_report(database_path, eligible)
+
     for index, source in enumerate(due_sources, start=1):
         update_run(
             database_path,
@@ -64,7 +73,7 @@ def run_search(
                 continue
             if outcome.blocked:
                 if outcome.jobs:
-                    saved_partial = save_jobs_with_report(database_path, outcome.jobs)
+                    saved_partial = save_focused_jobs(outcome.jobs)
                     found_count += len(outcome.jobs)
                 else:
                     saved_partial = None
@@ -83,7 +92,8 @@ def run_search(
                     f"{statuses}."
                 )
                 continue
-            save_report = save_jobs_with_report(database_path, outcome.jobs)
+            eligible, excluded = focused_jobs(outcome.jobs)
+            save_report = save_focused_jobs(outcome.jobs)
             found_count += len(outcome.jobs)
             record_source_state(
                 database_path,
@@ -93,6 +103,8 @@ def run_search(
             )
             detail = (
                 f"{len(outcome.jobs)} parsed from {outcome.raw_records} record(s); "
+                f"{len(eligible)} AI-focused candidates; {sum(excluded.values())} locally excluded "
+                f"({focus_note(excluded)}); "
                 f"{save_report.inserted} new identities, "
                 f"{save_report.deduplicated} existing identities reused; "
                 f"{outcome.parse_failures} parse failure(s); "
@@ -135,7 +147,7 @@ def run_search(
     def save_company_jobs(jobs) -> int:
         nonlocal company_raw_records
         company_raw_records += len(jobs)
-        return save_jobs_with_report(database_path, jobs).inserted
+        return save_focused_jobs(jobs).inserted
 
     def company_progress(message: str) -> None:
         update_run(
@@ -178,16 +190,22 @@ def run_search(
         database_path,
         run_id,
         stage="filtering",
-        message="Preparing every active listing for Jev and your search filters.",
+        message="Screening cached listings for entry-level AI engineering before Jev.",
         checked_sources=checked_notes,
         found_count=found_count,
     )
 
     prune_expired_data(database_path)
     indexed = all_active_jobs(database_path)
-    candidates = annotate_jobs(
-        [job for job in indexed if not job.get("hidden")],
-        criteria,
+    visible = [job for job in indexed if not job.get("hidden")]
+    eligible, cached_excluded = focused_jobs(visible)
+    candidates = annotate_jobs(eligible, criteria)
+    checked_notes.append(
+        f"Local AI engineering filter: {len(candidates)} candidates for Jev from "
+        f"{len(visible)} active visible indexed listings; "
+        f"{sum(cached_excluded.values())} cached listings excluded ({focus_note(cached_excluded)}). "
+        f"Fetched listings excluded before indexing: {sum(ingestion_excluded.values())} "
+        f"({focus_note(ingestion_excluded)}). These are local relevance decisions, not Jev scores."
     )
     save_run_results(
         database_path,
@@ -279,6 +297,14 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
         for job in get_run_results(database_path, run_id)
         if job.get("filter_status") == "unassessed" or job.get("score_state") != "scored"
     ]
+    jobs, excluded = focused_jobs(jobs)
+    if excluded:
+        notes = list(run.get("checked_sources") or [])
+        notes.append(
+            f"Scoring retry: locally skipped {sum(excluded.values())} out-of-focus listings "
+            f"({focus_note(excluded)}); historical results remain unchanged."
+        )
+        update_run(database_path, run_id, checked_sources=notes)
     if not jobs:
         counts = get_run_result_counts(database_path, run_id)
         update_run(
@@ -286,7 +312,7 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
             run_id,
             status="complete",
             stage="done",
-            message="Every visible listing has already received a Jev assessment.",
+            message="No unassessed AI-focused candidates remain for Jev. Historical results are retained.",
             matched_count=counts["matches"],
             scored_count=counts["scored"],
             completed=True,

@@ -732,9 +732,14 @@ def profile_role_codes(profile: Any) -> set[str]:
         "research": ("research", "scientist", "publication", "phd"),
     }
     padded = f" {re.sub(r'[^a-z0-9+#.]+', ' ', text)} "
-    return {
+    roles = {
         code for code, phrases in signals.items() if any(phrase in padded for phrase in phrases)
     }
+    # Past reporting work must not steer AI engineering discovery toward generic analytics.
+    if roles & {"ai_ml", "applied_ai", "llm_nlp"}:
+        roles.discard("data_analytics")
+        roles.discard("data_engineering")
+    return roles
 
 
 def filter_and_rank_companies(
