@@ -1,6 +1,6 @@
 # PLAN-018 — Wider discovery, no-repeat listings, and qualification evidence
 
-Status: M1 pushed; M2 ready for checkpoint; M3 implementation in progress
+Status: M1 and M2 pushed; M3 implementation complete (static validation; live Jev/runtime unverified)
 Created: 2026-10-04 · Updated: 2026-10-05
 
 ## Objective
@@ -67,7 +67,7 @@ Expected commit: `feat: add free AI and global job feeds`.
 
 ### M2 progress and evidence
 
-Added daily enabled registry entries and host-restricted connectors for both public APIs. Each runs up to five varied AI role-family queries, one page per query, one second apart, with the provider page limits and a stop on HTTP 429. No candidate country filter is used. Listing links stay on the publisher's human-facing role detail pages; source attribution is retained. Exact URL identity feeds into M1 deduplication. Coverage reports the query request count, raw/parsed count, locally focused count, inserted identities, and reused identities. Source terms, ceilings, and selection rationale are recorded in [ADR 0019](../decisions/0019-free-ai-and-global-job-feeds.md) and the [source review](../research/source-discovery-and-crawl-review.md). Conda-gen compilation passed; Ruff's one new FURB167 warning was fixed and the rerun passed; `git diff --check` passed with only line-ending normalization warnings. No test suite, live source request, or Jev call was used. Live response-shape/coverage remains unmeasured until the owner's next search.
+Added daily enabled registry entries and host-restricted connectors for both public APIs. Each runs up to five varied AI role-family queries, one page per query, one second apart, with the provider page limits and a stop on HTTP 429. No candidate country filter is used. Listing links stay on the publisher's human-facing role detail pages; source attribution is retained. Exact URL identity feeds into M1 deduplication. Coverage reports the query request count, raw/parsed count, locally focused count, inserted identities, and reused identities. Source terms, ceilings, and selection rationale are recorded in [ADR 0019](../decisions/0019-free-ai-and-global-job-feeds.md) and the [source review](../research/source-discovery-and-crawl-review.md). Conda-gen compilation passed; Ruff's one new FURB167 warning was fixed and the rerun passed; `git diff --check` passed with only line-ending normalization warnings. A follow-up correction committed as `21e1014` ensures normalized jobs retain human-facing detail links rather than API endpoint URLs. No test suite, live source request, or Jev call was used. Live response-shape/coverage remains unmeasured until the owner's next search.
 
 ## M3 — Qualification and seniority assessment
 
@@ -88,6 +88,10 @@ Added daily enabled registry entries and host-restricted connectors for both pub
 - Inspect the saved JSON shape, question-name map, old-result behavior, semantic result markup, keyboard-native `<details>` disclosure, status text, and responsive CSS. Use static Jinja compilation, Python compilation, Ruff, and diff checks; do not start the local app, call Jev, or run tests during milestone delivery.
 
 Expected commit: `feat: show qualification and seniority fit evidence`.
+
+### M3 progress and evidence
+
+Implemented a bounded extraction of up to four explicit required/preferred qualifications per listing and separate typed Jev assessments for each item and for seniority. Results preserve each assessment in the per-run JSON snapshot and display qualification evidence separately from fit scores and hard filters. Missing or invalid Jev answers remain eligible for a later assessment; missing profile evidence is not labeled as a deficiency. Product behavior and limitations are recorded in [ADR 0020](../decisions/0020-qualification-and-seniority-evidence.md) and [discovery and qualification architecture](../architecture/discovery-and-qualification-assessment.md). Validation uses Conda-gen Python compilation, Ruff, Jinja template compilation, and `git diff --check`; no app, live Jev request, live crawl, or test suite is run. Results remain uncalibrated against the owner's judgments.
 
 ## Source-of-truth updates and risks
 

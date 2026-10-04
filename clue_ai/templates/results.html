@@ -175,7 +175,8 @@
           <details class="fit-breakdown">
             <summary>How Jev compared this role <span>{% if job.confidence is not none %}signal confidence {{ "%.2f"|format(job.confidence) }}{% endif %}</span></summary>
             <div class="dimension-grid">
-              {% for key, dimension in job.dimensions.items() if not key.startswith('filter_') %}
+              {% for key in ['role', 'skills', 'experience', 'ai_relevance', 'preferences'] if job.dimensions.get(key) %}
+                {% set dimension = job.dimensions[key] %}
                 <div><span>{% if key == 'ai_relevance' %}AI domain relevance{% else %}{{ key|replace('_', ' ')|title }}{% endif %}</span><b>{% if dimension.score is not none %}{{ "%.2f"|format(dimension.score) }}{% else %}Not enough evidence{% endif %}</b></div>
               {% endfor %}
             </div>
@@ -188,6 +189,43 @@
                   <li><b>{{ label }}:</b> {% if check %}{% if check.status == 'match' %}Supported{% elif check.status == 'conflict' %}Conflicts{% else %}Needs verification{% endif %} · model confidence {{ '%.2f'|format(check.confidence) }}{% if check.constraint_source %} · explicit listing restriction: {{ check.constraint_evidence }} (Jev originally: {{ check.model_status }}){% elif check.model_status != check.status %} (invalid response confidence; original decision: {{ check.model_status }}){% endif %}{% else %}Answer pending{% endif %}</li>
                 {% endfor %}
               </ul>
+            {% endif %}
+            {% set seniority_fit = job.dimensions.get('seniority_fit') %}
+            {% set qualification_checks = job.dimensions.get('qualification_checks', []) %}
+            {% set qualification_extraction = job.dimensions.get('qualification_extraction', {}) %}
+            {% if seniority_fit or qualification_checks or qualification_extraction %}
+            <section class="candidate-evidence" aria-label="Candidate qualification evidence">
+              <h4>How your profile lines up</h4>
+              {% if seniority_fit %}
+                <div class="seniority-evidence">
+                  <b>Seniority:</b>
+                  {% if not seniority_fit.answered %}Jev did not return a seniority decision for this role.
+                  {% elif seniority_fit.status == 'aligned' %}Experience appears aligned with the stated role scope.
+                  {% elif seniority_fit.status == 'below_stated_level' %}The stated level appears to ask for more experience than your profile documents.
+                  {% elif seniority_fit.status == 'above_stated_level' %}Your documented experience appears above the stated role scope.
+                  {% else %}There is not enough evidence to compare seniority.{% endif %}
+                  {% if seniority_fit.answered and seniority_fit.confidence is not none %}<span>Jev confidence {{ '%.2f'|format(seniority_fit.confidence) }}</span>{% endif %}
+                  {% if seniority_fit.listing_evidence %}<ul>{% for statement in seniority_fit.listing_evidence %}<li>Listing: {{ statement }}</li>{% endfor %}</ul>{% endif %}
+                </div>
+              {% endif %}
+              {% if qualification_checks %}
+                <p class="qualification-intro">Up to four explicit listing qualifications are compared with your saved profile. Check the original posting for the complete criteria.</p>
+                <ul class="qualification-list">
+                  {% for item in qualification_checks %}
+                    <li>
+                      <span class="qualification-state qualification-{{ item.status }}">
+                        {% if not item.answered %}Answer missing{% elif item.status == 'met' %}Supported{% elif item.status == 'partly_met' %}Partly supported{% elif item.status == 'not_met' %}Conflicts{% else %}Not enough evidence{% endif %}
+                      </span>
+                      <span><b>{{ item.priority|title }}:</b> {{ item.text }}</span>
+                      {% if item.answered %}<small>Jev confidence {{ '%.2f'|format(item.confidence) }}</small>{% else %}<small>Keep this listing available for reassessment.</small>{% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              {% elif qualification_extraction.status == 'no_explicit_requirements_detected' %}
+                <p class="qualification-intro">Clue did not extract a clear qualification statement from this listing. Review the full description for requirements.</p>
+              {% endif %}
+              <p class="qualification-caveat">These are evidence checks, not a hiring prediction. “Not enough evidence” means the saved profile or listing did not establish the fact; it does not mean you lack the skill.</p>
+            </section>
             {% endif %}
           </details>
         {% endif %}

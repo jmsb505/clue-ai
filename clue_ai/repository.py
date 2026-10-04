@@ -656,7 +656,7 @@ def mark_researched_run_results(database_path: Path, run_id: str) -> int:
     researched_at = utc_now()
     with connect(database_path) as db:
         rows = db.execute(
-            """SELECT j.* FROM search_results r
+            """SELECT j.*, r.dimensions_json AS result_dimensions_json FROM search_results r
                JOIN jobs j ON j.id = r.job_id
                WHERE r.run_id = ? AND r.score_state = 'scored'
                  AND r.combined_score IS NOT NULL
@@ -666,6 +666,16 @@ def mark_researched_run_results(database_path: Path, run_id: str) -> int:
         count = 0
         for row in rows:
             job = dict(row)
+            try:
+                dimensions = json.loads(job.get("result_dimensions_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                dimensions = {}
+            qualification_assessment = dimensions.get("qualification_assessment")
+            if (
+                isinstance(qualification_assessment, dict)
+                and qualification_assessment.get("status") != "complete"
+            ):
+                continue
             urls = {canonical_url(str(job.get("canonical_url") or ""))}
             sources = db.execute(
                 "SELECT source_url FROM job_sources WHERE job_id = ?", (job["id"],)
