@@ -82,6 +82,7 @@ def main() -> None:
     print(f"Reset {result.removed['search_runs']} searches and {result.removed['jobs']} listings.")
     print("Cleared rankings, saved/hidden jobs, query caches and source/company refresh timers.")
     print("Kept your CV, profile, application tracker, API settings, source choices and Jev spend history.")
+    print("Kept researched listing URLs to prevent the same unchanged jobs from returning; full personal-data deletion clears this ledger.")
     print(f"Local backup: {result.backup_path}")
     print("Clue remains stopped. Start it when you are ready for a fresh search.")
 

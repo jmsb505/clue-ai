@@ -54,6 +54,7 @@ class SearchCriteria:
     include_unknown_location: bool = True
     include_unknown_salary: bool = True
     include_unknown_sponsorship: bool = True
+    include_reviewed: bool = False
     role_weight: int = 25
     skills_weight: int = 15
     experience_weight: int = 5

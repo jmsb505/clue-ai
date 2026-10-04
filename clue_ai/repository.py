@@ -18,7 +18,7 @@ from clue_ai.crawl_policy import (
 )
 from clue_ai.database import connect
 from clue_ai.domain import NormalizedJob, utc_now
-from clue_ai.jobs import canonical_url, job_fingerprint, stable_job_id
+from clue_ai.jobs import canonical_url, job_fingerprint, research_signature, stable_job_id
 
 
 def list_companies(database_path: Path) -> list[dict[str, Any]]:
@@ -595,6 +595,97 @@ def save_run_results(
                     job.get("freshness_age_days"),
                 ),
             )
+
+
+def partition_researched_jobs(
+    database_path: Path,
+    jobs: list[dict[str, Any]],
+    *,
+    include_reviewed: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Skip unchanged research URLs while retaining same-run exact-link uniqueness."""
+    with connect(database_path) as db:
+        rows = db.execute(
+            "SELECT listing_url, content_signature FROM researched_listings"
+        ).fetchall()
+    researched = {row["listing_url"]: row["content_signature"] for row in rows}
+    seen_in_run: dict[str, str] = {}
+    selected: list[dict[str, Any]] = []
+    counts = {"new": 0, "changed": 0, "reviewed": 0, "same_run": 0}
+
+    for job in jobs:
+        urls = {
+            canonical_url(str(job.get("canonical_url") or "")),
+            canonical_url(str(job.get("source_url") or "")),
+            *(
+                canonical_url(str(source.get("source_url") or ""))
+                for source in job.get("sources", [])
+                if isinstance(source, dict)
+            ),
+        } - {""}
+        signature = research_signature(job)
+        same_run_duplicate = any(url in seen_in_run for url in urls)
+        for url in urls:
+            seen_in_run.setdefault(url, signature)
+        if same_run_duplicate:
+            counts["same_run"] += 1
+            continue
+
+        previous_signatures = {researched[url] for url in urls if url in researched}
+        if signature in previous_signatures:
+            counts["reviewed"] += 1
+            if not include_reviewed:
+                continue
+        elif previous_signatures:
+            counts["changed"] += 1
+        else:
+            counts["new"] += 1
+        selected.append(job)
+
+    return selected, counts
+
+
+def researched_listing_urls(database_path: Path) -> set[str]:
+    with connect(database_path) as db:
+        rows = db.execute("SELECT listing_url FROM researched_listings").fetchall()
+    return {str(row["listing_url"]) for row in rows}
+
+
+def mark_researched_run_results(database_path: Path, run_id: str) -> int:
+    """Persist only complete fit and filter decisions; failed listings remain retryable."""
+    researched_at = utc_now()
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT j.* FROM search_results r
+               JOIN jobs j ON j.id = r.job_id
+               WHERE r.run_id = ? AND r.score_state = 'scored'
+                 AND r.combined_score IS NOT NULL
+                 AND r.filter_status != 'unassessed'""",
+            (run_id,),
+        ).fetchall()
+        count = 0
+        for row in rows:
+            job = dict(row)
+            urls = {canonical_url(str(job.get("canonical_url") or ""))}
+            sources = db.execute(
+                "SELECT source_url FROM job_sources WHERE job_id = ?", (job["id"],)
+            ).fetchall()
+            urls.update(canonical_url(str(source["source_url"] or "")) for source in sources)
+            urls.discard("")
+            signature = research_signature(job)
+            for url in urls:
+                db.execute(
+                    """INSERT INTO researched_listings
+                       (listing_url, job_id, content_signature, researched_at)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(listing_url) DO UPDATE SET
+                         job_id = excluded.job_id,
+                         content_signature = excluded.content_signature,
+                         researched_at = excluded.researched_at""",
+                    (url, job["id"], signature, researched_at),
+                )
+                count += 1
+    return count
 
 
 def update_score(

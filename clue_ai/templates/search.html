@@ -62,6 +62,11 @@
         <span class="check-custom" aria-hidden="true"></span>
         <span><b>Include uncertain location listings</b><small>They'll be labeled for you to verify on the original posting.</small></span>
       </label>
+      <label class="check-field check-field-secondary">
+        <input type="checkbox" name="include_reviewed" value="on" {% if criteria.include_reviewed %}checked{% endif %}>
+        <span class="check-custom" aria-hidden="true"></span>
+        <span><b>Include previously reviewed listing links</b><small>Off by default. Unchanged links stay in their original search history; turn this on to assess them again.</small></span>
+      </label>
     </div>
   </section>
 

@@ -30,7 +30,11 @@ from clue_ai.sources import (
 _JUSTREMOTE_HOSTS = {"justremote.co", "www.justremote.co"}
 _JUSTREMOTE_DETAIL = re.compile(r"^/remote-[a-z0-9-]+-jobs/[^/]+/?$", re.IGNORECASE)
 _JUSTREMOTE_CATEGORY = re.compile(r"^/remote-[a-z0-9-]+-jobs/?$", re.IGNORECASE)
-def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome:
+def crawl_justremote(
+    source: dict[str, Any],
+    settings: Settings,
+    researched_urls: set[str] | None = None,
+) -> FetchOutcome:
     """Crawl public JustRemote listing pages and their linked detail pages with Scrapling."""
     endpoint = str(source.get("endpoint") or "https://justremote.co/remote-jobs")
     parts = urlsplit(endpoint)
@@ -58,6 +62,8 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
             super().__init__()
             self.start_urls = [endpoint]
             self.allowed_domains = set(_JUSTREMOTE_HOSTS)
+            self.researched_urls = researched_urls or set()
+            self.researched_details_skipped = 0
             self.urls_scheduled = {canonical_url(endpoint)}
             self.listing_pages_scheduled = 1
             self.job_pages_scheduled = 0
@@ -121,6 +127,9 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
                     return None
                 self.listing_pages_scheduled += 1
             elif _JUSTREMOTE_DETAIL.fullmatch(path):
+                if normalized in self.researched_urls:
+                    self.researched_details_skipped += 1
+                    return None
                 if self.job_pages_scheduled >= JUSTREMOTE_JOB_PAGE_LIMIT:
                     return None
                 self.job_pages_scheduled += 1
@@ -250,7 +259,8 @@ def crawl_justremote(source: dict[str, Any], settings: Settings) -> FetchOutcome
         message=(
             f"Scrapling checked {checked} public pages (200-page ceiling; "
             f"{spider.listing_pages_scheduled} listing pages and "
-            f"{spider.job_pages_scheduled} job-detail pages scheduled)."
+            f"{spider.job_pages_scheduled} job-detail pages scheduled; "
+            f"{spider.researched_details_skipped} previously researched detail URLs not refetched)."
         ),
         response_bytes=response_bytes,
         raw_records=len(jobs) + spider.parse_failures,

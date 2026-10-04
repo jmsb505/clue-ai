@@ -23,7 +23,7 @@ from clue_ai.crawl_policy import (
 )
 from clue_ai.domain import NormalizedJob, SearchCriteria
 from clue_ai.jobs import canonical_url
-from clue_ai.repository import companies_due, update_company_board
+from clue_ai.repository import companies_due, researched_listing_urls, update_company_board
 from clue_ai.sources import (
     SourceFetchError,
     _looks_blocked,
@@ -72,6 +72,7 @@ class CompanyCrawlSummary:
     response_bytes: int = 0
     raw_records: int = 0
     jobs_indexed: int = 0
+    researched_urls_skipped: int = 0
     elapsed_seconds: float = 0.0
     errors: int = 0
     notes: list[str] = field(default_factory=list)
@@ -208,7 +209,9 @@ def _candidate_start_urls(company: dict[str, Any]) -> list[str]:
     return [url for url in values if url and _valid_url(url)]
 
 
-def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
+def _make_company_spider(
+    companies: list[dict[str, Any]], settings: Settings, reviewed_urls: set[str]
+):
     try:
         from scrapling.fetchers import FetcherSession
         from scrapling.spiders import LinkExtractor, Request, Spider
@@ -243,6 +246,8 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
             self.allowed_domains = set(hosts)
             self.pages_by_company: dict[str, int] = {company_id: 0 for company_id in owners}
             self.scheduled: set[tuple[str, str]] = set()
+            self.reviewed_urls = reviewed_urls
+            self.reviewed_details_skipped = 0
             self.blocked_hosts: set[str] = set()
             self.careers_by_company = {
                 str(company["id"]): str(company.get("careers_url") or "") for company in companies
@@ -338,6 +343,9 @@ def _make_company_spider(companies: list[dict[str, Any]], settings: Settings):
                 or key in self.scheduled
                 or _public_host(normalized) in self.blocked_hosts
             ):
+                return None
+            if normalized in self.reviewed_urls:
+                self.reviewed_details_skipped += 1
                 return None
             if not _valid_url(normalized):
                 return None
@@ -643,7 +651,9 @@ def _looks_like_js_shell(body: bytes) -> bool:
     return any(marker in text for marker in markers)
 
 
-def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
+def _make_sitemap_spider(
+    companies: list[dict[str, Any]], settings: Settings, reviewed_urls: set[str]
+):
     try:
         from scrapling.fetchers import FetcherSession
         from scrapling.spiders import CrawlRule, LinkExtractor, Request, SitemapSpider
@@ -689,6 +699,8 @@ def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
             )
             self.dispatched: dict[str, int] = {company_id: 0 for company_id in owners}
             self.child_sitemaps: dict[str, int] = {company_id: 0 for company_id in owners}
+            self.reviewed_urls = reviewed_urls
+            self.reviewed_details_skipped = 0
 
         def configure_sessions(self, manager) -> None:
             manager.add(
@@ -829,8 +841,12 @@ def _make_sitemap_spider(companies: list[dict[str, Any]], settings: Settings):
             meta = dict(getattr(response, "meta", {}) or {})
             company_id = str(meta.get("company_id") or "")
             expected_host = sitemap_hosts.get(company_id, "")
+            normalized = canonical_url(str(url))
+            if normalized in self.reviewed_urls:
+                self.reviewed_details_skipped += 1
+                return None
             if (
-                _public_host(str(url)) != expected_host
+                _public_host(normalized) != expected_host
                 or self.dispatched.get(company_id, 0) >= COMPANY_SITEMAP_JOB_PAGE_LIMIT
             ):
                 return None
@@ -916,6 +932,7 @@ def crawl_tracked_companies(
     on_progress: Callable[[str], None] | None = None,
     save_jobs: Callable[[list[NormalizedJob]], int] | None = None,
     force: bool = False,
+    skip_researched_urls: bool = True,
 ) -> CompanyCrawlSummary:
     started_at = time.monotonic()
     due = companies_due(
@@ -997,8 +1014,10 @@ def crawl_tracked_companies(
     if on_progress:
         on_progress(f"Crawling public career pages for {len(due)} tracked companies.")
         last_progress_at = time.monotonic()
-    spider = _make_company_spider(due, settings)
+    reviewed_urls = researched_listing_urls(database_path) if skip_researched_urls else set()
+    spider = _make_company_spider(due, settings, reviewed_urls)
     _run_spider_stream(spider, process_event)
+    summary.researched_urls_skipped += spider.reviewed_details_skipped
     for startup_event in getattr(spider, "startup_events", []):
         process_event(startup_event)
 
@@ -1099,8 +1118,9 @@ def crawl_tracked_companies(
                 f"Checking official robots.txt sitemaps for {len(needs_sitemap)} companies without parsed listings."
             )
             last_progress_at = time.monotonic()
-        sitemap_spider = _make_sitemap_spider(needs_sitemap, settings)
+        sitemap_spider = _make_sitemap_spider(needs_sitemap, settings, reviewed_urls)
         _run_spider_stream(sitemap_spider, process_event)
+        summary.researched_urls_skipped += sitemap_spider.reviewed_details_skipped
         emit_progress(force=True)
 
     # Render detected client-rendered career shells with a bounded public-page fallback.

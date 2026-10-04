@@ -16,6 +16,8 @@ from clue_ai.repository import (
     get_run,
     get_run_result_counts,
     get_run_results,
+    mark_researched_run_results,
+    partition_researched_jobs,
     prune_expired_data,
     record_source_state,
     save_jobs_with_report,
@@ -165,6 +167,7 @@ def run_search(
             settings,
             on_progress=company_progress,
             save_jobs=save_company_jobs,
+            skip_researched_urls=not criteria.include_reviewed,
         )
         found_count += company_report.raw_records
         if company_report.companies_checked:
@@ -174,6 +177,7 @@ def run_search(
                 f"{company_report.pages_checked} pages/feed requests, "
                 f"{company_report.raw_records} listings parsed, "
                 f"{company_report.jobs_indexed} new records indexed, "
+                f"{company_report.researched_urls_skipped} previously researched detail URLs not refetched, "
                 f"{company_report.blocked} blocked, {company_report.unavailable} unavailable, "
                 f"{company_report.errors} errors; "
                 f"{company_report.response_bytes} response bytes in "
@@ -200,6 +204,11 @@ def run_search(
     visible = [job for job in indexed if not job.get("hidden")]
     eligible, cached_excluded = focused_jobs(visible)
     candidates = annotate_jobs(eligible, criteria)
+    candidates, research_counts = partition_researched_jobs(
+        database_path,
+        candidates,
+        include_reviewed=criteria.include_reviewed,
+    )
     checked_notes.append(
         f"Local AI engineering filter: {len(candidates)} candidates for Jev from "
         f"{len(visible)} active visible indexed listings; "
@@ -207,6 +216,17 @@ def run_search(
         f"Fetched listings excluded before indexing: {sum(ingestion_excluded.values())} "
         f"({focus_note(ingestion_excluded)}). These are local relevance decisions, not Jev scores."
     )
+    review_note = (
+        f"Listing URL tracking: {research_counts['new']} new, "
+        f"{research_counts['changed']} changed since review, "
+        f"{research_counts['reviewed']} unchanged previously reviewed, and "
+        f"{research_counts['same_run']} repeated URL identity/alias entries."
+    )
+    if criteria.include_reviewed:
+        review_note += " Previously reviewed listings were deliberately included in this search."
+    elif research_counts["reviewed"]:
+        review_note += " Unchanged reviewed listings were kept in their original search snapshots."
+    checked_notes.append(review_note)
     save_run_results(
         database_path,
         run_id,
@@ -306,13 +326,20 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
         )
         update_run(database_path, run_id, checked_sources=notes)
     if not jobs:
+        mark_researched_run_results(database_path, run_id)
         counts = get_run_result_counts(database_path, run_id)
         update_run(
             database_path,
             run_id,
             status="complete",
             stage="done",
-            message="No unassessed AI-focused candidates remain for Jev. Historical results are retained.",
+            message=(
+                "No new unreviewed listing URLs are available; unchanged previously researched "
+                "links were skipped. Open Search history or include previously reviewed links "
+                "to assess them again."
+                if counts["total"] == 0
+                else "No unassessed AI-focused candidates remain for Jev. Historical results are retained."
+            ),
             matched_count=counts["matches"],
             scored_count=counts["scored"],
             completed=True,
@@ -327,6 +354,7 @@ def run_jev_scoring(database_path: Path, settings: Settings, run_id: str) -> Non
             profile,
             criteria,
         )
+        mark_researched_run_results(database_path, run_id)
         counts = get_run_result_counts(database_path, run_id)
         update_run(
             database_path,

@@ -272,3 +272,26 @@ def job_fingerprint(title: str, company: str, location: str, posted_at: str) -> 
     date_bucket = posted_at[:10]
     normalized = "|".join(value.casefold().strip() for value in (title, company, location, date_bucket))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def research_signature(job: dict[str, object]) -> str:
+    """Identify material listing changes without depending on a board's refresh timestamp."""
+    fields = (
+        "title",
+        "company",
+        "description",
+        "location_raw",
+        "workplace_type",
+        "employment_type",
+        "visa_sponsorship",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "salary_period",
+        "valid_through",
+    )
+    normalized = "|".join(
+        re.sub(r"\s+", " ", str(job.get(field) or "")).casefold().strip()
+        for field in fields
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()

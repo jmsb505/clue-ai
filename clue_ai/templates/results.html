@@ -18,7 +18,7 @@
   </div>
 </section>
 
-<p class="results-snapshot-note">This is the saved result snapshot for this run. Start a new search to assess all currently active listings in your local index.</p>
+<p class="results-snapshot-note">This is the saved result snapshot for this run. New searches check refreshed source indexes for new or changed listing links and skip unchanged links already assessed. Turn on “Include previously reviewed listing links” in search settings to assess them again.</p>
 
 {% if run.status in ['queued', 'running', 'scoring'] %}
   <section class="progress-panel" role="status" aria-live="polite">

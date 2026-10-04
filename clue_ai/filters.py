@@ -180,6 +180,7 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
         include_unknown_location=_checked(form.get("include_unknown_location", "on")),
         include_unknown_salary=_checked(form.get("include_unknown_salary", "on")),
         include_unknown_sponsorship=_checked(form.get("include_unknown_sponsorship", "on")),
+        include_reviewed=_checked(form.get("include_reviewed")),
         role_weight=weights["role"],
         skills_weight=weights["skills"],
         experience_weight=weights["experience"],

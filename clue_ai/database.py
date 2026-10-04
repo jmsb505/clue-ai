@@ -364,6 +364,13 @@ CREATE TABLE IF NOT EXISTS search_results (
   rubric_version TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (run_id, job_id)
 );
+CREATE TABLE IF NOT EXISTS researched_listings (
+  listing_url TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL DEFAULT '',
+  content_signature TEXT NOT NULL,
+  researched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_researched_listings_job ON researched_listings(job_id);
 CREATE TABLE IF NOT EXISTS jev_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   run_id TEXT REFERENCES search_runs(id) ON DELETE SET NULL,
@@ -419,6 +426,7 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "profile", "profile_language", "TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(db, "job_sources", "context_url", "TEXT NOT NULL DEFAULT ''")
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
+        _seed_researched_listing_ledger(db)
         now = utc_now()
         db.execute("INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES (1, ?)", (now,))
         for company in COMPANY_SEEDS:
@@ -440,21 +448,6 @@ def initialize(database_path: Path) -> None:
                     company["discovery_url"],
                 ),
             )
-            db.execute(
-                """INSERT OR IGNORE INTO sources
-                   (id, name, kind, endpoint, state, enabled, attribution, interval_seconds,
-                    retention_days, policy_note, config_json, is_builtin)
-                   VALUES (?, ?, 'company_board', ?, 'approved', 0, ?, ?, 30, ?, ?, 1)""",
-                (
-                    f"company-{company['id']}",
-                    company["name"],
-                    company["board_url"] or company["careers_url"] or company["homepage_url"],
-                    PUBLIC_CRAWL_REFRESH_SECONDS,
-                    company["name"],
-                    "Official company board discovered from the employer's own website.",
-                    json.dumps({"company_id": company["id"]}),
-                ),
-            )
         for source in DEFAULT_SOURCES:
             db.execute(
                 """INSERT OR IGNORE INTO sources
@@ -473,6 +466,44 @@ def initialize(database_path: Path) -> None:
             "UPDATE sources SET interval_seconds = ? WHERE kind = 'company_board' AND is_builtin = 1",
             (PUBLIC_CRAWL_REFRESH_SECONDS,),
         )
+
+
+def _seed_researched_listing_ledger(db: sqlite3.Connection) -> None:
+    """Carry forward complete assessments created before the URL ledger existed."""
+    if db.execute("SELECT 1 FROM researched_listings LIMIT 1").fetchone():
+        return
+    rows = db.execute(
+        """SELECT DISTINCT j.*, COALESCE(run.completed_at, run.created_at) AS assessed_at
+           FROM search_results result
+           JOIN search_runs run ON run.id = result.run_id
+           JOIN jobs j ON j.id = result.job_id
+           WHERE result.score_state = 'scored' AND result.combined_score IS NOT NULL
+             AND result.filter_status != 'unassessed'"""
+    ).fetchall()
+    if not rows:
+        return
+    from clue_ai.jobs import canonical_url, research_signature
+
+    for row in rows:
+        job = dict(row)
+        urls = {canonical_url(str(job.get("canonical_url") or ""))}
+        sources = db.execute(
+            "SELECT source_url FROM job_sources WHERE job_id = ?", (job["id"],)
+        ).fetchall()
+        urls.update(canonical_url(str(source["source_url"] or "")) for source in sources)
+        urls.discard("")
+        for url in urls:
+            db.execute(
+                """INSERT OR IGNORE INTO researched_listings
+                   (listing_url, job_id, content_signature, researched_at)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    url,
+                    job["id"],
+                    research_signature(job),
+                    str(job.get("assessed_at") or utc_now()),
+                ),
+            )
 
 
 def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -547,6 +578,7 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
         db.execute("BEGIN IMMEDIATE")
         db.execute("DELETE FROM search_runs")
         db.execute("DELETE FROM jev_usage")
+        db.execute("DELETE FROM researched_listings")
         db.execute("DELETE FROM source_query_checks")
         db.execute("DELETE FROM job_user_state")
         db.execute("DELETE FROM applications")

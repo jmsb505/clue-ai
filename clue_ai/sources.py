@@ -25,7 +25,11 @@ from clue_ai.crawl_policy import (
 from clue_ai.domain import NormalizedJob, SearchCriteria
 from clue_ai.external_links import is_x_host
 from clue_ai.jobs import canonical_url, infer_workplace, parse_date, plain_text
-from clue_ai.repository import record_role_feed_check, role_feed_due
+from clue_ai.repository import (
+    record_role_feed_check,
+    researched_listing_urls,
+    role_feed_due,
+)
 
 
 class SourceFetchError(RuntimeError):
@@ -97,7 +101,12 @@ def fetch_source(
     if kind == "justremote_scrapling":
         from clue_ai.scrapling_boards import crawl_justremote
 
-        return crawl_justremote(source, settings)
+        reviewed_urls = (
+            set()
+            if criteria.include_reviewed or database_path is None
+            else researched_listing_urls(database_path)
+        )
+        return crawl_justremote(source, settings, reviewed_urls)
     if kind == "techeurope_scrapling":
         from clue_ai.techeurope_scrapling import crawl_techeurope
 
