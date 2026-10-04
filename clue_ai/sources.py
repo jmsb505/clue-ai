@@ -514,6 +514,19 @@ def _url_is_allowed(url: str, hosts: set[str]) -> bool:
         return False
 
 
+def _publisher_listing_url(value: str, hosts: set[str], path_prefix: str) -> str:
+    """Accept only a same-publisher human job-detail page, never an API or apply URL."""
+    if not _url_is_allowed(value, hosts):
+        return ""
+    try:
+        path = urlsplit(value).path.rstrip("/")
+    except ValueError:
+        return ""
+    if not path.startswith(path_prefix) or len(path) <= len(path_prefix):
+        return ""
+    return value
+
+
 class _SameHostRedirect(HTTPRedirectHandler):
     def __init__(self, allowed_hosts: set[str]):
         super().__init__()
@@ -746,9 +759,9 @@ def _normalize_api_job(
         location = item.get("location") or item.get("candidate_required_location") or "Remote"
         item_url = item.get("listing_url") or item.get("detail_url") or item.get("job_url") or item.get("url")
         identifier = item.get("slug") or item.get("id") or item.get("job_id")
-        source_listing_url = str(item_url) if item_url and _url_is_allowed(
-            str(item_url), SOURCE_HOSTS["ai_dev_jobs_api"]
-        ) else (
+        source_listing_url = _publisher_listing_url(
+            str(item_url or ""), SOURCE_HOSTS["ai_dev_jobs_api"], "/job/"
+        ) or (
             f"https://aidevboard.com/job/{quote(str(identifier), safe='')}" if identifier else ""
         )
         url = source_listing_url
@@ -790,9 +803,9 @@ def _normalize_api_job(
             or item.get("url") or item.get("link")
         )
         identifier = item.get("id") or item.get("job_id")
-        source_listing_url = str(item_url) if item_url and _url_is_allowed(
-            str(item_url), SOURCE_HOSTS["devglobal_api"]
-        ) else (
+        source_listing_url = _publisher_listing_url(
+            str(item_url or ""), SOURCE_HOSTS["devglobal_api"], "/jobs/detail/"
+        ) or (
             f"https://devglobaljobs.com/jobs/detail/{quote(str(identifier), safe='')}"
             if identifier else ""
         )
