@@ -68,6 +68,8 @@ SOURCE_HOSTS = {
     "remoteok_json": {"remoteok.com"},
     "weworkremotely_rss": {"weworkremotely.com"},
     "himalayas_api": {"himalayas.app"},
+    "ai_dev_jobs_api": {"aidevboard.com"},
+    "devglobal_api": {"devglobaljobs.com", "www.devglobaljobs.com"},
     "remotive_api": {"remotive.com"},
     "workingnomads_api": {"workingnomads.com", "www.workingnomads.com"},
     "remote_first_rss": {"remotefirstjobs.com"},
@@ -125,6 +127,14 @@ def fetch_source(
         return _fetch_remotejobs(source, criteria, settings, database_path)
     if kind == "himalayas_api":
         return _fetch_himalayas(source, criteria, settings)
+    if kind == "ai_dev_jobs_api":
+        return _fetch_keyword_job_api(
+            source, criteria, settings, kind=kind, page_limit=50, remote_param="workplace"
+        )
+    if kind == "devglobal_api":
+        return _fetch_keyword_job_api(
+            source, criteria, settings, kind=kind, page_limit=100, remote_param="remote"
+        )
     if kind == "smartrecruiters":
         return _fetch_smartrecruiters(source, settings)
 
@@ -160,6 +170,100 @@ def fetch_source(
         raw_records=raw_records,
         parse_failures=max(0, raw_records - len(jobs)),
         status_counts={"status_200": 1},
+    )
+
+
+def _fetch_keyword_job_api(
+    source: dict[str, Any],
+    criteria: SearchCriteria,
+    settings: Settings,
+    *,
+    kind: str,
+    page_limit: int,
+    remote_param: str,
+    max_queries: int = 5,
+) -> FetchOutcome:
+    """Run a small, diverse set of once-daily searches against a documented public API."""
+    endpoint = _connector_url(source)
+    allowed_hosts = SOURCE_HOSTS[kind]
+    if not _url_is_allowed(endpoint, allowed_hosts):
+        raise SourceFetchError("The source endpoint is outside its registered host.", blocked=True)
+    queries = _discovery_role_queries(criteria.roles, max_queries=max_queries)
+    jobs: list[NormalizedJob] = []
+    response_bytes = raw_records = checked = 0
+    status_counts: dict[str, int] = {}
+    remote_only = criteria.workplace.strip().casefold() == "remote"
+
+    for index, query in enumerate(queries):
+        if index:
+            # Both providers permit much higher rates; spacing reduces unnecessary load.
+            time.sleep(1.0)
+        if kind == "ai_dev_jobs_api":
+            params = {"q": query, "page": 1, "limit": min(page_limit, 50)}
+            if remote_only:
+                params[remote_param] = "remote"
+        else:
+            params = {
+                "category": "technology",
+                "search": query,
+                "limit": min(page_limit, 100),
+                "offset": 0,
+            }
+            if remote_only:
+                params[remote_param] = "true"
+        endpoint_parts = urlsplit(endpoint)
+        request_url = urlunsplit(
+            (
+                endpoint_parts.scheme,
+                endpoint_parts.netloc,
+                endpoint_parts.path,
+                urlencode(params),
+                "",
+            )
+        )
+        try:
+            payload = _fetch_bytes(request_url, allowed_hosts, settings)
+        except SourceFetchError as exc:
+            if exc.status_code == 429:
+                status_counts["status_429"] = status_counts.get("status_429", 0) + 1
+                return FetchOutcome(
+                    jobs=jobs,
+                    checked=checked + 1,
+                    message=(
+                        f"{source['name']} rate-limited the search; saved results from completed "
+                        "queries and paused this source."
+                    ),
+                    blocked=True,
+                    response_bytes=response_bytes,
+                    raw_records=raw_records,
+                    parse_failures=max(0, raw_records - len(jobs)),
+                    status_counts=status_counts,
+                )
+            raise
+        checked += 1
+        status_counts["status_200"] = status_counts.get("status_200", 0) + 1
+        response_bytes += len(payload)
+        try:
+            raw = json.loads(payload.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise SourceFetchError(f"The {source['name']} API response could not be parsed.") from exc
+        items = _api_job_items(raw)
+        if items is None:
+            raise SourceFetchError(f"The {source['name']} API returned an unexpected response shape.")
+        raw_records += sum(isinstance(item, dict) for item in items)
+        jobs.extend(_parse_json_feed(kind, source, raw, settings))
+
+    return FetchOutcome(
+        jobs=jobs,
+        checked=checked,
+        message=(
+            f"Retrieved {len(jobs)} {source['name']} listings across {checked} broad AI role queries "
+            f"(maximum {max_queries} requests; one page per query)."
+        ),
+        response_bytes=response_bytes,
+        raw_records=raw_records,
+        parse_failures=max(0, raw_records - len(jobs)),
+        status_counts=status_counts,
     )
 
 
@@ -475,7 +579,9 @@ def _looks_blocked(payload: bytes) -> bool:
 
 
 def _raw_json_record_count(kind: str, raw: Any) -> int:
-    if kind in {
+    if kind in {"ai_dev_jobs_api", "devglobal_api"}:
+        items = _api_job_items(raw) or []
+    elif kind in {
         "jobicy_api",
         "greenhouse",
         "ashby",
@@ -505,6 +611,25 @@ def _raw_json_record_count(kind: str, raw: Any) -> int:
     return sum(isinstance(item, dict) for item in items)
 
 
+def _api_job_items(raw: Any) -> list[Any] | None:
+    """Read the documented jobs arrays without assuming a single envelope shape."""
+    if isinstance(raw, list):
+        return raw
+    if not isinstance(raw, dict):
+        return None
+    for key in ("jobs", "results", "items"):
+        if isinstance(raw.get(key), list):
+            return raw[key]
+    data = raw.get("data")
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("jobs", "results", "items"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    return None
+
+
 def _raw_rss_record_count(payload: bytes) -> int:
     root = ET.fromstring(payload)
     return len(root.findall(".//item")) + len(root.findall(".//{*}entry"))
@@ -517,7 +642,9 @@ def _parse_json_feed(
     settings: Settings,
 ) -> list[NormalizedJob]:
     items: list[dict[str, Any]] = []
-    if kind in {"jobicy_api", "remotive_api", "himalayas_api"}:
+    if kind in {"ai_dev_jobs_api", "devglobal_api"}:
+        items = _api_job_items(raw) or []
+    elif kind in {"jobicy_api", "remotive_api", "himalayas_api"}:
         items = raw.get("jobs", []) if isinstance(raw, dict) else []
     elif kind == "ashby":
         items = raw.get("jobs", []) if isinstance(raw, dict) else []
@@ -547,6 +674,37 @@ def _parse_json_feed(
     return result
 
 
+_AI_ROLE_QUERY = re.compile(
+    r"\b(?:ai|ml|artificial intelligence|machine learning|deep learning|llm|llms|"
+    r"generative ai|genai|rag|nlp|natural language processing|computer vision|mlops|"
+    r"model|agent|prompt engineering)\b",
+    re.IGNORECASE,
+)
+
+
+def _discovery_role_queries(raw_roles: str, *, max_queries: int) -> list[str]:
+    """Balance user role variants with adjacent AI engineering families."""
+    queries: list[str] = []
+
+    def add(value: str) -> None:
+        value = " ".join(value.split())[:80]
+        if value and value.casefold() not in {query.casefold() for query in queries}:
+            queries.append(value)
+
+    requested = [query for query in _role_queries(raw_roles) if _AI_ROLE_QUERY.search(query)]
+    for query in requested[:2]:
+        add(query)
+    for query in (
+        "AI engineer",
+        "machine learning engineer",
+        "LLM RAG agent engineer",
+        "computer vision NLP MLOps",
+        "AI research engineer intern",
+    ):
+        add(query)
+    return queries[: max(1, min(max_queries, 5))]
+
+
 def _normalize_api_job(
     kind: str,
     source: dict[str, Any],
@@ -554,6 +712,7 @@ def _normalize_api_job(
     settings: Settings,
 ) -> NormalizedJob | None:
     valid_through = ""
+    source_listing_url = ""
     if kind == "jobicy_api":
         title = item.get("jobTitle") or item.get("title")
         company = item.get("companyName") or item.get("company")
@@ -566,6 +725,90 @@ def _normalize_api_job(
         salary_min, salary_max = _number(item.get("salaryMin")), _number(item.get("salaryMax"))
         currency = item.get("salaryCurrency") or ""
         period = item.get("salaryPeriod") or ""
+    elif kind == "ai_dev_jobs_api":
+        title = item.get("title")
+        company = item.get("company_name") or item.get("company") or ""
+        description = item.get("description") or item.get("summary") or ""
+        tags = item.get("tags") or []
+        if not isinstance(tags, list):
+            tags = [tags]
+        metadata = [
+            f"Tags: {', '.join(str(tag) for tag in tags if tag)}" if tags else "",
+            f"Experience level: {item.get('experience_level') or item.get('level')}"
+            if item.get("experience_level") or item.get("level")
+            else "",
+            f"Remote scope: {item.get('remote_scope')}" if item.get("remote_scope") else "",
+            "Open worldwide: yes" if item.get("global_remote") is True else "",
+        ]
+        description = "\n\n".join(
+            part for part in (str(description or ""), *(value for value in metadata if value)) if part
+        )
+        location = item.get("location") or item.get("candidate_required_location") or "Remote"
+        item_url = item.get("listing_url") or item.get("detail_url") or item.get("job_url") or item.get("url")
+        identifier = item.get("slug") or item.get("id") or item.get("job_id")
+        source_listing_url = str(item_url) if item_url and _url_is_allowed(
+            str(item_url), SOURCE_HOSTS["ai_dev_jobs_api"]
+        ) else (
+            f"https://aidevboard.com/job/{quote(str(identifier), safe='')}" if identifier else ""
+        )
+        url = source_listing_url
+        ext = identifier or url
+        posted = item.get("posted_at") or item.get("published_at") or item.get("created_at")
+        valid_through = item.get("expires_at") or item.get("valid_through") or ""
+        employment = item.get("job_type") or item.get("type") or ""
+        salary_min = _number(item.get("salary_min"))
+        salary_max = _number(item.get("salary_max"))
+        currency = "USD" if salary_min is not None or salary_max is not None else ""
+        period = "annual" if currency else ""
+    elif kind == "devglobal_api":
+        title = item.get("title") or item.get("job_title") or item.get("name")
+        company = (
+            item.get("organization") or item.get("organisation") or item.get("company_name")
+            or item.get("company") or item.get("employer") or ""
+        )
+        description = item.get("description") or item.get("short_description") or item.get("summary") or ""
+        salary_text = str(item.get("salary_text") or item.get("salary") or "")
+        location_values = [
+            item.get("location"), item.get("city"), item.get("region"), item.get("country")
+        ]
+        location = ", ".join(
+            dict.fromkeys(str(value).strip() for value in location_values if value)
+        ) or ("Remote" if item.get("remote") is True else "")
+        category = item.get("category") or ""
+        remote_value = item.get("remote")
+        if category or salary_text or remote_value is not None:
+            metadata = [
+                f"Category: {category}" if category else "",
+                f"Published compensation: {salary_text}" if salary_text else "",
+                "Remote: yes" if remote_value is True else "Remote: no" if remote_value is False else "",
+            ]
+            description = "\n\n".join(
+                part for part in (str(description or ""), *(value for value in metadata if value)) if part
+            )
+        item_url = (
+            item.get("listing_url") or item.get("detail_url") or item.get("job_url")
+            or item.get("url") or item.get("link")
+        )
+        identifier = item.get("id") or item.get("job_id")
+        source_listing_url = str(item_url) if item_url and _url_is_allowed(
+            str(item_url), SOURCE_HOSTS["devglobal_api"]
+        ) else (
+            f"https://devglobaljobs.com/jobs/detail/{quote(str(identifier), safe='')}"
+            if identifier else ""
+        )
+        url = source_listing_url
+        ext = identifier or url
+        posted = item.get("posted_at") or item.get("published_at") or item.get("created_at")
+        valid_through = item.get("closing_date") or item.get("expires_at") or ""
+        employment = item.get("employment_type") or item.get("job_type") or item.get("type") or ""
+        salary_min = _number(item.get("salary_min"))
+        salary_max = _number(item.get("salary_max"))
+        currency = str(item.get("salary_currency") or _salary_currency_from_text(salary_text)).upper()
+        if salary_min is None and salary_max is None:
+            salary_min, salary_max = _salary_range_from_text(salary_text)
+        if not currency:
+            salary_min = salary_max = None
+        period = item.get("salary_period") or _salary_period_from_text(salary_text)
     elif kind == "remotive_api":
         title = item.get("title")
         company = item.get("company_name") or ""
@@ -747,8 +990,9 @@ def _normalize_api_job(
         salary_min = salary_max = None
         currency = period = ""
 
-    safe_url = canonical_url(str(url or ""))
-    if not title or not safe_url:
+    safe_source_url = canonical_url(str(source_listing_url or url or ""))
+    safe_url = canonical_url(str(url or safe_source_url or ""))
+    if not title or not safe_source_url or not safe_url:
         return None
     description_text = plain_text(description, settings.max_job_description_chars)
     raw_location = plain_text(location, 1_000)
@@ -768,6 +1012,13 @@ def _normalize_api_job(
             workplace = "on-site" if workplace_value == "onsite" else workplace_value
         elif item.get("isRemote") is True:
             workplace = "remote"
+    if kind in {"ai_dev_jobs_api", "devglobal_api"}:
+        workplace_value = str(item.get("workplace") or "").casefold()
+        remote_flag = item.get("remote") is True or item.get("global_remote") is True
+        if workplace_value in {"remote", "hybrid", "onsite", "on-site"}:
+            workplace = "on-site" if workplace_value == "onsite" else workplace_value
+        elif remote_flag:
+            workplace = "remote"
     return NormalizedJob(
         source_id=str(source["id"]),
         source_name=str(source["name"]),
@@ -775,7 +1026,7 @@ def _normalize_api_job(
         title=plain_text(title, 300),
         company=plain_text(company, 250),
         description=description_text,
-        source_url=safe_url,
+        source_url=safe_source_url,
         canonical_url=safe_url,
         location_raw=raw_location,
         workplace_type=workplace,

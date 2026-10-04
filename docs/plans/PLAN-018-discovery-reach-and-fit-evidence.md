@@ -1,7 +1,7 @@
 # PLAN-018 — Wider discovery, no-repeat listings, and qualification evidence
 
-Status: M1 complete (static validation); M2 and M3 planned
-Created: 2026-10-04
+Status: M1 pushed; M2 ready for checkpoint; M3 implementation in progress
+Created: 2026-10-04 · Updated: 2026-10-05
 
 ## Objective
 
@@ -50,8 +50,9 @@ Implemented a durable per-URL content-signature ledger, migration seeding from c
 
 ### Research decisions
 
-- Add AI Dev Jobs through its documented anonymous public read API, with AI role/level/workplace queries, pagination caps, and its stated hourly throttle.
-- Add Dev Global Jobs through its no-key API for internal non-commercial use, with conservative request count, country/AI role filters, visible source attribution, and its Dev Global Jobs listing URL retained.
+- Add AI Dev Jobs through its documented anonymous public read API, with varied AI role/workplace queries, a 50-record page cap, daily refresh, and its hourly throttle.
+- Add Dev Global Jobs through its no-key API for internal non-commercial use, with conservative technology/AI role queries, a 100-record page cap, visible source attribution, and its Dev Global Jobs listing URL retained.
+- Do not add a candidate-country query filter at source time; it can suppress roles whose remote geography remains to be evaluated from the listing. A remote-only preference may use each API's documented remote parameter.
 - Do not add a crawler for AiRemotelyjobs yet: it is highly relevant and shows direct employer listings, but an API/feed and machine-use terms could not be verified. Keep it as a source candidate for later permission/documentation review.
 - Do not add OpenJobsEU yet: its published README confirms a static `feed.json`, but this review did not establish the public feed URL or explicit job-data reuse terms. Discover the exact feed and permissions before wiring it in.
 
@@ -60,15 +61,19 @@ Implemented a durable per-URL content-signature ledger, migration seeding from c
 - Add the two public API sources and robust normalizers; preserve attribution and original/source listing links.
 - Integrate them with the M1 identity ledger so overlapping aggregators do not generate duplicate opportunities or repeated Jev spend.
 - Extend role-family search where existing feed APIs support it, without exceeding publisher pagination/rate limits. Record distinct publisher family, fetched, parsed, filtered, duplicate, and new URL counts separately in coverage.
-- Verify connectors with captured fixtures/offline parsing and synthetic payloads. Do not start a live full crawl or use Jev during delivery.
+- Run static compilation, Ruff, and diff checks; manually inspect each accepted response envelope, host check, link normalizer, query cap, deduplication path, and coverage accounting. Do not add/run a formal test suite, live crawl, or Jev request during delivery.
 
 Expected commit: `feat: add free AI and global job feeds`.
+
+### M2 progress and evidence
+
+Added daily enabled registry entries and host-restricted connectors for both public APIs. Each runs up to five varied AI role-family queries, one page per query, one second apart, with the provider page limits and a stop on HTTP 429. No candidate country filter is used. Listing links stay on the publisher's human-facing role detail pages; source attribution is retained. Exact URL identity feeds into M1 deduplication. Coverage reports the query request count, raw/parsed count, locally focused count, inserted identities, and reused identities. Source terms, ceilings, and selection rationale are recorded in [ADR 0019](../decisions/0019-free-ai-and-global-job-feeds.md) and the [source review](../research/source-discovery-and-crawl-review.md). Conda-gen compilation passed; Ruff's one new FURB167 warning was fixed and the rerun passed; `git diff --check` passed with only line-ending normalization warnings. No test suite, live source request, or Jev call was used. Live response-shape/coverage remains unmeasured until the owner's next search.
 
 ## M3 — Qualification and seniority assessment
 
 ### Work
 
-- Parse a small capped set of explicit employer requirements from each full listing, distinguishing mandatory from preferred where the posting says so. Never invent requirements from generic role language.
+- Parse at most four explicit employer qualifications from each full listing, distinguishing mandatory from preferred where the posting says so. Never invent requirements from generic role language; show when none were extracted.
 - Ask Jev typed per-requirement fit questions with statuses `met`, `partly_met`, `not_met`, and `not_enough_evidence`; separately assess candidate experience/seniority against the role's explicit level and years. Keep employer seniority requirements distinct from Clue's entry-level job filter.
 - Persist the requirement text and Jev status/confidence in the search-result snapshot. Render a readable qualification checklist and a seniority alignment signal in the result detail, alongside evidence gaps and the original job link.
 - Mark unsupported or absent job criteria unknown/review, not as a candidate deficiency. Do not present any assessment as likelihood of getting hired.
@@ -80,7 +85,7 @@ Expected commit: `feat: add free AI and global job feeds`.
 - Seniority assessment reflects employer-stated level/years versus the candidate's documented experience and does not infer age from dates.
 - Missing employer details remain unknown; there is no fabricated explanation, qualification, or hiring probability.
 - Historical snapshots remain readable after later posting changes.
-- Review the results presentation for clarity and accessibility; verify with synthetic captured Jev responses without any live Jev spend.
+- Inspect the saved JSON shape, question-name map, old-result behavior, semantic result markup, keyboard-native `<details>` disclosure, status text, and responsive CSS. Use static Jinja compilation, Python compilation, Ruff, and diff checks; do not start the local app, call Jev, or run tests during milestone delivery.
 
 Expected commit: `feat: show qualification and seniority fit evidence`.
 
