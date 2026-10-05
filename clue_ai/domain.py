@@ -53,7 +53,7 @@ class SearchCriteria:
     posted_within_days: int = 30
     must_have: str = ""
     nice_to_have: str = ""
-    include_unknown_location: bool = True
+    include_unknown_location: bool = False
     include_unknown_salary: bool = True
     include_unknown_sponsorship: bool = True
     include_reviewed: bool = False

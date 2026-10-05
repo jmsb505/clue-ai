@@ -70,7 +70,7 @@ def annotate_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[
 def apply_candidate_search_scope(
     jobs: list[dict[str, Any]], criteria: SearchCriteria
 ) -> tuple[list[dict[str, Any]], Counter[str]]:
-    """Apply the owner's Milan workplace and explicit Italian-language constraints."""
+    """Keep only jobs within the selected language and default workplace scope."""
     selected: list[dict[str, Any]] = []
     excluded: Counter[str] = Counter()
     for job in jobs:
@@ -83,24 +83,31 @@ def apply_candidate_search_scope(
                 continue
 
         if criteria.workplace == "remote_preferred":
+            workplace_type = str(job.get("workplace_type") or "unknown").casefold().replace("-", "")
+            if workplace_type == "remote":
+                location_status = str(job.get("eligibility_status") or "unknown")
+                if location_status == "eligible":
+                    selected.append(job)
+                elif location_status == "not_eligible":
+                    excluded["remote_outside_work_from_region"] += 1
+                else:
+                    excluded["remote_region_unverified"] += 1
+                continue
+
             city_status, city_evidence = local_workplace_decision(
                 str(job.get("location_raw") or ""),
                 str(job.get("description") or ""),
-                str(job.get("workplace_type") or "unknown"),
+                workplace_type,
                 criteria.local_workplace_city,
             )
-            if city_status == "not_eligible":
+            if city_status == "not_eligible" and workplace_type in {"hybrid", "onsite"}:
                 excluded["in_person_outside_local_city"] += 1
                 continue
-            if city_status == "needs_verification":
-                job["eligibility_status"] = "needs_verification"
-                job["eligibility_evidence"] = city_evidence
-                if not criteria.include_unknown_location:
-                    excluded["in_person_city_unknown"] += 1
-                    continue
-            elif city_status == "eligible":
-                job["eligibility_status"] = "eligible"
-                job["eligibility_evidence"] = city_evidence
+            if city_status != "eligible":
+                excluded["workplace_city_unverified"] += 1
+                continue
+            job["eligibility_status"] = "eligible"
+            job["eligibility_evidence"] = city_evidence
         selected.append(job)
     return selected, excluded
 
@@ -205,15 +212,19 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
             **legacy_weights,
             "ai_relevance": min(100, max(legacy_weights.values()) + 5),
         }
+    workplace = _enum(
+        form.get("workplace", "remote_preferred"),
+        {"remote_preferred", "remote", "hybrid", "any"},
+    )
+    include_unknown_location = (
+        _checked(form.get("include_unknown_location")) if workplace != "remote_preferred" else False
+    )
     return SearchCriteria(
         roles=focused_roles(str(form.get("roles", ""))),
         target_seniority="junior_or_intern",
         paid_only=True,
         work_from=str(form.get("work_from", "Italy"))[:100],
-        workplace=_enum(
-            form.get("workplace", "remote_preferred"),
-            {"remote_preferred", "remote", "hybrid", "any"},
-        ),
+        workplace=workplace,
         local_workplace_city=str(form.get("local_workplace_city", "Milan"))[:100],
         employment_types=str(form.get("employment_types", ""))[:200],
         minimum_salary=str(form.get("minimum_salary", ""))[:30],
@@ -222,7 +233,7 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
         posted_within_days=max(1, min(days, 365)),
         must_have=str(form.get("must_have", ""))[:1_000],
         nice_to_have=str(form.get("nice_to_have", ""))[:1_000],
-        include_unknown_location=_checked(form.get("include_unknown_location", "on")),
+        include_unknown_location=include_unknown_location,
         include_unknown_salary=_checked(form.get("include_unknown_salary", "on")),
         include_unknown_sponsorship=_checked(form.get("include_unknown_sponsorship", "on")),
         include_reviewed=_checked(form.get("include_reviewed")),

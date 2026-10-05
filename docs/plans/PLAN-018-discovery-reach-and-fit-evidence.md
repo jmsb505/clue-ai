@@ -1,6 +1,6 @@
 # PLAN-018 — Wider discovery, no-repeat listings, and qualification evidence
 
-Status: M1–M3 pushed; M4 implementation complete (static validation; live workflow unverified)
+Status: M1–M4 pushed; M5 implementation complete (static validation; live workflow unverified)
 Created: 2026-10-04 · Updated: 2026-10-05
 
 ## Objective
@@ -123,3 +123,33 @@ Implemented `remote_preferred` as the new-search default, preserving strict remo
 Conda-gen `compileall`, Ruff, Jinja compilation for the changed search/results templates, and `git diff --check` passed. No app session, source crawl, Jev request, or formal test suite was run. Static validation does not establish live source reach, parser accuracy across all job-board wording, or fit calibration; ambiguous cases remain reviewable and the employer listing remains authoritative.
 
 Expected commit: `feat: allow Milan roles with remote preference`.
+
+## M5 — Enforce Europe-or-Milan location before Jev
+
+### Work
+
+- Apply the location classification as a hard local gate in the default `remote_preferred` search before URL partitioning, result snapshots, or Jev calls.
+- Keep remote roles only when explicit work-from evidence covers the selected country (Italy, EU/EEA, Europe, or worldwide for the current profile). Reject known incompatible regions and exclude unverified remote locations from the default candidate set.
+- Keep hybrid/on-site roles only with explicit local-city evidence. For an unknown workplace type, require the posting's location to identify the local city; exclude unknown or other-city work locations.
+- Treat broad EMEA scope as unverified unless the posting also names the selected country. Preserve the existing Europe/EU/EEA membership decisions.
+- Report out-of-region, unverified remote, other-city, and unknown-city/workplace exclusions in coverage. Retain source indexes and historical run snapshots.
+
+### Acceptance
+
+- Remote jobs explicitly eligible from Italy, Europe, EU/EEA, or worldwide remain eligible; a role explicitly restricted to LATAM, APAC, or another incompatible region does not enter the new result snapshot or Jev batch.
+- EMEA-only, timezone-only, unqualified remote, or otherwise ambiguous remote geography is excluded from the default candidate set and counted in coverage. A posting that explicitly names Italy remains eligible.
+- Hybrid/on-site roles in Milan remain eligible; known other-city roles and roles without enough city evidence are excluded before Jev.
+- An unknown workplace type is retained only when its work location clearly identifies Milan; unknown or broad region-only entries are excluded.
+- The default mode does not permit the “include uncertain locations” control to bypass its strict gate. Broader workplace modes retain their existing configurable behavior.
+- Existing search history and source indexes are not rewritten or deleted.
+- Static Python compilation, Ruff, changed-template compilation, and whitespace checks pass. Do not run the app, crawl sources, call Jev, or execute the test suite during delivery.
+
+### Documentation updates
+
+- Update this plan, the product definition, discovery/qualification architecture, and record the strict default in ADR 0022.
+
+Expected commit: `fix: enforce Europe or Milan location scope`.
+
+### Completion evidence
+
+Conda-gen Python compilation, Ruff, Jinja compilation for the changed search/results templates, and `git diff --check` passed. The test suite was not run. No app session, source crawl, or Jev request was run; live source classification and result quality remain unverified.

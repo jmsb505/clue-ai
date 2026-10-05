@@ -24,7 +24,7 @@ from clue_ai.repository import (
 from clue_ai.work_scope import explicit_italian_language_requirement, local_workplace_decision
 
 FIT_DIMENSIONS = ("role", "skills", "experience", "ai_relevance", "preferences")
-RUBRIC_VERSION = "fit-v1.7.0"
+RUBRIC_VERSION = "fit-v1.8.0"
 MAX_QUALIFICATIONS_PER_JOB = 4
 SCORE_LEVELS = {
     "0": "Clear, explicit contradictory evidence in this dimension. Do not use 0 merely because evidence is missing.",
@@ -90,22 +90,24 @@ FILTER_CHECK_INSTRUCTIONS = {
     "location": (
         "Check work_from and supplied candidate authorization/sponsorship facts. This is where "
         "the person needs to work, not company headquarters. Italy, Europe, EU/EEA or worldwide "
-        "eligibility can support an Italy search. An unqualified remote label or compatible time "
-        "zone does not prove eligibility and is review. Explicit incompatible country restrictions "
+        "eligibility can support an Italy search. EMEA is broader than Europe and is review unless "
+        "Italy is separately named. An unqualified remote label or compatible time zone does not "
+        "prove eligibility and is review. Explicit incompatible country restrictions "
         "conflict. Verify local eligibility heuristics against the listing; headquarters, offices "
         "or customer locations alone do not restrict remote hiring. Never infer citizenship or "
         "work rights. If requires_sponsorship=yes, explicit refusal conflicts and missing evidence "
         "is review when allowed; no/unknown does not require sponsorship. Under remote_preferred, "
-        "hybrid/on-site work is allowed only in local_workplace_city; do not treat that local "
-        "exception as a remote role. Respect explicit false include_unknown_location/"
-        "include_unknown_sponsorship choices."
+        "Clue sends only confirmed remote work-from eligibility or a role explicitly located in "
+        "local_workplace_city to this assessment. Do not treat the local-city exception as a remote "
+        "role. Broad EMEA or timezone-only wording does not prove Italy eligibility. Respect the "
+        "criteria supplied in state.search_criteria."
     ),
     "workplace": (
         "Check the user's workplace selection. remote means remote-only; hybrid means hybrid or "
         "remote; any imposes no restriction. Under remote_preferred, remote is a preference, and "
-        "hybrid/on-site work is permitted in state.search_criteria.local_workplace_city. An explicit "
-        "physical location elsewhere conflicts with this local exception; unclear city/workplace "
-        "evidence is review. Do not reject a Milan office role solely because it is not remote."
+        "hybrid/on-site work is permitted only in state.search_criteria.local_workplace_city. The "
+        "local Clue gate removes other cities and unverified workplace/city evidence before Jev. "
+        "Do not reject a confirmed Milan office role solely because it is not remote."
     ),
     "requirements": (
         "Check only supplied employment_types, minimum_salary, must_have, posting dates and "

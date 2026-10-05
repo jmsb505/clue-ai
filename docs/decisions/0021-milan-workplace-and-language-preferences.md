@@ -1,6 +1,6 @@
 # ADR 0021 — Prefer remote work; allow Milan roles without Italian requirements
 
-- Status: Accepted
+- Status: Accepted; ambiguous-location treatment superseded in part by ADR 0022
 - Date: 2026-10-05
 - Decision owners: Clue owner
 
@@ -23,6 +23,7 @@ The previous search default treated remote as a hard workplace constraint. The o
 - Remote location eligibility remains independent of workplace type; an unqualified “remote” label does not prove a company can employ someone in Italy.
 - A posting can omit language conditions or phrase them unusually. The local detector may miss a requirement; Jev and the result's qualification evidence handle remaining cases, and the employer listing is authoritative.
 - When the local city or physical work location is ambiguous, the result remains reviewable instead of being treated as a confirmed match.
+- ADR 0022 supersedes this ambiguity behavior for the default `remote_preferred` search: unverified remote geography and workplace/city evidence are excluded before Jev. The rest of this decision, including the Milan exception and language rule, remains active.
 
 ## Validation evidence
 

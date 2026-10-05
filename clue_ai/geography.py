@@ -138,7 +138,7 @@ ALIASES = {
     "milan": "italy",
     "milano": "italy",
 }
-POLICY_VERSION = "filters-v1.5.0"
+POLICY_VERSION = "filters-v1.6.0"
 
 
 def target_country(value: str) -> str:
@@ -179,6 +179,11 @@ def region_decision(location: str, work_from: str) -> tuple[str, str]:
         return "eligible", location[:500]
     if any(members is None for _, members in regions):
         return "eligible", location[:500]
+    if target and any(name == "emea" for name, _ in regions) and not any(
+        name != "emea" and members is not None and target in members
+        for name, members in regions
+    ):
+        return "needs_verification", location[:500]
     if not target:
         return "needs_verification", location[:500]
     if target == "turkey" and any(name in {"europe", "asia"} for name, _ in regions):

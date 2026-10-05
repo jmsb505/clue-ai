@@ -82,9 +82,11 @@ def explicit_italian_language_requirement(description: str) -> str:
 def local_workplace_decision(
     location: str, description: str, workplace_type: str, local_city: str
 ) -> tuple[str, str]:
-    """Check explicitly nonremote roles against the user's chosen office city."""
+    """Check physical or unspecified workplace locations against the chosen city."""
     normalized_type = str(workplace_type or "unknown").casefold().replace("-", "")
-    if normalized_type not in {"hybrid", "onsite"}:
+    if normalized_type == "remote":
+        return "not_applicable", ""
+    if normalized_type not in {"hybrid", "onsite", "unknown"}:
         return "not_applicable", ""
     city = (str(local_city or "Milan").split(",", maxsplit=1)[0].strip() or "Milan")
     variants = ("Milan", "Milano") if city.casefold() in {"milan", "milano"} else (city,)

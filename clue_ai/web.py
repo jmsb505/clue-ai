@@ -428,7 +428,9 @@ def create_app(
             if latest and latest.get("criteria"):
                 criteria = criteria_from_form(latest["criteria"])
                 if criteria.workplace == "remote":
-                    criteria = replace(criteria, workplace="remote_preferred")
+                    criteria = replace(
+                        criteria, workplace="remote_preferred", include_unknown_location=False
+                    )
             else:
                 criteria = SearchCriteria(
                     roles=focused_roles(profile.target_roles),
@@ -505,7 +507,9 @@ def create_app(
         if latest and latest.get("criteria"):
             criteria = criteria_from_form(latest["criteria"])
             if source_run is None and criteria.workplace == "remote":
-                criteria = replace(criteria, workplace="remote_preferred")
+                criteria = replace(
+                    criteria, workplace="remote_preferred", include_unknown_location=False
+                )
         else:
             criteria = SearchCriteria(
                 roles=focused_roles(profile.target_roles),

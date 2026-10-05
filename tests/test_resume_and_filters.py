@@ -186,7 +186,7 @@ def test_canonical_url_removes_tracking_and_rejects_private_targets():
     assert canonical_url("https://internal.example.local/jobs") == ""
 
 
-def test_hard_filters_keep_explicit_europe_eligibility_and_mark_uncertain_location(settings):
+def test_remote_preferred_scope_drops_unverified_remote_location():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     common = {
         "title": "Software Engineer",
@@ -211,10 +211,9 @@ def test_hard_filters_keep_explicit_europe_eligibility_and_mark_uncertain_locati
         SearchCriteria(roles="Software Engineer", must_have="Python", include_unknown_location=True),
     )
 
-    assert [item["id"] for item in results] == ["eligible", "uncertain"]
+    assert [item["id"] for item in results] == ["eligible"]
     assert results[0]["eligibility_status"] == "eligible"
     assert results[0]["eligibility_evidence"]
-    assert results[1]["eligibility_status"] == "needs_verification"
     assert {item["freshness_status"] for item in results} == {"recent"}
 
 
@@ -230,7 +229,9 @@ def test_unknown_location_can_be_excluded_by_explicit_user_choice():
         "last_checked_at": "",
     }
 
-    assert filter_jobs([item], SearchCriteria(include_unknown_location=False)) == []
+    assert filter_jobs(
+        [item], SearchCriteria(workplace="any", include_unknown_location=False)
+    ) == []
 
 
 def test_results_checked_over_24_hours_ago_are_marked_stale():

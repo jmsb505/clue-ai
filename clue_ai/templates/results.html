@@ -186,7 +186,7 @@
               <ul class="evidence-list">
                 {% for key, label in filter_check_labels.items() %}
                   {% set check = job.filter_checks.get(key) %}
-                  <li><b>{{ label }}:</b> {% if check %}{% if check.status == 'match' %}Supported{% elif check.status == 'conflict' %}Conflicts{% else %}Needs verification{% endif %} · model confidence {{ '%.2f'|format(check.confidence) }}{% if check.constraint_source %} · explicit listing restriction: {{ check.constraint_evidence }} (Jev originally: {{ check.model_status }}){% elif check.model_status != check.status %} (invalid response confidence; original decision: {{ check.model_status }}){% endif %}{% elif job.rubric_version == 'fit-v1.7.0' %}Answer pending{% else %}Not assessed in this search{% endif %}</li>
+                  <li><b>{{ label }}:</b> {% if check %}{% if check.status == 'match' %}Supported{% elif check.status == 'conflict' %}Conflicts{% else %}Needs verification{% endif %} · model confidence {{ '%.2f'|format(check.confidence) }}{% if check.constraint_source %} · explicit listing restriction: {{ check.constraint_evidence }} (Jev originally: {{ check.model_status }}){% elif check.model_status != check.status %} (invalid response confidence; original decision: {{ check.model_status }}){% endif %}{% elif job.rubric_version in ['fit-v1.7.0', 'fit-v1.8.0'] %}Answer pending{% else %}Not assessed in this search{% endif %}</li>
                 {% endfor %}
               </ul>
             {% endif %}

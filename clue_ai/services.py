@@ -194,7 +194,7 @@ def run_search(
         database_path,
         run_id,
         stage="filtering",
-        message="Screening cached listings for entry-level AI engineering before Jev.",
+        message="Screening cached listings for AI engineering and confirmed work location before Jev.",
         checked_sources=checked_notes,
         found_count=found_count,
     )
@@ -218,8 +218,8 @@ def run_search(
         f"({focus_note(ingestion_excluded)}). These are local relevance decisions, not Jev scores."
     )
     workplace_scope = (
-        f"Remote preferred and must be eligible from {criteria.work_from}; hybrid/on-site roles "
-        f"allowed in {criteria.local_workplace_city}."
+        f"Confirmed remote eligibility from {criteria.work_from} or an explicitly located role in "
+        f"{criteria.local_workplace_city} is required; unverified locations are excluded before Jev."
         if criteria.workplace == "remote_preferred"
         else f"Workplace setting: {criteria.workplace}."
     )
@@ -230,8 +230,10 @@ def run_search(
     )
     exclusion_labels = {
         "explicit_italian_requirement": "explicit Italian-language requirement(s)",
-        "in_person_outside_local_city": "hybrid/on-site role(s) outside the selected city",
-        "in_person_city_unknown": "hybrid/on-site role(s) with an unknown city",
+        "remote_outside_work_from_region": "remote role(s) outside the selected work-from region",
+        "remote_region_unverified": "remote role(s) without confirmed work-from eligibility",
+        "in_person_outside_local_city": "hybrid/on-site role(s) outside the selected local city",
+        "workplace_city_unverified": "role(s) without confirmed workplace or local-city eligibility",
     }
     exclusions = ", ".join(
         f"{count} {exclusion_labels[key]}"

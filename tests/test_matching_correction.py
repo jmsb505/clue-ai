@@ -45,7 +45,7 @@ from clue_ai.web import create_app
         ("Europe", "Brazil", "not_eligible"),
         ("APAC", "Italy", "not_eligible"),
         ("North America", "Italy", "not_eligible"),
-        ("EMEA", "Italy", "eligible"),
+        ("EMEA", "Italy", "needs_verification"),
         ("EU", "UK", "not_eligible"),
         ("EEA", "Norway", "eligible"),
         ("Worldwide except Italy", "Italy", "not_eligible"),
