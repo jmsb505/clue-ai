@@ -21,9 +21,10 @@ from clue_ai.repository import (
     update_run,
     update_score,
 )
+from clue_ai.work_scope import explicit_italian_language_requirement, local_workplace_decision
 
 FIT_DIMENSIONS = ("role", "skills", "experience", "ai_relevance", "preferences")
-RUBRIC_VERSION = "fit-v1.6.0"
+RUBRIC_VERSION = "fit-v1.7.0"
 MAX_QUALIFICATIONS_PER_JOB = 4
 SCORE_LEVELS = {
     "0": "Clear, explicit contradictory evidence in this dimension. Do not use 0 merely because evidence is missing.",
@@ -67,6 +68,7 @@ FILTER_CHECK_LABELS = {
     "location": "Work location and eligibility",
     "workplace": "Workplace arrangement",
     "requirements": "Additional requirements and availability",
+    "language": "Language requirements",
 }
 FILTER_CHECK_INSTRUCTIONS = {
     "seniority": (
@@ -93,13 +95,17 @@ FILTER_CHECK_INSTRUCTIONS = {
         "conflict. Verify local eligibility heuristics against the listing; headquarters, offices "
         "or customer locations alone do not restrict remote hiring. Never infer citizenship or "
         "work rights. If requires_sponsorship=yes, explicit refusal conflicts and missing evidence "
-        "is review when allowed; no/unknown does not require sponsorship. Respect explicit false "
-        "include_unknown_location/include_unknown_sponsorship choices."
+        "is review when allowed; no/unknown does not require sponsorship. Under remote_preferred, "
+        "hybrid/on-site work is allowed only in local_workplace_city; do not treat that local "
+        "exception as a remote role. Respect explicit false include_unknown_location/"
+        "include_unknown_sponsorship choices."
     ),
     "workplace": (
-        "Check workplace. remote accepts fully remote work; mandatory on-site/hybrid attendance "
-        "conflicts, but an optional office does not. hybrid means hybrid OR remote. any imposes "
-        "no workplace restriction. Missing arrangement is review when a restriction applies."
+        "Check the user's workplace selection. remote means remote-only; hybrid means hybrid or "
+        "remote; any imposes no restriction. Under remote_preferred, remote is a preference, and "
+        "hybrid/on-site work is permitted in state.search_criteria.local_workplace_city. An explicit "
+        "physical location elsewhere conflicts with this local exception; unclear city/workplace "
+        "evidence is review. Do not reject a Milan office role solely because it is not remote."
     ),
     "requirements": (
         "Check only supplied employment_types, minimum_salary, must_have, posting dates and "
@@ -112,6 +118,16 @@ FILTER_CHECK_INSTRUCTIONS = {
         "An old posted date outside posted_within_days is review if the job may still be open; "
         "an explicitly closed listing or a past valid_through date conflicts. Missing dates do "
         "not establish expiry. Use state.search_criteria.assessed_at as the current date."
+    ),
+    "language": (
+        "Assess stated language requirements against state.candidate.languages. English is an "
+        "allowed requirement; mark it match when the profile supports it and review when the profile "
+        "does not provide enough evidence. If "
+        "state.search_criteria.exclude_italian_requirement is true, an explicit mandatory Italian "
+        "language requirement conflicts. Italian as preferred, optional, or a bonus is not a "
+        "conflict; English or Italian as alternatives is not an Italian-only requirement. A company "
+        "being Italian or serving Italian customers does not establish a language requirement. "
+        "Missing or ambiguous language evidence is review."
     ),
 }
 
@@ -144,8 +160,11 @@ DIMENSION_INSTRUCTIONS = {
         "specific product or work context in the listing."
     ),
     "preferences": (
-        "Assess alignment with state.search_criteria.nice_to_have terms, if any. "
-        "When there are no optional terms, return unknown rather than inventing preferences."
+        "Assess alignment with state.search_criteria.nice_to_have terms and the stated workplace "
+        "preference. Under remote_preferred, prefer remote work over an otherwise eligible "
+        "hybrid/on-site role in local_workplace_city, but do not treat the local role as a hard "
+        "conflict. When neither optional terms nor a workplace preference provides evidence, return "
+        "unknown rather than inventing preferences."
     ),
 }
 
@@ -489,6 +508,8 @@ def _build_request_state(
         "paid_only": True,
         "work_from": str(criteria.work_from or "").strip()[:100],
         "workplace": str(criteria.workplace or "unknown").strip()[:20],
+        "local_workplace_city": str(criteria.local_workplace_city or "Milan").strip()[:100],
+        "exclude_italian_requirement": bool(criteria.exclude_italian_requirement),
         "employment_types": str(criteria.employment_types or "").strip()[:200],
         "minimum_salary": str(criteria.minimum_salary or "").strip()[:30],
         "salary_currency": str(criteria.salary_currency or "EUR").strip()[:3].upper(),
@@ -788,16 +809,46 @@ def _seniority_evidence(
 def apply_location_constraint(
     checks: dict[str, dict[str, Any]], job: dict[str, Any], criteria: SearchCriteria
 ) -> None:
-    """Retain Jev's answer, but enforce an explicit incompatible work-region fact."""
+    """Retain Jev's answers, but enforce explicit user location and language constraints."""
     check = checks.get("location")
-    if check is None:
-        return  # A missing answer must remain unassessed, never become a fabricated answer.
-    status, evidence = explicit_work_region(
-        str(job.get("location_raw") or ""), str(job.get("description") or ""), criteria.work_from
-    )
-    if status == "not_eligible":
-        check.update(status="conflict", constraint_source="listing_work_region",
-                     constraint_evidence=evidence, decision_policy=POLICY_VERSION)
+    if check is not None:
+        status, evidence = explicit_work_region(
+            str(job.get("location_raw") or ""),
+            str(job.get("description") or ""),
+            criteria.work_from,
+        )
+        if status == "not_eligible":
+            check.update(
+                status="conflict",
+                constraint_source="listing_work_region",
+                constraint_evidence=evidence,
+                decision_policy=POLICY_VERSION,
+            )
+        if criteria.workplace == "remote_preferred":
+            city_status, city_evidence = local_workplace_decision(
+                str(job.get("location_raw") or ""),
+                str(job.get("description") or ""),
+                str(job.get("workplace_type") or "unknown"),
+                criteria.local_workplace_city,
+            )
+            if city_status == "not_eligible":
+                check.update(
+                    status="conflict",
+                    constraint_source="outside_local_workplace_city",
+                    constraint_evidence=city_evidence,
+                    decision_policy=POLICY_VERSION,
+                )
+
+    language_check = checks.get("language")
+    if language_check is not None and criteria.exclude_italian_requirement:
+        evidence = explicit_italian_language_requirement(str(job.get("description") or ""))
+        if evidence:
+            language_check.update(
+                status="conflict",
+                constraint_source="italian_language_requirement",
+                constraint_evidence=evidence,
+                decision_policy=POLICY_VERSION,
+            )
 
 
 def _combine_filter_checks(checks: dict[str, dict[str, Any]]) -> str:
@@ -820,8 +871,13 @@ def _filter_evidence(checks: dict[str, dict[str, Any]]) -> list[str]:
         if labels:
             evidence.append(f"{prefix}: {', '.join(labels)}.")
     for check in checks.values():
-        if check.get("constraint_source"):
+        if check.get("constraint_source") == "listing_work_region":
             evidence.append(f"Explicit listing work-region conflict: {check['constraint_evidence']}.")
+        elif check.get("constraint_source"):
+            label = FILTER_CHECK_LABELS.get(check.get("label"), "Search preference")
+            evidence.append(
+                f"Explicit {label.casefold()} rule conflict: {check['constraint_evidence']}."
+            )
     return evidence
 
 

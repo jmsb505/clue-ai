@@ -8,7 +8,13 @@ An owner-started search refreshes due feeds and public employer sources, normali
 
 The source registry has 15 built-in entries: 12 automatic feed/API/crawler sources, one manual X lead route, and two manual-only boards. It also supports owner-added validated public sources and employer-linked ATS boards. The enabled automatic sources include two additional free APIs from [AI Dev Jobs](https://aidevboard.com/docs) and [Dev Global Jobs](https://devglobaljobs.com/developers). The source review records all current use conditions, costs, attribution and refresh behavior. These sources add coverage; they do not make search internet-wide.
 
-Each new API source runs at most five varied AI role-family queries per daily source interval, one page for each query, with a one-second gap. The AI Dev Jobs page limit is 50; Dev Global Jobs is 100. A remote-only search passes the documented remote parameter but no candidate-country restriction, so Italy/Europe eligibility remains decided from listing evidence. An HTTP 429 stops that source and marks it paused; no retry is made. Raw, parsed, AI-focused, new, and existing exact-URL identities appear separately in search coverage.
+Each new API source runs at most five varied AI role-family queries per daily source interval, one page for each query, with a one-second gap. The AI Dev Jobs page limit is 50; Dev Global Jobs is 100. Only an explicitly remote-only search passes the documented remote parameter; remote-preferred mode leaves workplace broad and applies the user's location policy locally. An HTTP 429 stops that source and marks it paused; no retry is made. Raw, parsed, AI-focused, new, and existing exact-URL identities appear separately in search coverage.
+
+## Workplace and language scope
+
+New searches default to remote preferred, with remote work eligible only when supported from the selected country. The default local-office city is Milan: confirmed hybrid/on-site jobs there remain eligible; explicit hybrid/on-site locations elsewhere are excluded. Missing or ambiguous workplace/city evidence stays in review when the user includes unknown locations. The city is an editable search input.
+
+The owner accepts English-language requirements and excludes an explicit Italian-language requirement. A bounded local text detector removes clear mandatory-Italian cases before Jev, while preferred Italian, English requirements, and ambiguous language evidence remain eligible. Jev receives a separate typed language filter question so unclear cases can be reviewed. Coverage records known local-scope exclusions. Remote preference is included in Jev's preference signal and never overrides hard geography or language constraints. See [ADR 0021](../decisions/0021-milan-workplace-and-language-preferences.md).
 
 ## Jev decision flow
 

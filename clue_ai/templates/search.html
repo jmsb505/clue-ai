@@ -31,11 +31,17 @@
       <label class="field">
         <span>Workplace style</span>
         <select name="workplace">
-          <option value="remote" {% if criteria.workplace == 'remote' %}selected{% endif %}>Remote first</option>
+          <option value="remote_preferred" {% if criteria.workplace == 'remote_preferred' %}selected{% endif %}>Remote preferred · local office roles allowed</option>
+          <option value="remote" {% if criteria.workplace == 'remote' %}selected{% endif %}>Remote only</option>
           <option value="hybrid" {% if criteria.workplace == 'hybrid' %}selected{% endif %}>Hybrid or remote</option>
           <option value="any" {% if criteria.workplace == 'any' %}selected{% endif %}>Any workplace</option>
         </select>
-        <small>Listings with no workplace details can still appear for review.</small>
+        <small>In the default mode, hybrid/on-site roles must be in the city below. Unclear arrangements stay available for review.</small>
+      </label>
+      <label class="field">
+        <span>City for hybrid or on-site roles</span>
+        <input name="local_workplace_city" maxlength="100" value="{{ criteria.local_workplace_city }}" placeholder="Milan">
+        <small>Remote remains preferred; the local city is an allowed exception.</small>
       </label>
       <label class="field">
         <span>Will you need visa sponsorship?</span>
@@ -75,7 +81,7 @@
       <div><span class="kicker kicker-muted">02 · NON-NEGOTIABLES</span><h2>What should a role include?</h2></div>
       <span class="mini-badge">AI focus before Jev</span>
     </div>
-    <div class="alert alert-soft"><b>Your focus:</b> paid junior, graduate, entry-level AI engineering roles or internships. Local screening removes unrelated work, explicit senior titles and explicit unpaid positions before indexing or Jev. Missing pay or level stays eligible for Jev to verify. Coverage shows local exclusion counts separately from duplicates.</div>
+    <div class="alert alert-soft"><b>Your focus:</b> paid junior, graduate, entry-level AI engineering roles or internships. English requirements are fine; explicit Italian-language requirements are excluded, while Italian as a preferred skill is allowed. Local screening removes unrelated work, explicit senior titles, explicit unpaid positions and known language conflicts before Jev. Missing pay or level stays eligible for Jev to verify. Coverage shows local exclusion counts separately from duplicates.</div>
     <div class="form-grid">
       <label class="field">
         <span>Must-have terms</span>

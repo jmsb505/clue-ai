@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from clue_ai.domain import SearchCriteria
 from clue_ai.job_focus import focused_roles
 from clue_ai.jobs import classify_location
+from clue_ai.work_scope import explicit_italian_language_requirement, local_workplace_decision
 
 DEFAULT_FIT_WEIGHTS = {
     "role": 25,
@@ -65,6 +67,44 @@ def annotate_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[
     return annotated
 
 
+def apply_candidate_search_scope(
+    jobs: list[dict[str, Any]], criteria: SearchCriteria
+) -> tuple[list[dict[str, Any]], Counter[str]]:
+    """Apply the owner's Milan workplace and explicit Italian-language constraints."""
+    selected: list[dict[str, Any]] = []
+    excluded: Counter[str] = Counter()
+    for job in jobs:
+        if criteria.exclude_italian_requirement:
+            language_evidence = explicit_italian_language_requirement(
+                str(job.get("description") or "")
+            )
+            if language_evidence:
+                excluded["explicit_italian_requirement"] += 1
+                continue
+
+        if criteria.workplace == "remote_preferred":
+            city_status, city_evidence = local_workplace_decision(
+                str(job.get("location_raw") or ""),
+                str(job.get("description") or ""),
+                str(job.get("workplace_type") or "unknown"),
+                criteria.local_workplace_city,
+            )
+            if city_status == "not_eligible":
+                excluded["in_person_outside_local_city"] += 1
+                continue
+            if city_status == "needs_verification":
+                job["eligibility_status"] = "needs_verification"
+                job["eligibility_evidence"] = city_evidence
+                if not criteria.include_unknown_location:
+                    excluded["in_person_city_unknown"] += 1
+                    continue
+            elif city_status == "eligible":
+                job["eligibility_status"] = "eligible"
+                job["eligibility_evidence"] = city_evidence
+        selected.append(job)
+    return selected, excluded
+
+
 def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[dict[str, Any]]:
     selected: list[dict[str, Any]] = []
     role_terms = terms(criteria.roles)
@@ -76,7 +116,8 @@ def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[di
     except ValueError:
         minimum_salary = None
 
-    for job in annotate_jobs(jobs, criteria):
+    scoped_jobs, _ = apply_candidate_search_scope(annotate_jobs(jobs, criteria), criteria)
+    for job in scoped_jobs:
         text = _job_text(job)
         if role_terms and not any(term in text for term in role_terms):
             continue
@@ -92,7 +133,7 @@ def filter_jobs(jobs: list[dict[str, Any]], criteria: SearchCriteria) -> list[di
                 continue
         if criteria.workplace == "remote" and job.get("workplace_type") not in {"remote", "unknown"}:
             continue
-        if criteria.workplace == "hybrid" and job.get("workplace_type") not in {"hybrid", "unknown"}:
+        if criteria.workplace == "hybrid" and job.get("workplace_type") not in {"remote", "hybrid", "unknown"}:
             continue
         eligibility = str(job.get("eligibility_status") or "unknown")
         if eligibility == "not_eligible":
@@ -169,7 +210,11 @@ def criteria_from_form(form: dict[str, Any]) -> SearchCriteria:
         target_seniority="junior_or_intern",
         paid_only=True,
         work_from=str(form.get("work_from", "Italy"))[:100],
-        workplace=str(form.get("workplace", "remote"))[:20],
+        workplace=_enum(
+            form.get("workplace", "remote_preferred"),
+            {"remote_preferred", "remote", "hybrid", "any"},
+        ),
+        local_workplace_city=str(form.get("local_workplace_city", "Milan"))[:100],
         employment_types=str(form.get("employment_types", ""))[:200],
         minimum_salary=str(form.get("minimum_salary", ""))[:30],
         salary_currency=str(form.get("salary_currency", "EUR"))[:3].upper(),

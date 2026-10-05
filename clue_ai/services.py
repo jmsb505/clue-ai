@@ -8,7 +8,7 @@ from clue_ai.company_sources import crawl_tracked_companies
 from clue_ai.config import Settings
 from clue_ai.database import get_profile
 from clue_ai.domain import utc_now
-from clue_ai.filters import annotate_jobs, criteria_from_form
+from clue_ai.filters import annotate_jobs, apply_candidate_search_scope, criteria_from_form
 from clue_ai.jev import score_run
 from clue_ai.job_focus import focus_note, focused_jobs
 from clue_ai.repository import (
@@ -204,6 +204,7 @@ def run_search(
     visible = [job for job in indexed if not job.get("hidden")]
     eligible, cached_excluded = focused_jobs(visible)
     candidates = annotate_jobs(eligible, criteria)
+    candidates, scope_excluded = apply_candidate_search_scope(candidates, criteria)
     candidates, research_counts = partition_researched_jobs(
         database_path,
         candidates,
@@ -215,6 +216,31 @@ def run_search(
         f"{sum(cached_excluded.values())} cached listings excluded ({focus_note(cached_excluded)}). "
         f"Fetched listings excluded before indexing: {sum(ingestion_excluded.values())} "
         f"({focus_note(ingestion_excluded)}). These are local relevance decisions, not Jev scores."
+    )
+    workplace_scope = (
+        f"Remote preferred and must be eligible from {criteria.work_from}; hybrid/on-site roles "
+        f"allowed in {criteria.local_workplace_city}."
+        if criteria.workplace == "remote_preferred"
+        else f"Workplace setting: {criteria.workplace}."
+    )
+    language_scope = (
+        " English requirements are allowed; explicit Italian-language requirements are excluded."
+        if criteria.exclude_italian_requirement
+        else " No Italian-language exclusion is applied."
+    )
+    exclusion_labels = {
+        "explicit_italian_requirement": "explicit Italian-language requirement(s)",
+        "in_person_outside_local_city": "hybrid/on-site role(s) outside the selected city",
+        "in_person_city_unknown": "hybrid/on-site role(s) with an unknown city",
+    }
+    exclusions = ", ".join(
+        f"{count} {exclusion_labels[key]}"
+        for key, count in sorted(scope_excluded.items())
+        if key in exclusion_labels
+    )
+    checked_notes.append(
+        f"Workplace and language scope: {workplace_scope}{language_scope}"
+        + (f" Locally excluded: {exclusions}." if exclusions else " No listings excluded by these rules.")
     )
     review_note = (
         f"Listing URL tracking: {research_counts['new']} new, "

@@ -427,11 +427,12 @@ def create_app(
             latest = get_latest_run(db_path)
             if latest and latest.get("criteria"):
                 criteria = criteria_from_form(latest["criteria"])
+                if criteria.workplace == "remote":
+                    criteria = replace(criteria, workplace="remote_preferred")
             else:
                 criteria = SearchCriteria(
                     roles=focused_roles(profile.target_roles),
                     work_from=str(settings_row.get("default_work_from") or "Italy"),
-                    workplace="remote",
                     requires_sponsorship=profile.requires_sponsorship,
                 )
             if not criteria.roles.strip() and profile.target_roles.strip():
@@ -503,6 +504,8 @@ def create_app(
         latest = get_latest_run(db_path) if source_run is None else source_run
         if latest and latest.get("criteria"):
             criteria = criteria_from_form(latest["criteria"])
+            if source_run is None and criteria.workplace == "remote":
+                criteria = replace(criteria, workplace="remote_preferred")
         else:
             criteria = SearchCriteria(
                 roles=focused_roles(profile.target_roles),
@@ -558,8 +561,13 @@ def create_app(
         work_from = str(
             request.query_params.get("work_from", saved_criteria.get("work_from", "Italy"))
         )[:100]
+        requested_workplace = request.query_params.get(
+            "workplace", saved_criteria.get("workplace", "remote")
+        )
+        if str(requested_workplace).casefold() == "remote_preferred":
+            requested_workplace = "remote"
         workplace = _choice(
-            request.query_params.get("workplace", saved_criteria.get("workplace", "remote")),
+            requested_workplace,
             {"remote", "hybrid", "onsite", "any"},
         )
         leads = manual_x_leads(db_path)

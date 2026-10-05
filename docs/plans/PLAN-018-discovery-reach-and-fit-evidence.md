@@ -1,6 +1,6 @@
 # PLAN-018 — Wider discovery, no-repeat listings, and qualification evidence
 
-Status: M1 and M2 pushed; M3 implementation complete (static validation; live Jev/runtime unverified)
+Status: M1–M3 pushed; M4 implementation complete (static validation; live workflow unverified)
 Created: 2026-10-04 · Updated: 2026-10-05
 
 ## Objective
@@ -96,3 +96,30 @@ Implemented a bounded extraction of up to four explicit required/preferred quali
 ## Source-of-truth updates and risks
 
 Update product/architecture/source review, this plan, and an ADR before closing relevant milestones. Record source terms, refresh/pagination ceilings, direct URL and attribution behavior. Risk: a permanent unchanged-URL policy can hide a valid repost that reused a URL; detect material content changes and offer a one-run include-reviewed override. Risk: no static parser can understand every CV/JD requirement format; label extraction coverage and leave unparsed requirements unknown. No real-world applicant outcome is inferred.
+
+## M4 — Remote preference with Milan workplace and language scope
+
+### Work
+
+- Make remote a ranking preference rather than a hard exclusion. Keep remote work eligible only when the posting supports work from the selected country.
+- Allow explicit hybrid/on-site roles in the selected local city (Milan by default). Exclude explicit in-person roles elsewhere; retain unclear city/workplace evidence for review when the user allows unknown locations.
+- Exclude roles with an explicit Italian-language requirement. English requirements are acceptable; optional/preferred Italian is not a conflict. Keep ambiguous language evidence visible for Jev review.
+- Carry workplace preference, local city, and language rule into Jev's typed filter assessment and the saved run criteria. Show local scope exclusions in coverage.
+- Let new API queries omit remote-only parameters under this preference so locally relevant Milan office roles remain discoverable. Preserve strict remote-only mode as an explicit user option.
+
+### Acceptance
+
+- A confirmed remote role eligible from Italy remains in scope and receives a remote-preference signal.
+- A confirmed Milan hybrid/on-site role remains in scope when it has no explicit Italian requirement.
+- A confirmed in-person role outside Milan and a role explicitly requiring Italian do not enter Jev's batch; coverage reports each local exclusion reason.
+- Missing city, workplace, or language evidence remains review when allowed. “Italian preferred” and “English required” are not conflicts.
+- New searches default to remote preference plus Milan office eligibility; old search snapshots preserve their original criteria. Reassessment of unchanged old listing URLs requires the existing include-reviewed option.
+- Static Python compilation, Ruff, Jinja compilation, and whitespace checks pass. Do not start the app, make live source/Jev calls, or run formal tests during delivery.
+
+### M4 progress and evidence
+
+Implemented `remote_preferred` as the new-search default, preserving strict remote-only as an option. Remote postings still need work-from-country evidence; confirmed hybrid/on-site roles in the configurable local city (Milan by default) can remain eligible, while known other-city physical roles are excluded. A conservative local detector excludes explicit Italian-language requirements before Jev; English requirements and clearly optional/preferred Italian remain allowed. Jev receives typed workplace and language criteria, and coverage records exclusions by reason. Product definition, architecture notes, and ADR 0021 record the behavior and its limitations.
+
+Conda-gen `compileall`, Ruff, Jinja compilation for the changed search/results templates, and `git diff --check` passed. No app session, source crawl, Jev request, or formal test suite was run. Static validation does not establish live source reach, parser accuracy across all job-board wording, or fit calibration; ambiguous cases remain reviewable and the employer listing remains authoritative.
+
+Expected commit: `feat: allow Milan roles with remote preference`.

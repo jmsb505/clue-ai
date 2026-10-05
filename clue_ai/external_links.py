@@ -111,7 +111,12 @@ def build_x_search_url(roles: str, work_from: str, workplace: str = "remote") ->
         '("hiring" OR "job opening" OR "apply")',
         location_query,
     ]
-    workplace_term = {"remote": "remote", "hybrid": "hybrid", "onsite": "onsite"}.get(
+    workplace_term = {
+        "remote": "remote",
+        "remote_preferred": "remote",
+        "hybrid": "hybrid",
+        "onsite": "onsite",
+    }.get(
         str(workplace).casefold()
     )
     if workplace_term:

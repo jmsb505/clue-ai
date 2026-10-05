@@ -43,7 +43,9 @@ class SearchCriteria:
     target_seniority: str = "junior_or_intern"
     paid_only: bool = True
     work_from: str = "Italy"
-    workplace: str = "remote"
+    workplace: str = "remote_preferred"
+    local_workplace_city: str = "Milan"
+    exclude_italian_requirement: bool = True
     employment_types: str = ""
     minimum_salary: str = ""
     salary_currency: str = "EUR"
