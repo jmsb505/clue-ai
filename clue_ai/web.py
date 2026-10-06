@@ -16,6 +16,13 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from clue_ai.application_followups import (
+    cancel_followup_for_request,
+    cancel_followups_for_closed_jobs,
+    finish_followup,
+    list_followups,
+    schedule_followup,
+)
 from clue_ai.application_prep import (
     add_source as add_preparation_source,
 )
@@ -70,7 +77,11 @@ from clue_ai.external_links import (
     normalize_public_job_url,
     normalize_x_status_url,
 )
-from clue_ai.feedback import outcome_summary, record_interview_feedback, record_stage
+from clue_ai.feedback import (
+    outcome_summary,
+    record_interview_feedback,
+    record_stage,
+)
 from clue_ai.filters import criteria_from_form
 from clue_ai.gmail_drafts import (
     GmailDraftError,
@@ -1023,18 +1034,22 @@ def create_app(
 
     @app.get("/preparations", response_class=HTMLResponse)
     async def preparations_page(request: Request):
+        cancel_followups_for_closed_jobs(db_path)
+        followups = list_followups(db_path)
         return render(
             request,
             "preparations.html",
             {
                 "active_page": "preparations",
                 "preparations": list_preparations(db_path),
+                "followups": followups,
                 "notice": request.query_params.get("notice", ""),
             },
         )
 
     @app.get("/preparations/{request_id}", response_class=HTMLResponse)
     async def preparation_detail(request: Request, request_id: str):
+        cancel_followups_for_closed_jobs(db_path)
         record = get_preparation(db_path, request_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Preparation request not found.")
@@ -1092,6 +1107,7 @@ def create_app(
                 "contacts": contacts,
                 "gmail_drafts": gmail_drafts,
                 "outreach_options": outreach_options,
+                "followup": next(iter(list_followups(db_path, request_id=request_id)), None),
                 "gmail_connected": gmail_connected,
                 "applied_recorded": bool(applied_record),
                 "notice": request.query_params.get("notice", ""),
@@ -1139,6 +1155,49 @@ def create_app(
                 "notice": request.query_params.get("notice", ""),
             },
         )
+
+    @app.post("/preparations/{request_id}/follow-up")
+    async def schedule_followup_route(request: Request, request_id: str):
+        form = dict(await request.form())
+        try:
+            schedule_followup(
+                db_path,
+                request_id,
+                kind=str(form.get("kind") or ""),
+                due_on=str(form.get("due_on") or ""),
+                note=str(form.get("note") or ""),
+            )
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}", status_code=303
+            )
+        return RedirectResponse(
+            f"/preparations/{request_id}?notice=In-app+follow-up+reminder+saved.", status_code=303
+        )
+
+    @app.post("/preparations/{request_id}/follow-up/finish")
+    async def finish_followup_route(request: Request, request_id: str):
+        form = dict(await request.form())
+        outcome = str(form.get("outcome") or "")
+        if outcome == "completed":
+            state, reason = "completed", "Owner completed the follow-up manually."
+        elif outcome == "reply":
+            state, reason = "cancelled", "Owner marked a relevant reply received."
+        elif outcome == "closed":
+            state, reason = "cancelled", "Owner marked the opportunity closed."
+        else:
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Choose+a+valid+reminder+action.", status_code=303
+            )
+        if not finish_followup(db_path, request_id, state=state, resolution=reason):
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=No+active+reminder+was+found.", status_code=303
+            )
+        label = "completed" if state == "completed" else "closed"
+        return RedirectResponse(
+            f"/preparations/{request_id}?notice=Follow-up+reminder+{label}.", status_code=303
+        )
+
 
     @app.post("/preparations/{request_id}/retry")
     async def retry_preparation_route(request_id: str, background_tasks: BackgroundTasks):
@@ -1346,6 +1405,10 @@ def create_app(
                 stage=stage,
                 details=str(form.get("details") or ""),
             )
+            if stage in {"screen", "technical", "final", "offer", "rejected", "withdrawn", "no_response"}:
+                cancel_followup_for_request(
+                    db_path, request_id, f"Relevant application update recorded: {stage}."
+                )
         except ValueError as exc:
             return RedirectResponse(
                 f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",
@@ -1379,6 +1442,9 @@ def create_app(
                 self_assessment=str(form.get("self_assessment") or ""),
                 employer_feedback=str(form.get("employer_feedback") or ""),
                 gap_tags=tags,
+            )
+            cancel_followup_for_request(
+                db_path, request_id, "Interview feedback was recorded for this opportunity."
             )
         except ValueError as exc:
             return RedirectResponse(

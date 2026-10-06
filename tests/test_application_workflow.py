@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -13,6 +13,7 @@ from conftest import make_job
 from docx import Document
 from fastapi.testclient import TestClient
 
+from clue_ai.application_followups import list_followups, schedule_followup
 from clue_ai.application_prep import (
     add_source,
     get_preparation,
@@ -644,6 +645,103 @@ def test_owner_reported_outcomes_and_receipts_remain_distinct(settings, database
     assert outcomes.status_code == 200
     assert "Owner Reported" in outcomes.text
     assert "Receipt Imported" in outcomes.text
+
+
+def test_owner_followup_reminders_are_visible_and_cancel_on_reply_or_outcome(settings, database):
+    record, _cv, _technical, _descriptive, _sample, _claim_id, _text = _create_preparation(
+        settings, database
+    )
+    enabled = _enable_synthetic_openai(settings, database)
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+    )
+    with connect(database) as db:
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+    client = TestClient(create_app(enabled), base_url="http://127.0.0.1")
+    approved = client.post(
+        f"/preparations/{record['id']}/packets/{packet_id}/approve",
+        data={"confirm_review": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303
+
+    current_day = datetime.now().astimezone().date()
+    due_on = (current_day + timedelta(days=1)).isoformat()
+    scheduled = client.post(
+        f"/preparations/{record['id']}/follow-up",
+        data={"kind": "outreach", "due_on": due_on, "note": "Check for a reply"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert scheduled.status_code == 303
+    listing = client.get("/preparations")
+    assert "Next actions" in listing.text
+    assert "Check for a reply" in listing.text
+    assert "This is an in-app reminder only" in listing.text
+    assert list_followups(database, today=current_day + timedelta(days=1))[0]["due"]
+
+    replied = client.post(
+        f"/preparations/{record['id']}/follow-up/finish",
+        data={"outcome": "reply"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert replied.status_code == 303
+    with connect(database) as db:
+        reminder = db.execute(
+            "SELECT state, resolution FROM application_followups WHERE request_id = ?",
+            (record["id"],),
+        ).fetchone()
+    assert reminder["state"] == "cancelled"
+    assert "reply" in reminder["resolution"]
+
+    schedule_followup(
+        database, record["id"], kind="application", due_on=due_on, today=current_day
+    )
+    submitted = client.post(
+        f"/preparations/{record['id']}/record-stage",
+        data={"stage": "submitted", "owner_attestation": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert submitted.status_code == 303
+    with connect(database) as db:
+        assert db.execute(
+            "SELECT state FROM application_followups WHERE request_id = ? AND state = 'scheduled'",
+            (record["id"],),
+        ).fetchone()
+    response = client.post(
+        f"/preparations/{record['id']}/record-stage",
+        data={"stage": "screen"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    with connect(database) as db:
+        assert db.execute(
+            "SELECT state FROM application_followups WHERE request_id = ? ORDER BY updated_at DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["state"] == "cancelled"
+
+    schedule_followup(
+        database, record["id"], kind="outreach", due_on=due_on, today=current_day
+    )
+    with connect(database) as db:
+        db.execute("UPDATE jobs SET is_active = 0 WHERE id = ?", (record["job_id"],))
+    client.get("/preparations")
+    with connect(database) as db:
+        assert db.execute(
+            "SELECT state FROM application_followups WHERE request_id = ? ORDER BY updated_at DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["state"] == "cancelled"
 
 
 def test_contact_suppression_invalidates_packet_and_survives_manual_retry(settings, database):

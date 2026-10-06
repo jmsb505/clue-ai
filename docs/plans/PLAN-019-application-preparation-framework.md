@@ -340,7 +340,7 @@ Treat channel comparisons as descriptive unless controlled evidence supports mor
 
 **Goal:** after an owner triggers preparation for an individual high-priority role, use the bounded GPT-6 Luna Researcher tools to find a small number of public, provenance-backed professional contacts without bulk enrichment or automatic research of other listings.
 
-**Implementation status:** Core contact research, source evidence, confidence labels, cross-retry suppression, and a separate exact-approval Gmail draft adapter are implemented with synthetic fixtures. No real OAuth authorization or Gmail draft was created. Automated reminders and cancellation on reply/closure are deferred; the owner remains responsible for monitoring and sending.
+**Implementation status:** Core contact research, source evidence, confidence labels, cross-retry suppression, and a separate exact-approval Gmail draft adapter are implemented with synthetic fixtures. Owner-set in-app reminders appear in the preparation queue and can be completed or cancelled by the owner; relevant reply/interview/status updates and inactive listings cancel them. Clue does not send notifications, read replies, or send follow-up messages. No real OAuth authorization or Gmail draft was created.
 
 **Subtasks:** agent-directed crawl/search through the installed Scrapling adapter; enforce per-opportunity query/page and cost limits; verify source URLs and capture excerpts/observation times; assign confidence and function-match labels; contact suppression; draft one primary message and a reason-gated backup; configure owner-approved Gmail OAuth/adapter; create a Gmail draft only after final owner approval; reconcile draft IDs/timeouts; configurable owner reminders; cancellation on reply/closure/interview.
 
@@ -348,9 +348,9 @@ Treat channel comparisons as descriptive unless controlled evidence supports mor
 
 **Dependencies:** M1–M2; configured query/page/cost limits under the OpenAI budget, approved contact data-retention rules, and separate Gmail authorization if draft staging is enabled.
 
-**Acceptance criteria:** no contact crawl or enrichment occurs before an explicit trigger for that individual opportunity; no fabricated identities or guessed routes; each retained detail has source and observed time; personal profile data is excluded from contact-search queries; only public read-only pages are crawled; no-contact-found is a valid state; the agent has no Gmail tool; only an owner-triggered adapter creates an unsent draft after exact To/Subject/body approval; Clue never sends; timeout reconciliation prevents duplicate drafts; due owner reminders cancel on terminal/relevant events.
+**Acceptance criteria:** no contact crawl or enrichment occurs before an explicit trigger for that individual opportunity; no fabricated identities or guessed routes; each retained detail has source and observed time; personal profile data is excluded from contact-search queries; only public read-only pages are crawled; no-contact-found is a valid state; the agent has no Gmail tool; only an owner-triggered adapter creates an unsent draft after exact To/Subject/body approval; Clue never sends; timeout reconciliation prevents duplicate drafts; owner-set reminders are visible in the local queue, and a recorded reply/interview/terminal outcome or inactive listing cancels a scheduled reminder. Reminders never trigger messages or external notifications.
 
-**Validation:** synthetic contact confidence, suppression, repeated-role, reply/cancel, changed-recipient, Gmail OAuth denial, final-approval binding, draft-create timeout, and duplicate-reconciliation scenarios; privacy/deletion review.
+**Validation:** synthetic contact confidence, suppression, repeated-role, reply/cancel, changed-recipient, Gmail OAuth denial, final-approval binding, draft-create timeout, and duplicate-reconciliation scenarios; reminder date validation, due/overdue queue visibility, replacement/idempotency, reply/outcome/inactive-listing cancellation, and privacy/deletion review.
 
 **Documentation updates:** contact data fields, retention/suppression, cadence and user controls.
 
@@ -439,6 +439,7 @@ Take and validate a local database backup before schema changes. Keep additive m
 - Added a per-listing **Prepare application** start gate: discovery, deterministic filters, and Jev may remain automatic, while research, file generation, and outreach research run only after an owner click for one eligible listing. The click binds revisions and budget to that job; mock interview practice is a separate optional trigger.
 - Owner-approved the Jev/GPT division on 2026-10-06: Jev validates matching; GPT-6 Luna via the OpenAI Responses API at `reasoning.effort=max` researches and generates drafts under a local tool/budget harness. The owner reviews the complete packet before any Gmail draft is created or application is marked submitted. Outreach sending and applications remain manual.
 - Implemented the private evidence register, per-listing manual trigger, Jev snapshot binding, separate API budget/consent gates, bounded public Researcher, Diagnoser/Recruiter/Rewriter stages, optional interview practice, versioned local artifacts, contact suppression, approval-bound Gmail draft staging, and owner outcome feedback.
+- M3 adds owner-set, local-only follow-up reminders to the preparation queue. Explicit reply, interview/status updates, and inactive listings cancel the reminder; no notification, mailbox read, or message send is automated.
 - `.env.example` intentionally contains an empty `OPENAI_API_KEY=`. Tests use only synthetic records and fake provider/Gmail responses. No real CV, API request, Gmail draft, or employer application was used.
 
 ## Implementation discoveries / decisions
@@ -455,6 +456,7 @@ Take and validate a local database backup before schema changes. Keep additive m
 Synthetic implementation evidence for this checkout:
 
 - `pytest tests/test_application_prep.py tests/test_application_workflow.py -q --tb=short`: 22 passed.
+- M3 reminder route and queue validation: `test_owner_followup_reminders_are_visible_and_cancel_on_reply_or_outcome` passed with synthetic data; it covers local queue visibility, due-state evaluation, explicit reply cancellation, cancellation on recorded interview progression, and inactive-listing cancellation.
 - `ruff check clue_ai tests`: passed.
 - Bundled Python `-m compileall -q clue_ai`: passed.
 - Full repository suite: 207 passed with one upstream Starlette/AnyIO deprecation warning. The exact PLAN-019 commit snapshot was tested with the project-declared TypeSafe and Scrapling dependencies installed in an isolated temporary directory; no provider key was supplied and tests use synthetic data/fakes.

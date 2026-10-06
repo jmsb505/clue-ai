@@ -79,6 +79,27 @@
   {% endif %}
   {% if packet.status == 'approved' %}
     <section class="application-handoff-panel">
+      <h3>Manual follow-up reminder</h3>
+      <p>After you send outreach or submit the application yourself, set a reminder here if useful. Clue only shows it in this queue; it never sends a follow-up or reads replies.</p>
+      {% if followup %}
+        <p><span class="tag {% if followup.overdue %}tag-amber{% elif followup.due %}tag-green{% else %}tag-muted{% endif %}">{% if followup.overdue %}Overdue{% elif followup.due %}Follow-up ready{% else %}Scheduled{% endif %} · {{ followup.due_on }}</span> {{ followup.kind|title }}{% if followup.note %} · {{ followup.note }}{% endif %}</p>
+        <div class="preparation-action-row">
+          <form action="/preparations/{{ preparation.id }}/follow-up/finish" method="post"><button class="button button-outline button-small" name="outcome" value="completed" type="submit">I completed the follow-up manually</button></form>
+          <form action="/preparations/{{ preparation.id }}/follow-up/finish" method="post"><button class="quiet-button" name="outcome" value="reply" type="submit">A relevant reply arrived</button></form>
+          <form action="/preparations/{{ preparation.id }}/follow-up/finish" method="post"><button class="quiet-button" name="outcome" value="closed" type="submit">Close this reminder</button></form>
+        </div>
+      {% else %}
+        <form action="/preparations/{{ preparation.id }}/follow-up" method="post" class="outcome-stage-form">
+          <label class="field"><span>Follow-up type</span><select name="kind"><option value="outreach">Outreach</option><option value="application">Application status</option></select></label>
+          <label class="field"><span>Reminder date</span><input type="date" name="due_on" required></label>
+          <label class="field field-wide"><span>Private note (optional)</span><input name="note" maxlength="500" placeholder="What should you check or do?"></label>
+          <button class="button button-outline button-small" type="submit">Add in-app reminder</button>
+        </form>
+      {% endif %}
+    </section>
+  {% endif %}
+  {% if packet.status == 'approved' %}
+    <section class="application-handoff-panel">
       <h3>Manual application handoff</h3>
       <p>Open the saved employer vacancy, use the reviewed files, and submit the application yourself. Clue does not fill or submit the form.</p>
       {% if not applied_recorded %}

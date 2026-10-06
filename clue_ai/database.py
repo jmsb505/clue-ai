@@ -477,6 +477,22 @@ CREATE TABLE IF NOT EXISTS preparation_requests (
   UNIQUE (job_id, snapshot_sha256, attempt_no)
 );
 CREATE INDEX IF NOT EXISTS idx_preparation_requests_updated ON preparation_requests(updated_at DESC);
+CREATE TABLE IF NOT EXISTS application_followups (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES preparation_requests(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('outreach', 'application')),
+  due_on TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL DEFAULT 'scheduled'
+    CHECK (state IN ('scheduled', 'completed', 'cancelled')),
+  resolution TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_application_followup
+  ON application_followups(request_id) WHERE state = 'scheduled';
+CREATE INDEX IF NOT EXISTS idx_application_followups_due
+  ON application_followups(state, due_on);
 CREATE TABLE IF NOT EXISTS writing_preferences (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   content TEXT NOT NULL DEFAULT '',
@@ -504,6 +520,16 @@ CREATE TABLE IF NOT EXISTS packet_artifacts (
   content_sha256 TEXT NOT NULL,
   content_text TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS packet_feedback (
+  id TEXT PRIMARY KEY,
+  packet_id TEXT NOT NULL UNIQUE REFERENCES preparation_packets(id) ON DELETE CASCADE,
+  owner_minutes INTEGER NOT NULL CHECK (owner_minutes BETWEEN 0 AND 600),
+  quality_rating INTEGER NOT NULL CHECK (quality_rating BETWEEN 1 AND 5),
+  factual_corrections INTEGER NOT NULL DEFAULT 0 CHECK (factual_corrections BETWEEN 0 AND 99),
+  owner_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS research_pages (
   id TEXT PRIMARY KEY,
@@ -896,6 +922,8 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
         db.execute("DELETE FROM search_runs")
         db.execute("DELETE FROM jev_usage")
         db.execute("DELETE FROM openai_usage")
+        db.execute("DELETE FROM application_followups")
+        db.execute("DELETE FROM packet_feedback")
         db.execute("DELETE FROM preparation_requests")
         db.execute("DELETE FROM application_events")
         db.execute("DELETE FROM interview_feedback")

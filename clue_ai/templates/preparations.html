@@ -12,6 +12,28 @@
 </section>
 
 <section class="section-heading">
+  <div><span class="kicker kicker-muted">OWNER-SET REMINDERS</span><h2>Next actions</h2></div>
+  <span class="mini-badge">{{ followups|length }} active</span>
+</section>
+{% if followups %}
+  <div class="preparation-list">
+    {% for followup in followups %}
+      <article class="panel preparation-row">
+        <div class="preparation-row-main">
+          <span class="tag {% if followup.overdue %}tag-amber{% elif followup.due %}tag-green{% else %}tag-muted{% endif %}">{% if followup.overdue %}Overdue · {{ followup.due_on }}{% elif followup.due %}Follow-up ready · {{ followup.due_on }}{% else %}Due {{ followup.due_on }}{% endif %}</span>
+          <h3><a href="/preparations/{{ followup.request_id }}">{{ followup.snapshot.title }} · {{ followup.snapshot.company or 'Company not provided' }}</a></h3>
+          <p>{{ followup.kind|title }} follow-up{% if followup.note %} · {{ followup.note }}{% endif %}</p>
+          <small>This is an in-app reminder only. Clue will not contact anyone.</small>
+        </div>
+        <a class="button button-outline button-small" href="/preparations/{{ followup.request_id }}">Review next action <span aria-hidden="true">→</span></a>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="panel-muted">No owner-set follow-up reminders are active.</p>
+{% endif %}
+
+<section class="section-heading">
   <div><span class="kicker kicker-muted">YOUR REQUESTS</span><h2>Preparation history</h2></div>
   <span class="mini-badge">{{ preparations|length }} requests</span>
 </section>
