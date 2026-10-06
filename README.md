@@ -43,6 +43,12 @@ To enable Jev, add your key to `.env` and restart Clue. Read the data disclosure
 - Frequently updated feeds refresh hourly; publisher-daily APIs stay daily. Company pages, JustRemote, and Tech Europe refresh every six hours. Failed sources can retry after five minutes.
 - Profile-matched directory of 80+ Italian, European, AI/data-platform, and global technology employers, with local search-set controls. Automatic multi-company board refresh from this list is tracked in [PLAN-006](docs/plans/PLAN-006-profile-aware-company-board-discovery.md).
 - Location and sponsorship evidence, deduplication, freshness labels, search coverage, results, saved/hidden jobs, source controls, and local deletion.
+
+## Application preparation
+
+Use the **Evidence** page to add local CV/profile references and review claim suggestions during initial setup. For one eligible Jev match, choose **Prepare application** on that listing. Clue researches public role/company/contact information and prepares a versioned CV, cover letter, application answers, and outreach drafts for that listing only. Review the complete packet before approving it. Optional interview practice has its own button.
+
+The API key is intentionally blank in `.env.example`. Before OpenAI calls can run, configure the key, separate data-sharing consent, monthly and per-opportunity caps, and a current rate card. Clue never sends the outreach email or submits an application. After you review the exact recipient, subject, and message, a separately authorized Gmail adapter can create an unsent draft; you send it yourself. See [PLAN-019](docs/plans/PLAN-019-application-preparation-framework.md) and [ADR 0023](docs/decisions/0023-application-preparation-and-action-boundaries.md).
 - Automatic Jev batches after searches when enabled, with retries disabled, contact redaction, English-language gating, and a persistent usage ledger.
 - Potential opportunities combine confirmed matches and jobs needing verification, ranked by fit with AI relevance emphasized. Related titles remain eligible; separate Jev checks make pay, seniority, location, workplace and additional requirement decisions inspectable. Missing facts stay uncertain and explicit conflicts remain flagged. See [ADR 0014](docs/decisions/0014-practical-matching-and-clean-slate.md).
 - Manual X.com search links and owner-reviewed job leads. Clue does not scrape X, call its API, or open/resolve pasted links; see [the X lead decision](docs/decisions/0007-x-manual-lead-discovery.md).

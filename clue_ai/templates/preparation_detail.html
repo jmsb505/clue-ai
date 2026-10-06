@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}{{ preparation.snapshot.title }} · Application preparation{% endblock %}
+{% block eyebrow %}SAVED OPPORTUNITY SNAPSHOT{% endblock %}
+{% block content %}
+{% if notice %}<div class="alert alert-success" role="status">{{ notice }}</div>{% endif %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">OWNER-TRIGGERED · {{ preparation.state|upper }}</span>
+    <h1>{{ preparation.snapshot.title }}<br><em>{{ preparation.snapshot.company or 'Company not provided' }}</em></h1>
+    <p>{{ preparation.status_message }}</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>AP</span><i>✳</i></div>
+</section>
+<section class="panel preparation-snapshot-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">JOB AND JEV INPUT BINDING</span><h2>What this request refers to</h2></div><span class="tag tag-green">Jev match snapshot</span></div>
+  <dl class="preparation-facts">
+    <div><dt>Company</dt><dd>{{ preparation.snapshot.company or 'Not provided' }}</dd></div>
+    <div><dt>Location</dt><dd>{{ preparation.snapshot.location_raw or 'Not provided' }}</dd></div>
+    <div><dt>Workplace</dt><dd>{{ preparation.snapshot.workplace_type }}</dd></div>
+    <div><dt>Employment</dt><dd>{{ preparation.snapshot.employment_type }}</dd></div>
+    <div><dt>Jev status</dt><dd>{{ preparation.snapshot.filter_status }} · {{ preparation.snapshot.score_state }}</dd></div>
+    <div><dt>Jev rubric</dt><dd>{{ preparation.snapshot.rubric_version or 'Version not recorded' }}</dd></div>
+    <div><dt>Snapshot hash</dt><dd><code>{{ preparation.snapshot_sha256 }}</code></dd></div>
+    <div><dt>Requested</dt><dd>{{ preparation.created_at[:16].replace('T', ' ') }} UTC</dd></div>
+  </dl>
+  <p class="panel-muted">This request stores the exact job and read-only Jev values from the selected completed search. It does not change your Jev score or mark the job as applied.</p>
+  {% if preparation.snapshot.canonical_url %}<p><a class="text-link" href="{{ preparation.snapshot.canonical_url }}" target="_blank" rel="noopener noreferrer">Open the saved listing <span aria-hidden="true">↗</span></a></p>{% endif %}
+</section>
+<section class="panel preparation-snapshot-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">OWNER-TRIGGERED WORKFLOW</span><h2>Preparation stages</h2></div></div>
+  <ol class="preparation-stage-list">
+    <li class="is-complete"><b>Owner selected this listing</b><span>Manual trigger recorded for input revision {{ preparation.snapshot.inputs.selected_cv_sha256[:12] }}</span></li>
+    <li class="{% if preparation.state in ['review', 'completed'] %}is-complete{% endif %}"><b>Research and file generation</b><span>{{ preparation.status_message }}</span></li>
+    <li class="{% if preparation.state == 'completed' %}is-complete{% endif %}"><b>Owner reviews the complete packet</b><span>{% if preparation.state == 'completed' %}Approved packet version {{ packet.revision }}{% else %}No external action is performed by Clue{% endif %}</span></li>
+  </ol>
+  <div class="preparation-action-row">
+    {% if preparation.state in ['blocked', 'failed', 'cancelled'] %}<form action="/preparations/{{ preparation.id }}/retry" method="post"><button class="button button-outline button-small" type="submit">Manually retry this listing</button></form>{% endif %}
+    {% if preparation.state == 'requested' %}<span class="tag tag-muted">Waiting for the local operation slot</span>{% endif %}
+    <a class="button button-outline button-small" href="/preparations">Back to preparation history</a>
+  </div>
+</section>
+{% if packet %}
+<section class="panel preparation-snapshot-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">VERSION {{ packet.revision }} · {{ packet.status|upper }}</span><h2>Review your application packet</h2></div><span class="tag {% if packet.status == 'approved' %}tag-green{% else %}tag-amber{% endif %}">{% if packet.status == 'approved' %}Owner approved{% else %}Review required{% endif %}</span></div>
+  <p class="panel-muted">This draft is based on your selected CV, approved claim IDs, and the read-only Jev result above. Review every file and source. Clue will not submit forms, send messages, or mark the role applied.</p>
+  {% if packet.output.review_note %}<p class="alert alert-warning">{{ packet.output.review_note }}</p>{% endif %}
+  <h3>Generated files</h3>
+  <ul class="packet-artifact-list">{% for artifact in packet.artifacts %}<li><span><b>{{ artifact.artifact_type|replace('_', ' ')|title }}</b><small>{{ artifact.filename }} · SHA-256 {{ artifact.content_sha256[:12] }}</small></span><a class="button button-outline button-small" href="/packets/{{ packet.id }}/artifacts/{{ artifact.id }}">Download</a></li>{% endfor %}</ul>
+  <h3>Research and source evidence</h3>
+  {% if packet.output.research.findings %}<ul class="evidence-list">{% for finding in packet.output.research.findings %}<li><b>{{ finding.topic }}:</b> {{ finding.fact }} <blockquote>{{ finding.quote }}</blockquote><a href="{{ finding.source_url }}" target="_blank" rel="noopener noreferrer">{{ finding.source_url }} <span aria-hidden="true">↗</span></a> · observed {{ finding.observed_at }}</li>{% endfor %}</ul>{% else %}<p>{{ packet.output.research.no_contact_found_reason or 'No sourced company findings were retained.' }}</p>{% endif %}
+  {% if contacts %}<h4>Public professional contacts</h4><ul class="evidence-list">{% for contact in contacts %}<li><b>{{ contact.name }}</b> · {{ contact.role }} · {{ contact.contact_type|replace('_', ' ')|title }} · {{ contact.confidence }} confidence{% if contact.public_email %}<br>Public email on source: {{ contact.public_email }}{% endif %}<blockquote>{{ contact.evidence_quote }}</blockquote><a href="{{ contact.source_url }}" target="_blank" rel="noopener noreferrer">Open source</a> · observed {{ contact.created_at }}{% if contact.suppressed %}<p class="tag tag-muted">Excluded from this and future Clue packets</p>{% elif packet.status in ['review', 'approved'] %}<form action="/preparations/{{ preparation.id }}/contacts/{{ contact.id }}/suppress" method="post"><button class="quiet-button" type="submit">Exclude this contact from Clue drafts</button></form>{% endif %}</li>{% endfor %}</ul>{% elif packet.output.research.no_contact_found_reason %}<p>{{ packet.output.research.no_contact_found_reason }}</p>{% endif %}
+  <h3>Diagnoser · observable CV parseability</h3>
+  {% if packet.output.diagnoser.diagnostics %}<ul class="evidence-list">{% for item in packet.output.diagnoser.diagnostics %}<li><b>{{ item.severity|title }} · {{ item.line_id }}:</b> {{ item.issue }} <span>{{ item.suggested_fix }}</span></li>{% endfor %}</ul>{% else %}<p>{{ packet.output.diagnoser.overall_note or 'No text-extraction risk was reported.' }}</p>{% endif %}
+  <h3>Recruiter · document evidence map</h3>
+  {% if packet.output.recruiter.requirements %}<ul class="evidence-list">{% for item in packet.output.recruiter.requirements %}<li><b>{{ item.priority|title }} · {{ item.document_coverage|replace('_', ' ')|title }}:</b> {{ item.requirement }}{% if item.claim_ids %}<small>Approved claims: {{ item.claim_ids|join(', ') }}</small>{% endif %}{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if packet.output.rewriter.unresolved_questions %}<div class="alert alert-warning"><b>Needs your answer or decision</b><ul>{% for question in packet.output.rewriter.unresolved_questions %}<li>{{ question }}</li>{% endfor %}</ul></div>{% endif %}
+  {% if packet.status == 'review' %}<form action="/preparations/{{ preparation.id }}/packets/{{ packet.id }}/approve" method="post" class="packet-approval-form"><label class="check-field"><input type="checkbox" name="confirm_review" value="on" required><span><b>I reviewed this exact version and its sources</b><small>Approval binds to this file set. I will personally submit the application or send any outreach.</small></span></label><button class="button button-dark" type="submit">Approve packet version {{ packet.revision }} <span aria-hidden="true">→</span></button></form>{% elif packet.status == 'approved' %}<p class="tag tag-green">This exact version was approved. Application and outreach actions remain manual.</p>{% else %}<p class="alert alert-warning">This packet was invalidated after a source or contact decision. Retry manually to create a new version.</p>{% endif %}
+  {% if outreach_options %}
+    <h3>Outreach messages</h3>
+    {% for option in outreach_options %}
+      <article class="packet-outreach-card">
+        {% if option.contact and option.contact.suppressed %}<p class="alert alert-warning">This contact was excluded. Do not use this obsolete outreach draft; retry the preparation to generate a replacement without this contact.</p>{% endif %}
+        <p><b>To:</b> {% if option.contact and option.contact.public_email %}{{ option.contact.public_email }}{% else %}No publicly verified email{% endif %}<br><b>Subject:</b> {{ option.message.subject }}</p>
+        <p class="packet-outreach-body">{{ option.message.body }}</p>
+        <p class="panel-muted">Contact evidence: {{ option.message.contact_source_url }} · candidate claims: {{ option.message.claim_ids|join(', ') }}</p>
+        {% if packet.status == 'approved' and option.contact and not option.contact.suppressed and option.contact.public_email and gmail_connected %}
+          <form action="/preparations/{{ preparation.id }}/packets/{{ packet.id }}/gmail-draft" method="post" class="packet-approval-form">
+            <input type="hidden" name="draft_index" value="{{ option.index }}">
+            <label class="check-field"><input type="checkbox" name="confirm_exact" value="on" required><span><b>Create this exact message as an unsent Gmail draft</b><small>Verify the recipient, subject, and body above. This action creates a draft only; you will send it manually.</small></span></label>
+            <button class="button button-outline button-small" type="submit">Create Gmail draft</button>
+          </form>
+        {% elif option.contact and option.contact.suppressed %}
+          <p class="panel-muted">Gmail draft creation is disabled for this excluded contact.</p>
+        {% elif not option.contact or not option.contact.public_email %}
+          <p class="alert alert-warning">Clue did not find a publicly supported email address. It will not guess one; use the saved draft as a manual copy/paste if you choose.</p>
+        {% elif not gmail_connected %}<p class="panel-muted">Connect Gmail in Settings to create an unsent draft, or copy the reviewed text manually.</p>{% endif %}
+      </article>
+    {% endfor %}
+  {% endif %}
+  {% if packet.status == 'approved' %}
+    <section class="application-handoff-panel">
+      <h3>Manual application handoff</h3>
+      <p>Open the saved employer vacancy, use the reviewed files, and submit the application yourself. Clue does not fill or submit the form.</p>
+      {% if not applied_recorded %}
+        <form action="/preparations/{{ preparation.id }}/record-stage" method="post" class="packet-approval-form">
+          <input type="hidden" name="stage" value="submitted">
+          <label class="check-field"><input type="checkbox" name="owner_attestation" value="on" required><span><b>I submitted this application outside Clue</b><small>This records your attestation and adds the saved listing to the applied tracker. It does not verify receipt.</small></span></label>
+          <button class="button button-outline button-small" type="submit">Record my submission</button>
+        </form>
+      {% else %}
+        <span class="tag tag-green">Submission recorded by owner</span>
+        <form action="/preparations/{{ preparation.id }}/receipt" method="post" enctype="multipart/form-data" class="receipt-upload-form">
+          <label class="field"><span>Optional submission receipt</span><input type="file" name="receipt_file" accept=".pdf,.png,.jpg,.jpeg,.eml,.txt"><small>Kept locally, up to 10 MB. This receipt records evidence and does not claim the employer reviewed your application.</small></label>
+          <button class="button button-outline button-small" type="submit">Store receipt locally</button>
+        </form>
+        <form action="/preparations/{{ preparation.id }}/record-stage" method="post" class="outcome-stage-form">
+          <label class="field"><span>Application stage</span><select name="stage"><option value="screen">Recruiter / screening</option><option value="technical">Technical interview</option><option value="final">Final interview</option><option value="offer">Offer</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option><option value="no_response">No response</option></select></label>
+          <label class="field field-wide"><span>Owner note</span><textarea name="details" rows="2" maxlength="2000" placeholder="Optional context; do not include private assessment answers unless you want them stored locally."></textarea></label>
+          <button class="button button-outline button-small" type="submit">Save stage update</button>
+        </form>
+        <form action="/preparations/{{ preparation.id }}/interview-feedback" method="post" class="outcome-stage-form">
+          <h4>Interview feedback</h4>
+          <label class="field"><span>Interview stage</span><select name="stage"><option value="screen">Screen</option><option value="technical">Technical</option><option value="final">Final</option></select></label>
+          <label class="field field-wide"><span>Your self-assessment</span><textarea name="self_assessment" rows="3" maxlength="4000"></textarea></label>
+          <label class="field field-wide"><span>Employer feedback, if shared</span><textarea name="employer_feedback" rows="3" maxlength="4000"></textarea></label>
+          <label class="field field-wide"><span>Skill-gap tags, comma-separated</span><input name="gap_tags" maxlength="720" placeholder="for example: system design, model evaluation"></label>
+          <button class="button button-outline button-small" type="submit">Save interview feedback</button>
+        </form>
+      {% endif %}
+      <a class="text-link" href="/outcomes">Review outcomes and interview feedback <span aria-hidden="true">→</span></a>
+    </section>
+  {% endif %}
+</section>
+{% endif %}
+{% if gmail_drafts %}<section class="panel preparation-snapshot-panel"><h2>Gmail draft status</h2><ul class="packet-artifact-list">{% for item in gmail_drafts %}<li><span><b>{{ item.state|title }}</b><small>{{ item.recipient }} · {{ item.subject }}{% if item.gmail_draft_id %} · Gmail ID {{ item.gmail_draft_id }}{% endif %}{% if item.error_summary %}<br>{{ item.error_summary }}{% endif %}</small></span>{% if item.state == 'unknown' %}<a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener noreferrer" class="button button-outline button-small">Check Gmail Drafts</a>{% endif %}</li>{% if item.state == 'unknown' %}<li><form action="/preparations/{{ preparation.id }}/gmail-drafts/{{ item.id }}/reconcile" method="post" class="gmail-reconcile-form"><label class="field"><span>Draft ID, if you found it</span><input name="gmail_draft_id" maxlength="200"></label><button class="button button-outline button-small" name="outcome" value="found" type="submit">I found this draft</button><label class="check-field"><input type="checkbox" name="checked_gmail" value="on"><span>I checked Gmail Drafts and confirmed it is absent</span></label><button class="quiet-button" name="outcome" value="not_found" type="submit">Confirm absent to allow retry</button></form></li>{% endif %}{% endfor %}</ul><p class="panel-muted">Clue never reads your mailbox and never retries an uncertain Gmail request automatically.</p></section>{% endif %}
+{% if packet %}<section class="panel preparation-snapshot-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">OPTIONAL · SEPARATE OWNER TRIGGER</span><h2>Hiring Manager practice</h2></div></div>
+  <p class="panel-muted">Start a question round only when you choose. Your answers are sent for practice feedback only after you submit them. This is not a prediction, application score, or Jev result.</p>
+  <form action="/preparations/{{ preparation.id }}/practice/start" method="post"><button class="button button-outline button-small" type="submit">Start interview practice</button></form>
+  {% for practice in practice_sessions %}
+    <article class="practice-session-card"><span class="tag {% if practice.state == 'complete' %}tag-green{% elif practice.state == 'failed' %}tag-amber{% else %}tag-muted{% endif %}">{{ practice.state|title }}</span><p>{{ practice.status_message }}</p>
+      {% if practice.state == 'questions' %}<form action="/preparations/{{ preparation.id }}/practice/{{ practice.id }}/answers" method="post" class="practice-answer-form"><p>{{ practice.output.practice_note }}</p>{% for question in practice.output.questions %}<label class="field field-wide"><span>{{ loop.index }}. {{ question }}</span><input type="hidden" name="question" value="{{ question }}"><textarea name="answer" rows="4" maxlength="4000" required></textarea></label>{% endfor %}<button class="button button-dark button-small" type="submit">Submit my answers for feedback</button></form>{% endif %}
+      {% if practice.state == 'complete' %}<h4>Your answer assessments</h4>{% for item in practice.output.answer_assessments %}<div class="practice-assessment"><b>{{ item.question }}</b><p><b>Your answer:</b> {{ item.answer }}</p><p><b>Technical evidence:</b> {{ item.technical_evidence }}</p><p><b>Reasoning:</b> {{ item.reasoning }}</p><p><b>Clarity:</b> {{ item.clarity }}</p><p><b>Practice next:</b> {{ item.suggested_practice }}</p></div>{% endfor %}{% endif %}
+    </article>
+  {% endfor %}
+</section>{% endif %}
+{% endblock %}

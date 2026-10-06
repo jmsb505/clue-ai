@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from clue_ai.company_catalog import COMPANY_SEEDS
@@ -259,6 +261,15 @@ CREATE TABLE IF NOT EXISTS profile (
 CREATE TABLE IF NOT EXISTS app_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   jev_consent_at TEXT NOT NULL DEFAULT '',
+  openai_consent_at TEXT NOT NULL DEFAULT '',
+  openai_monthly_budget_usd REAL NOT NULL DEFAULT 0,
+  openai_opportunity_budget_usd REAL NOT NULL DEFAULT 0,
+  openai_input_usd_per_million REAL NOT NULL DEFAULT 0,
+  openai_output_usd_per_million REAL NOT NULL DEFAULT 0,
+  openai_search_usd_per_thousand REAL NOT NULL DEFAULT 0,
+  openai_rate_card_revision TEXT NOT NULL DEFAULT '',
+  gmail_consent_at TEXT NOT NULL DEFAULT '',
+  gmail_oauth_connected_at TEXT NOT NULL DEFAULT '',
   default_work_from TEXT NOT NULL DEFAULT 'Italy',
   updated_at TEXT NOT NULL
 );
@@ -417,6 +428,184 @@ CREATE INDEX IF NOT EXISTS idx_job_sources_source ON job_sources(source_id, last
 CREATE INDEX IF NOT EXISTS idx_source_query_checks_checked ON source_query_checks(checked_at);
 CREATE INDEX IF NOT EXISTS idx_search_runs_created ON search_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_jev_usage_month ON jev_usage(month_key, status);
+CREATE TABLE IF NOT EXISTS preparation_sources (
+  id TEXT PRIMARY KEY,
+  filename TEXT NOT NULL,
+  source_type TEXT NOT NULL CHECK (source_type IN
+    ('technical_profile', 'descriptive_profile', 'resume', 'writing_sample')),
+  file_path TEXT NOT NULL,
+  extracted_text TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  authorship_label TEXT NOT NULL DEFAULT 'unknown'
+    CHECK (authorship_label IN ('unknown', 'owner_written', 'ai_assisted', 'other')),
+  permitted INTEGER NOT NULL DEFAULT 0,
+  is_default_cv INTEGER NOT NULL DEFAULT 0,
+  structure_policy TEXT NOT NULL DEFAULT 'preserve'
+    CHECK (structure_policy IN ('preserve', 'allow_improvements')),
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS candidate_claims (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL REFERENCES preparation_sources(id) ON DELETE CASCADE,
+  claim_text TEXT NOT NULL,
+  evidence_excerpt TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'unclassified',
+  role_family TEXT NOT NULL DEFAULT '',
+  evidence_level TEXT NOT NULL DEFAULT 'unknown'
+    CHECK (evidence_level IN
+      ('unknown', 'measured_result', 'implemented', 'demonstration', 'coursework', 'exposure', 'planned')),
+  status TEXT NOT NULL DEFAULT 'unreviewed'
+    CHECK (status IN ('unreviewed', 'approved', 'rejected')),
+  owner_note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  reviewed_at TEXT NOT NULL DEFAULT '',
+  UNIQUE (source_id, claim_text)
+);
+CREATE INDEX IF NOT EXISTS idx_claims_source_status ON candidate_claims(source_id, status);
+CREATE TABLE IF NOT EXISTS preparation_requests (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  snapshot_sha256 TEXT NOT NULL,
+  attempt_no INTEGER NOT NULL DEFAULT 1,
+  state TEXT NOT NULL DEFAULT 'requested'
+    CHECK (state IN ('requested', 'researching', 'generating', 'review', 'completed', 'blocked', 'failed', 'cancelled')),
+  status_message TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (job_id, snapshot_sha256, attempt_no)
+);
+CREATE INDEX IF NOT EXISTS idx_preparation_requests_updated ON preparation_requests(updated_at DESC);
+CREATE TABLE IF NOT EXISTS writing_preferences (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  content TEXT NOT NULL DEFAULT '',
+  revision INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS preparation_packets (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES preparation_requests(id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL,
+  input_revision_sha256 TEXT NOT NULL,
+  output_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'review' CHECK (status IN ('review', 'approved', 'obsolete')),
+  created_at TEXT NOT NULL,
+  approved_at TEXT NOT NULL DEFAULT '',
+  approved_sha256 TEXT NOT NULL DEFAULT '',
+  UNIQUE (request_id, revision)
+);
+CREATE TABLE IF NOT EXISTS packet_artifacts (
+  id TEXT PRIMARY KEY,
+  packet_id TEXT NOT NULL REFERENCES preparation_packets(id) ON DELETE CASCADE,
+  artifact_type TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  content_sha256 TEXT NOT NULL,
+  content_text TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS research_pages (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES preparation_requests(id) ON DELETE CASCADE,
+  page_url TEXT NOT NULL,
+  page_title TEXT NOT NULL DEFAULT '',
+  page_text TEXT NOT NULL,
+  page_sha256 TEXT NOT NULL,
+  observed_at TEXT NOT NULL,
+  UNIQUE (request_id, page_url)
+);
+CREATE TABLE IF NOT EXISTS researched_contacts (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES preparation_requests(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT '',
+  organization TEXT NOT NULL DEFAULT '',
+  contact_type TEXT NOT NULL DEFAULT 'unknown',
+  source_url TEXT NOT NULL,
+  evidence_quote TEXT NOT NULL,
+  public_email TEXT NOT NULL DEFAULT '',
+  confidence TEXT NOT NULL DEFAULT 'low',
+  function_match TEXT NOT NULL DEFAULT 'unknown',
+  suppressed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  UNIQUE (request_id, source_url, name)
+);
+CREATE TABLE IF NOT EXISTS contact_suppressions (
+  suppression_key TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS gmail_drafts (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES preparation_requests(id) ON DELETE CASCADE,
+  packet_id TEXT NOT NULL REFERENCES preparation_packets(id) ON DELETE CASCADE,
+  recipient TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  body TEXT NOT NULL,
+  approved_sha256 TEXT NOT NULL,
+  gmail_draft_id TEXT NOT NULL DEFAULT '',
+  state TEXT NOT NULL CHECK (state IN ('approved', 'creating', 'created', 'unknown', 'failed')),
+  error_summary TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS application_events (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  request_id TEXT NOT NULL DEFAULT '',
+  event_type TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  evidence_level TEXT NOT NULL DEFAULT 'owner_reported',
+  details_json TEXT NOT NULL DEFAULT '{}',
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS interview_feedback (
+  id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  request_id TEXT NOT NULL DEFAULT '',
+  stage TEXT NOT NULL,
+  self_assessment TEXT NOT NULL DEFAULT '',
+  employer_feedback TEXT NOT NULL DEFAULT '',
+  gap_tags_json TEXT NOT NULL DEFAULT '[]',
+  occurred_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS practice_sessions (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES preparation_requests(id) ON DELETE CASCADE,
+  packet_id TEXT NOT NULL REFERENCES preparation_packets(id) ON DELETE CASCADE,
+  state TEXT NOT NULL CHECK (state IN ('requested', 'questions', 'assessing', 'complete', 'failed')),
+  output_json TEXT NOT NULL DEFAULT '{}',
+  status_message TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS openai_usage (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL,
+  job_id TEXT NOT NULL,
+  month_key TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  model TEXT NOT NULL,
+  estimated_input_bytes INTEGER NOT NULL,
+  reserved_input_tokens INTEGER NOT NULL DEFAULT 0,
+  max_output_tokens INTEGER NOT NULL,
+  reserved_usd REAL NOT NULL,
+  input_usd_per_million REAL NOT NULL,
+  output_usd_per_million REAL NOT NULL,
+  search_usd_per_thousand REAL NOT NULL,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  search_calls INTEGER NOT NULL DEFAULT 0,
+  actual_usd REAL,
+  status TEXT NOT NULL CHECK (status IN ('reserved', 'settled', 'unknown', 'released')),
+  error_summary TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  settled_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_openai_usage_month ON openai_usage(month_key, status);
+CREATE INDEX IF NOT EXISTS idx_openai_usage_job ON openai_usage(job_id, status);
 """
 
 
@@ -452,8 +641,28 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "jobs", "fingerprint", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "jobs", "visa_sponsorship", "TEXT NOT NULL DEFAULT 'unknown'")
         _ensure_column(db, "profile", "profile_language", "TEXT NOT NULL DEFAULT 'unknown'")
+        _ensure_column(db, "app_settings", "openai_consent_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(db, "app_settings", "openai_monthly_budget_usd", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(db, "app_settings", "openai_opportunity_budget_usd", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(db, "app_settings", "openai_input_usd_per_million", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(db, "app_settings", "openai_output_usd_per_million", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(db, "app_settings", "openai_search_usd_per_thousand", "REAL NOT NULL DEFAULT 0")
+        _ensure_column(db, "app_settings", "openai_rate_card_revision", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(db, "app_settings", "gmail_consent_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(db, "app_settings", "gmail_oauth_connected_at", "TEXT NOT NULL DEFAULT ''")
+        _ensure_column(db, "preparation_requests", "attempt_no", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(db, "openai_usage", "reserved_input_tokens", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(
+            db,
+            "preparation_sources",
+            "authorship_label",
+            "TEXT NOT NULL DEFAULT 'unknown'",
+        )
         _ensure_column(db, "job_sources", "context_url", "TEXT NOT NULL DEFAULT ''")
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_preparation_requests_job ON preparation_requests(job_id, created_at DESC)"
+        )
         _seed_researched_listing_ledger(db)
         now = utc_now()
         db.execute("INSERT OR IGNORE INTO app_settings (id, updated_at) VALUES (1, ?)", (now,))
@@ -588,6 +797,86 @@ def set_jev_consent(database_path: Path, accepted: bool) -> None:
         )
 
 
+def save_openai_controls(
+    database_path: Path,
+    *,
+    consent: bool,
+    monthly_cap_usd: float,
+    opportunity_cap_usd: float,
+    input_usd_per_million: float,
+    output_usd_per_million: float,
+    rate_card_revision: str,
+    search_usd_per_thousand: float = 0.0,
+) -> None:
+    values = (
+        monthly_cap_usd,
+        opportunity_cap_usd,
+        input_usd_per_million,
+        output_usd_per_million,
+        search_usd_per_thousand,
+    )
+    if any(not math.isfinite(value) or value < 0 for value in values):
+        raise ValueError("OpenAI caps and rates must be finite, non-negative USD values.")
+    if opportunity_cap_usd > monthly_cap_usd:
+        raise ValueError("The per-opportunity cap cannot exceed the monthly cap.")
+    revision = rate_card_revision.strip()[:80]
+    if consent:
+        try:
+            parsed_revision = date.fromisoformat(revision)
+        except ValueError as exc:
+            raise ValueError("Confirm the OpenAI pricing page using a YYYY-MM-DD revision date.") from exc
+        age_days = (datetime.now(timezone.utc).date() - parsed_revision).days
+        if age_days < 0 or age_days > 30:
+            raise ValueError("Check the current OpenAI price card within the last 30 days before enabling data sharing.")
+    if consent and not (
+        monthly_cap_usd > 0
+        and opportunity_cap_usd > 0
+        and input_usd_per_million > 0
+        and output_usd_per_million > 0
+        and revision
+    ):
+        raise ValueError("Set both spending caps and token rates before enabling data sharing.")
+    with connect(database_path) as db:
+        db.execute(
+            """UPDATE app_settings SET openai_consent_at = ?,
+               openai_monthly_budget_usd = ?, openai_opportunity_budget_usd = ?,
+               openai_input_usd_per_million = ?, openai_output_usd_per_million = ?,
+               openai_search_usd_per_thousand = ?, openai_rate_card_revision = ?, updated_at = ? WHERE id = 1""",
+            (
+                utc_now() if consent else "",
+                monthly_cap_usd,
+                opportunity_cap_usd,
+                input_usd_per_million,
+                output_usd_per_million,
+                search_usd_per_thousand,
+                revision,
+                utc_now(),
+            ),
+        )
+
+
+def set_gmail_connection(database_path: Path, connected: bool) -> None:
+    now = utc_now()
+    with connect(database_path) as db:
+        db.execute(
+            """UPDATE app_settings SET gmail_consent_at = ?, gmail_oauth_connected_at = ?,
+               updated_at = ? WHERE id = 1""",
+            (now if connected else "", now if connected else "", now),
+        )
+
+
+def recover_interrupted_gmail_drafts(database_path: Path) -> int:
+    """Mark draft requests left in flight by a stopped local process as uncertain."""
+    with connect(database_path) as db:
+        result = db.execute(
+            """UPDATE gmail_drafts SET state = 'unknown',
+               error_summary = 'Clue stopped while creating this draft. Check Gmail Drafts before retrying.',
+               updated_at = ? WHERE state = 'creating'""",
+            (utc_now(),),
+        )
+    return result.rowcount
+
+
 def save_search_run(database_path: Path, run_id: str, criteria: SearchCriteria) -> None:
     with connect(database_path) as db:
         db.execute(
@@ -606,6 +895,15 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
         db.execute("BEGIN IMMEDIATE")
         db.execute("DELETE FROM search_runs")
         db.execute("DELETE FROM jev_usage")
+        db.execute("DELETE FROM openai_usage")
+        db.execute("DELETE FROM preparation_requests")
+        db.execute("DELETE FROM application_events")
+        db.execute("DELETE FROM interview_feedback")
+        db.execute("DELETE FROM gmail_drafts")
+        db.execute("DELETE FROM contact_suppressions")
+        db.execute("DELETE FROM candidate_claims")
+        db.execute("DELETE FROM preparation_sources")
+        db.execute("DELETE FROM writing_preferences")
         db.execute("DELETE FROM researched_listings")
         db.execute("DELETE FROM source_query_checks")
         db.execute("DELETE FROM job_user_state")
@@ -623,15 +921,35 @@ def delete_personal_data(database_path: Path, cv_path: Path | None, data_dir: Pa
                WHERE is_builtin = 1 AND (state = 'approved' AND enabled = 1 OR kind = 'company_board')"""
         )
         db.execute(
-            """UPDATE app_settings SET jev_consent_at = '', default_work_from = 'Italy',
+            """UPDATE app_settings SET jev_consent_at = '', openai_consent_at = '',
+               gmail_consent_at = '', gmail_oauth_connected_at = '',
+               default_work_from = 'Italy',
                updated_at = ? WHERE id = 1""",
             (utc_now(),),
         )
         db.execute("COMMIT")
         db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         db.execute("VACUUM")
-    cv_dir = data_dir / "cv"
-    if cv_dir.exists():
-        for child in cv_dir.iterdir():
+    data_root = data_dir.resolve()
+    for relative in ("cv", "application-packets", "gmail"):
+        root = (data_dir / relative)
+        if not root.exists() and not root.is_symlink():
+            continue
+        resolved_root = root.resolve()
+        if resolved_root == data_root or data_root not in resolved_root.parents:
+            raise ValueError("Private file storage resolved outside the local data directory.")
+        for child in sorted(root.rglob("*"), key=lambda path: len(path.parts), reverse=True):
+            if child.is_symlink():
+                child.unlink(missing_ok=True)
+                continue
+            resolved = child.resolve()
+            if resolved == data_root or data_root not in resolved.parents:
+                continue
             if child.is_file():
-                child.unlink()
+                child.unlink(missing_ok=True)
+            elif child.is_dir():
+                child.rmdir()
+        if root.is_symlink():
+            root.unlink(missing_ok=True)
+        elif root.exists():
+            root.rmdir()

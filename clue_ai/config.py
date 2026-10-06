@@ -45,6 +45,9 @@ class Settings:
     api_key: str
     model: str
     monthly_jev_budget_usd: float
+    openai_api_key: str = ""
+    gmail_oauth_client_id: str = ""
+    gmail_oauth_client_secret: str = ""
     jev_price_per_million_input_tokens: float = 0.042
     jev_reserved_tokens_per_request: int = 80_000
     max_cv_bytes: int = 12 * 1024 * 1024
@@ -77,4 +80,7 @@ class Settings:
             api_key=os.environ.get("TYPESAFE_API_KEY", "").strip(),
             model=os.environ.get("TYPESAFE_MODEL", "jev-1.13.0").strip() or "jev-1.13.0",
             monthly_jev_budget_usd=_money(os.environ.get("JEV_MONTHLY_BUDGET_USD"), 4.00),
+            openai_api_key=os.environ.get("OPENAI_API_KEY", "").strip(),
+            gmail_oauth_client_id=os.environ.get("GMAIL_OAUTH_CLIENT_ID", "").strip(),
+            gmail_oauth_client_secret=os.environ.get("GMAIL_OAUTH_CLIENT_SECRET", "").strip(),
         )

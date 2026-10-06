@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ source.filename }} · Evidence · Clue AI{% endblock %}
+{% block eyebrow %}LOCAL SOURCE REVIEW{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">{{ source.source_type.replace('_', ' ')|title }}</span>
+    <h1>Review the extracted<br><em>source text.</em></h1>
+    <p>This view is served only by your local Clue app. The extracted content stays in your local data folder.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>EV</span><i>⌕</i></div>
+</section>
+<section class="panel extracted-source-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">{{ source.filename }}</span><h2>{{ source.extracted_text|length }} extracted characters</h2></div><a class="button button-outline button-small" href="/evidence">Back to evidence</a></div>
+  <pre class="extracted-source-text">{{ source.extracted_text }}</pre>
+</section>
+{% endblock %}

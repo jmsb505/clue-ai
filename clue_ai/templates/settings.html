@@ -66,6 +66,46 @@
   </article>
 </section>
 
+<section class="panel setting-panel setting-panel-wide openai-setting-panel">
+  <div class="setting-heading"><span class="setting-icon icon-lime" aria-hidden="true">✎</span><div><span class="kicker kicker-muted">OWNER-TRIGGERED RESEARCH AND WRITING</span><h2>OpenAI GPT-6 Luna</h2></div></div>
+  <div class="key-status">
+    <span class="status-light {% if openai_key_configured %}status-light-on{% endif %}"></span>
+    <span><b>{% if openai_key_configured %}API key is configured locally{% else %}API key is not configured{% endif %}</b><small>Clue never displays or stores the key in the browser.</small></span>
+    <span class="state-pill {% if openai_enabled and openai_key_configured %}state-approved{% else %}state-review{% endif %}">{% if openai_enabled and openai_key_configured %}Manual trigger enabled{% else %}No OpenAI calls{% endif %}</span>
+  </div>
+  {% if not openai_key_configured %}<div class="key-setup"><div><b>Enable only when you are ready</b><p>Add your key to the ignored local <code>.env</code> file and restart Clue. It is deliberately blank in the repository template.</p></div><pre>OPENAI_API_KEY=</pre></div>{% endif %}
+  <div class="data-disclosure">
+    <h3>What a selected listing sends</h3>
+    <p>OpenAI is called only after you click <b>Prepare application</b> on one listing and only when its Jev result is an eligible match. Clue sends that job description and read-only Jev result, the one CV you select, approved claims from permitted technical profiles and that CV, your saved writing preferences, and bounded public page text gathered by the Researcher. Up to three explicitly selected descriptive profiles or writing samples go only to the Rewriter; descriptive profiles guide owner-stated motivation and preferences, while samples are style cues only. Other CVs and unselected writing samples stay local. Public contact email addresses are kept local. The Researcher receives no CV, candidate claims, or profile. The Diagnoser, Recruiter, and Rewriter have no crawl, filesystem, Gmail, send, or submit tools.</p>
+    <p>Clue requests <code>store:false</code>. OpenAI documents that this prevents response storage for later retrieval, but default abuse-monitoring logs may still retain prompts and responses for up to 30 days unless your organization is approved for Modified Abuse Monitoring or Zero Data Retention. Check your account's current data controls and terms before enabling this consent.</p>
+    <div class="official-links"><a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noreferrer noopener">Current API pricing <span aria-hidden="true">↗</span></a><a href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noreferrer noopener">API data controls <span aria-hidden="true">↗</span></a></div>
+  </div>
+  <div class="cost-guard">
+    <div><span class="kicker kicker-muted">CURRENT UTC MONTH</span><b>{{ "%.4f"|format(openai_usage.used_usd) }} <small>used or held</small></b></div>
+    <div class="budget-labels"><span>{{ "%.4f"|format(openai_usage.reserved_usd) }} USD unresolved reserve</span><span>{{ openai_usage.unknown_count }} usage receipt(s) need reconciliation</span></div>
+    <p>Usage is kept in a separate ledger from Jev. Clue has no OpenAI key in this repository or browser UI. Caps apply to calls made through this local app, not other uses of the same provider account.</p>
+  </div>
+  <form action="/settings/openai-controls" method="post" class="openai-controls-form">
+    <div class="form-grid">
+      <label class="field"><span>Monthly hard cap · USD</span><input type="number" name="monthly_cap_usd" min="0" max="10000" step="0.01" value="{{ openai_settings.openai_monthly_budget_usd or '' }}" required></label>
+      <label class="field"><span>Per-listing hard cap · USD</span><input type="number" name="opportunity_cap_usd" min="0" max="10000" step="0.01" value="{{ openai_settings.openai_opportunity_budget_usd or '' }}" required></label>
+      <label class="field"><span>Input rate · USD per 1M tokens</span><input type="number" name="input_usd_per_million" min="0" max="10000" step="0.000001" value="{{ openai_settings.openai_input_usd_per_million or '' }}" required></label>
+      <label class="field"><span>Output rate · USD per 1M tokens</span><input type="number" name="output_usd_per_million" min="0" max="10000" step="0.000001" value="{{ openai_settings.openai_output_usd_per_million or '' }}" required></label>
+      <label class="field"><span>Pricing page checked · YYYY-MM-DD</span><input type="date" name="rate_card_revision" value="{{ openai_settings.openai_rate_card_revision or '' }}" required><small>Rates expire from the local gate after 30 days.</small></label>
+    </div>
+    <label class="check-field consent-field"><input type="checkbox" name="openai_consent" value="on" {% if openai_enabled %}checked{% endif %}><span class="check-custom" aria-hidden="true"></span><span><b>{% if openai_enabled %}OpenAI data-sharing consent is enabled{% else %}Enable OpenAI data sharing for owner-triggered preparation{% endif %}</b><small>I reviewed the data sent and current provider retention controls above. This is separate from Jev consent. I can turn it off here.</small></span></label>
+    <button class="button button-dark" type="submit">Save OpenAI controls <span aria-hidden="true">→</span></button>
+  </form>
+</section>
+
+<section class="panel setting-panel setting-panel-wide gmail-setting-panel">
+  <div class="setting-heading"><span class="setting-icon icon-blue" aria-hidden="true">✉</span><div><span class="kicker kicker-muted">SEPARATE OWNER-CONTROLLED ACTION</span><h2>Gmail Drafts</h2></div></div>
+  <p>After you approve an exact packet version, you may separately click Create Gmail draft for an outreach message with a publicly sourced email. Clue calls only Gmail's create-draft endpoint. It has no send, read, edit, or delete operation; you review and send from Gmail yourself.</p>
+  <div class="data-disclosure"><p>Google's <code>gmail.compose</code> authorization scope technically also permits sending. Clue's adapter does not expose or call a send method. A draft-creation timeout is held as unresolved; Clue will not retry until you check Gmail Drafts and reconcile it.</p><p>The refresh token is encrypted with Windows DPAPI for your Windows account and stored under ignored local <code>.data/gmail/</code>. Full local-data deletion removes it. Disconnecting Clue removes the local token; revoke Google's grant separately in your Google Account if desired.</p></div>
+  {% if gmail_connected %}<div class="key-status"><span class="status-light status-light-on"></span><span><b>Gmail Drafts is connected</b><small>No Gmail mailbox contents are read by Clue.</small></span><span class="state-pill state-approved">Draft creation available</span></div><form action="/settings/gmail/disconnect" method="post"><button class="button button-outline button-small" type="submit">Remove local Gmail authorization</button></form>
+  {% else %}<div class="key-status"><span class="status-light"></span><span><b>Gmail Drafts is not connected</b><small>OAuth starts only when you choose Connect Gmail.</small></span><span class="state-pill state-review">No Gmail calls</span></div><p>Set a Google OAuth Desktop client ID in the ignored local <code>.env</code> file, enable the Gmail API in that Google project, and register <code>http://127.0.0.1:8765/</code> as the loopback redirect URI. OAuth is limited to <code>gmail.compose</code>.</p><form action="/settings/gmail/connect" method="post"><button class="button button-outline" type="submit" {% if not gmail_client_configured %}disabled{% endif %}>Connect Gmail <span aria-hidden="true">↗</span></button></form>{% endif %}
+</section>
+
 <section class="panel delete-panel">
   <div class="delete-copy">
     <span class="kicker">A CLEAN START</span><h2>Delete local job-search data</h2>

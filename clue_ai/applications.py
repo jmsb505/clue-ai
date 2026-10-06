@@ -79,6 +79,47 @@ def mark_applied(database_path: Path, job_id: str) -> bool:
     return True
 
 
+def mark_snapshot_applied(database_path: Path, snapshot: dict) -> str:
+    """Record an owner attestation from a retained preparation after manual submission."""
+    job_id = str(snapshot.get("id") or "")
+    canonical = canonical_url(str(snapshot.get("canonical_url") or ""))
+    urls = {canonical}
+    urls.update(canonical_url(str(value)) for value in snapshot.get("source_urls", []))
+    urls.discard("")
+    if not job_id or not canonical or not urls:
+        raise ValueError("The saved vacancy snapshot has no stable listing link.")
+    with connect(database_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        existing = db.execute(
+            f"""SELECT a.job_id FROM applications a WHERE a.job_id = ?
+                OR a.canonical_url IN ({','.join('?' for _ in urls)})
+                OR EXISTS (SELECT 1 FROM application_urls au WHERE au.application_id = a.job_id
+                           AND au.url IN ({','.join('?' for _ in urls)})) LIMIT 1""",
+            (job_id, *sorted(urls), *sorted(urls)),
+        ).fetchone()
+        application_id = existing["job_id"] if existing else job_id
+        if existing is None:
+            db.execute(
+                """INSERT INTO applications
+                   (job_id, canonical_url, title, company, location_raw, applied_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    application_id,
+                    canonical,
+                    str(snapshot.get("title") or "")[:300],
+                    str(snapshot.get("company") or "")[:250],
+                    str(snapshot.get("location_raw") or "")[:1_000],
+                    utc_now(),
+                ),
+            )
+        db.executemany(
+            "INSERT OR IGNORE INTO application_urls (application_id, url) VALUES (?, ?)",
+            [(application_id, value) for value in sorted(urls)],
+        )
+        db.execute("COMMIT")
+    return application_id
+
+
 def undo_applied(database_path: Path, application_id: str) -> bool:
     with connect(database_path) as db:
         cursor = db.execute("DELETE FROM applications WHERE job_id = ?", (application_id,))

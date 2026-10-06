@@ -1,29 +1,67 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
 import time
 import uuid
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from clue_ai.applications import applied_jobs, mark_applied, undo_applied
+from clue_ai.application_prep import (
+    add_source as add_preparation_source,
+)
+from clue_ai.application_prep import (
+    approved_claims,
+    get_preparation,
+    get_writing_preferences,
+    list_claims,
+    list_preparations,
+    request_preparation,
+    review_claim,
+    save_writing_preferences,
+    set_source_options,
+    suggest_claims,
+    suppress_researched_contact,
+)
+from clue_ai.application_prep import (
+    get_source as get_preparation_source,
+)
+from clue_ai.application_prep import (
+    list_sources as list_preparation_sources,
+)
+from clue_ai.application_workflow import (
+    approve_packet,
+    create_practice_session,
+    get_packet,
+    list_practice_sessions,
+    queue_practice_answers,
+    run_interview_practice_assessment,
+    run_interview_practice_questions,
+    run_preparation,
+)
+from clue_ai.applications import applied_jobs, mark_applied, mark_snapshot_applied, undo_applied
 from clue_ai.company_catalog import GROUP_LABELS, filter_and_rank_companies
 from clue_ai.config import Settings
 from clue_ai.database import (
+    connect,
     delete_personal_data,
     get_profile,
     get_settings,
     initialize,
+    recover_interrupted_gmail_drafts,
+    save_openai_controls,
     save_profile,
     save_search_run,
+    set_gmail_connection,
     set_jev_consent,
 )
 from clue_ai.domain import CandidateProfile, NormalizedJob, SearchCriteria, utc_now
@@ -32,9 +70,17 @@ from clue_ai.external_links import (
     normalize_public_job_url,
     normalize_x_status_url,
 )
+from clue_ai.feedback import outcome_summary, record_interview_feedback, record_stage
 from clue_ai.filters import criteria_from_form
+from clue_ai.gmail_drafts import (
+    GmailDraftError,
+    WindowsDPAPITokenStore,
+    create_approved_packet_draft,
+    start_local_oauth,
+)
 from clue_ai.jev import FILTER_CHECK_LABELS
 from clue_ai.job_focus import focused_roles
+from clue_ai.openai_provider import monthly_usage as monthly_openai_usage
 from clue_ai.repository import (
     add_source,
     claim_scoring_run,
@@ -99,6 +145,7 @@ def create_app(
     current_settings = settings or Settings.from_environment()
     db_path = database_path or current_settings.database_path
     initialize(db_path)
+    recover_interrupted_gmail_drafts(db_path)
     current_settings.data_dir.mkdir(parents=True, exist_ok=True)
     current_settings.cv_dir.mkdir(parents=True, exist_ok=True)
     _cleanup_pending_uploads(current_settings.cv_dir)
@@ -128,6 +175,18 @@ def create_app(
     def run_scoring_serialized(run_id: str) -> None:
         with operation_lock:
             run_jev_scoring(db_path, current_settings, run_id)
+
+    def run_preparation_serialized(request_id: str) -> None:
+        with operation_lock:
+            run_preparation(db_path, current_settings, request_id)
+
+    def run_practice_questions_serialized(session_id: str) -> None:
+        with operation_lock:
+            run_interview_practice_questions(db_path, current_settings, session_id)
+
+    def run_practice_assessment_serialized(session_id: str) -> None:
+        with operation_lock:
+            run_interview_practice_assessment(db_path, current_settings, session_id)
 
     @app.middleware("http")
     async def local_request_boundary(request: Request, call_next):
@@ -254,6 +313,123 @@ def create_app(
                 "notice": request.query_params.get("notice", ""),
             },
         )
+
+    @app.get("/evidence", response_class=HTMLResponse)
+    async def evidence_page(request: Request):
+        preferences = get_writing_preferences(db_path)
+        return render(
+            request,
+            "evidence.html",
+            {
+                "active_page": "evidence",
+                "sources": list_preparation_sources(db_path),
+                "claims": list_claims(db_path),
+                "writing_preferences": preferences,
+                "source_types": {
+                    "technical_profile": "Technical profile",
+                    "descriptive_profile": "Descriptive profile",
+                    "resume": "Resume / CV reference",
+                    "writing_sample": "Writing sample",
+                },
+                "error": request.query_params.get("error", ""),
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.get("/evidence/sources/{source_id}", response_class=HTMLResponse)
+    async def evidence_source_detail(request: Request, source_id: str):
+        source = get_preparation_source(db_path, source_id)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Evidence source not found.")
+        return render(
+            request,
+            "evidence_source.html",
+            {
+                "active_page": "evidence",
+                "source": source,
+                "notice": "",
+            },
+        )
+
+    @app.post("/evidence/upload")
+    async def evidence_upload(
+        request: Request,
+        source_type: str = Form(),
+        source_file: UploadFile | None = File(default=None),  # noqa: B008
+    ):
+        if source_file is None or not source_file.filename:
+            return RedirectResponse("/evidence?error=Choose+a+source+file+first.", status_code=303)
+        content = await source_file.read(current_settings.max_cv_bytes + 1)
+        try:
+            add_preparation_source(
+                db_path, current_settings, source_file.filename, source_type, content
+            )
+        except (ResumeError, ValueError) as exc:
+            return RedirectResponse(
+                f"/evidence?{urlencode({'error': str(exc)})}", status_code=303
+            )
+        return RedirectResponse(
+            "/evidence?notice=Source+stored+on+this+device+as+unapproved+evidence.",
+            status_code=303,
+        )
+
+    @app.post("/evidence/sources/{source_id}/suggest-claims")
+    async def evidence_suggest_claims(source_id: str):
+        source = get_preparation_source(db_path, source_id)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Evidence source not found.")
+        count = suggest_claims(db_path, source_id)
+        return RedirectResponse(
+            f"/evidence?notice={count}+unreviewed+claim+suggestions+added.", status_code=303
+        )
+
+    @app.post("/evidence/sources/{source_id}/settings")
+    async def evidence_source_settings(request: Request, source_id: str):
+        form = dict(await request.form())
+        try:
+            updated = set_source_options(
+                db_path,
+                source_id,
+                permitted=_checked(form.get("permitted")),
+                default_cv=_checked(form.get("default_cv")),
+                structure_policy=str(form.get("structure_policy") or "preserve"),
+            )
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/evidence?{urlencode({'error': str(exc)})}", status_code=303
+            )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Evidence source not found.")
+        return RedirectResponse("/evidence?notice=Source+preferences+saved.", status_code=303)
+
+    @app.post("/evidence/writing-preferences")
+    async def evidence_writing_preferences(request: Request):
+        form = dict(await request.form())
+        save_writing_preferences(db_path, str(form.get("content") or ""))
+        return RedirectResponse(
+            "/evidence?notice=Writing+preferences+saved+locally.", status_code=303
+        )
+
+    @app.post("/evidence/claims/{claim_id}/review")
+    async def evidence_claim_review(request: Request, claim_id: str):
+        form = dict(await request.form())
+        try:
+            updated = review_claim(
+                db_path,
+                claim_id,
+                status=str(form.get("status") or "unreviewed"),
+                evidence_level=str(form.get("evidence_level") or "unknown"),
+                category=str(form.get("category") or "unclassified"),
+                role_family=str(form.get("role_family") or ""),
+                owner_note=str(form.get("owner_note") or ""),
+            )
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/evidence?{urlencode({'error': str(exc)})}", status_code=303
+            )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Claim not found.")
+        return RedirectResponse("/evidence?notice=Claim+review+saved.", status_code=303)
 
     @app.post("/profile/extract")
     async def profile_extract(
@@ -719,6 +895,12 @@ def create_app(
         sources = list_sources(db_path)
         usage = monthly_jev_usage(db_path, current_settings.monthly_jev_budget_usd)
         settings_row = get_settings(db_path)
+        evidence_sources = list_preparation_sources(db_path)
+        permitted_cvs = [
+            source for source in evidence_sources
+            if source["source_type"] == "resume" and source["permitted"]
+        ]
+        approved_claim_count = len(approved_claims(db_path))
         return render(
             request,
             "results.html",
@@ -738,6 +920,8 @@ def create_app(
                 "usage": usage,
                 "jev_consented": bool(settings_row.get("jev_consent_at")),
                 "sources": sources,
+                "preparation_cvs": permitted_cvs,
+                "preparation_claims_ready": approved_claim_count > 0,
                 "notice": request.query_params.get("notice", ""),
             },
         )
@@ -797,6 +981,29 @@ def create_app(
         finally:
             operation_lock.release()
 
+    @app.post("/jobs/{job_id}/prepare")
+    async def prepare_job(request: Request, job_id: str, background_tasks: BackgroundTasks):
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                "/preparations?notice=Wait+for+the+current+local+operation+to+finish+before+starting+preparation.",
+                status_code=303,
+            )
+        operation_lock.release()
+        form = dict(await request.form())
+        run_id = str(form.get("run_id") or "")
+        selected_cv_id = str(form.get("selected_cv_id") or "")
+        try:
+            record, created = request_preparation(db_path, job_id, run_id, selected_cv_id)
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/searches/{run_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        if created:
+            background_tasks.add_task(run_preparation_serialized, record["id"])
+        notice = "Preparation+started+for+this+listing." if created else "This+listing+already+has+a+request+for+the+same+saved+inputs."
+        return RedirectResponse(f"/preparations/{record['id']}?notice={notice}", status_code=303)
+
     @app.post("/jobs/{job_id}/{action}")
     async def job_action(request: Request, job_id: str, action: str):
         if action not in {"save", "hide", "unsave", "unhide", "applied"}:
@@ -813,6 +1020,442 @@ def create_app(
         form = dict(await request.form())
         target = _safe_return_path(str(form.get("return_to") or "/"))
         return RedirectResponse(target, status_code=303)
+
+    @app.get("/preparations", response_class=HTMLResponse)
+    async def preparations_page(request: Request):
+        return render(
+            request,
+            "preparations.html",
+            {
+                "active_page": "preparations",
+                "preparations": list_preparations(db_path),
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.get("/preparations/{request_id}", response_class=HTMLResponse)
+    async def preparation_detail(request: Request, request_id: str):
+        record = get_preparation(db_path, request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Preparation request not found.")
+        from clue_ai.database import connect
+
+        with connect(db_path) as db:
+            latest = db.execute(
+                "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+                (request_id,),
+            ).fetchone()
+        packet = get_packet(db_path, latest["id"]) if latest else None
+        with connect(db_path) as db:
+            contacts = [
+                dict(item)
+                for item in db.execute(
+                    "SELECT * FROM researched_contacts WHERE request_id = ? ORDER BY confidence, name",
+                    (request_id,),
+                ).fetchall()
+            ]
+            gmail_drafts = [
+                dict(item)
+                for item in db.execute(
+                    """SELECT id, packet_id, recipient, subject, approved_sha256,
+                              gmail_draft_id, state, error_summary, created_at, updated_at
+                       FROM gmail_drafts WHERE request_id = ? ORDER BY created_at DESC""",
+                    (request_id,),
+                ).fetchall()
+            ]
+        outreach_options = []
+        if packet:
+            for index, message in enumerate(packet["output"].get("rewriter", {}).get("outreach_drafts", [])):
+                match = next(
+                    (
+                        item for item in contacts
+                        if item["source_url"] == message.get("contact_source_url")
+                        and item["name"] == message.get("recipient_name")
+                    ),
+                    None,
+                )
+                outreach_options.append({"index": index, "message": message, "contact": match})
+        gmail_connected = bool(get_settings(db_path).get("gmail_oauth_connected_at"))
+        with connect(db_path) as db:
+            applied_record = db.execute(
+                "SELECT 1 FROM applications WHERE job_id = ? OR canonical_url = ? LIMIT 1",
+                (record["job_id"], record["snapshot"].get("canonical_url", "")),
+            ).fetchone()
+        return render(
+            request,
+            "preparation_detail.html",
+            {
+                "active_page": "preparations",
+                "preparation": record,
+                "practice_sessions": list_practice_sessions(db_path, request_id),
+                "packet": packet,
+                "contacts": contacts,
+                "gmail_drafts": gmail_drafts,
+                "outreach_options": outreach_options,
+                "gmail_connected": gmail_connected,
+                "applied_recorded": bool(applied_record),
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.get("/outcomes", response_class=HTMLResponse)
+    async def outcomes_page(request: Request):
+        with connect(db_path) as db:
+            events = [
+                dict(item)
+                for item in db.execute(
+                    """SELECT event.*, app.title, app.company FROM application_events event
+                       LEFT JOIN applications app ON app.job_id = event.job_id
+                       ORDER BY event.occurred_at DESC, event.id"""
+                ).fetchall()
+            ]
+            feedback_rows = [
+                dict(item)
+                for item in db.execute(
+                    """SELECT feedback.*, app.title, app.company FROM interview_feedback feedback
+                       LEFT JOIN applications app ON app.job_id = feedback.job_id
+                       ORDER BY feedback.occurred_at DESC, feedback.id"""
+                ).fetchall()
+            ]
+        for item in events:
+            try:
+                item["details"] = json.loads(item["details_json"])
+            except (json.JSONDecodeError, TypeError):
+                item["details"] = {}
+        for item in feedback_rows:
+            try:
+                item["gap_tags"] = json.loads(item["gap_tags_json"])
+            except (json.JSONDecodeError, TypeError):
+                item["gap_tags"] = []
+        return render(
+            request,
+            "outcomes.html",
+            {
+                "active_page": "outcomes",
+                "summary": outcome_summary(db_path),
+                "events": events,
+                "feedback_rows": feedback_rows,
+                "tracked_applications": len(applied_jobs(db_path)),
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.post("/preparations/{request_id}/retry")
+    async def retry_preparation_route(request_id: str, background_tasks: BackgroundTasks):
+        from clue_ai.application_prep import retry_preparation
+
+        try:
+            record, created = retry_preparation(db_path, request_id)
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        if created:
+            background_tasks.add_task(run_preparation_serialized, record["id"])
+        return RedirectResponse(f"/preparations/{record['id']}", status_code=303)
+
+    @app.post("/preparations/{request_id}/practice/start")
+    async def start_interview_practice(request_id: str, background_tasks: BackgroundTasks):
+        try:
+            session = create_practice_session(db_path, request_id)
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}", status_code=303
+            )
+        background_tasks.add_task(run_practice_questions_serialized, session["id"])
+        return RedirectResponse(f"/preparations/{request_id}?notice=Interview+practice+started.", status_code=303)
+
+    @app.post("/preparations/{request_id}/contacts/{contact_id}/suppress")
+    async def suppress_contact_route(request_id: str, contact_id: str):
+        if not suppress_researched_contact(db_path, request_id, contact_id):
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=That+contact+cannot+be+changed+in+this+packet+state.",
+                status_code=303,
+            )
+        return RedirectResponse(
+            f"/preparations/{request_id}?notice=Contact+excluded.+The+packet+was+invalidated;+retry+manually+to+prepare+without+them.+Remove+any+prior+unsent+Gmail+draft+yourself.",
+            status_code=303,
+        )
+
+    @app.post("/preparations/{request_id}/practice/{session_id}/answers")
+    async def submit_practice_answers(request: Request, request_id: str, session_id: str, background_tasks: BackgroundTasks):
+        form = await request.form()
+        questions = form.getlist("question")
+        answers = form.getlist("answer")
+        if len(questions) != len(answers):
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Answer+all+practice+questions+before+assessment.",
+                status_code=303,
+            )
+        try:
+            queue_practice_answers(
+                db_path,
+                session_id,
+                json.dumps(
+                    [{"question": str(question), "answer": str(answer)} for question, answer in zip(questions, answers, strict=True)],
+                    ensure_ascii=False,
+                ),
+            )
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}", status_code=303
+            )
+        background_tasks.add_task(run_practice_assessment_serialized, session_id)
+        return RedirectResponse(f"/preparations/{request_id}?notice=Your+answers+were+submitted+for+practice+feedback.", status_code=303)
+
+    @app.post("/preparations/{request_id}/packets/{packet_id}/approve")
+    async def approve_packet_route(request: Request, request_id: str, packet_id: str):
+        form = dict(await request.form())
+        if not _checked(form.get("confirm_review")):
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Confirm+that+you+reviewed+this+exact+packet+version+first.",
+                status_code=303,
+            )
+        packet = get_packet(db_path, packet_id)
+        if packet is None or packet["request_id"] != request_id:
+            raise HTTPException(status_code=404, detail="Packet not found.")
+        try:
+            approve_packet(db_path, current_settings, packet_id)
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        return RedirectResponse(
+            f"/preparations/{request_id}?notice=Packet+approved.+You+must+still+apply+or+send+manually.",
+            status_code=303,
+        )
+
+    @app.get("/packets/{packet_id}/artifacts/{artifact_id}")
+    async def packet_artifact_download(packet_id: str, artifact_id: str):
+        packet = get_packet(db_path, packet_id)
+        if packet is None:
+            raise HTTPException(status_code=404, detail="Packet not found.")
+        artifact = next((item for item in packet["artifacts"] if item["id"] == artifact_id), None)
+        if artifact is None:
+            raise HTTPException(status_code=404, detail="Artifact not found.")
+        path = Path(artifact["file_path"]).resolve()
+        packet_root = (current_settings.data_dir / "application-packets").resolve()
+        if not path.is_relative_to(packet_root) or not path.is_file():
+            raise HTTPException(status_code=404, detail="Artifact is unavailable.")
+        if sha256(path.read_bytes()).hexdigest() != artifact["content_sha256"]:
+            raise HTTPException(status_code=409, detail="Artifact changed after generation.")
+        return FileResponse(path, filename=artifact["filename"])
+
+    @app.post("/preparations/{request_id}/packets/{packet_id}/gmail-draft")
+    async def create_gmail_draft_route(request: Request, request_id: str, packet_id: str):
+        form = dict(await request.form())
+        if not _checked(form.get("confirm_exact")):
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Review+and+confirm+the+exact+To,+Subject,+and+body+first.",
+                status_code=303,
+            )
+        settings_row = get_settings(db_path)
+        if not settings_row.get("gmail_consent_at") or not settings_row.get("gmail_oauth_connected_at"):
+            return RedirectResponse(
+                "/settings?notice=Connect+and+authorize+Gmail+Drafts+first.", status_code=303
+            )
+        try:
+            draft_index = int(form.get("draft_index") or -1)
+            _, gmail_id = create_approved_packet_draft(
+                db_path,
+                current_settings,
+                request_id,
+                packet_id,
+                draft_index,
+                confirmed=True,
+            )
+        except (ValueError, GmailDraftError) as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        return RedirectResponse(
+            f"/preparations/{request_id}?notice=Unsent+Gmail+draft+created+({gmail_id}).+The+owner+must+send+it+manually.",
+            status_code=303,
+        )
+
+    @app.post("/preparations/{request_id}/gmail-drafts/{draft_record_id}/reconcile")
+    async def reconcile_gmail_draft_route(request: Request, request_id: str, draft_record_id: str):
+        form = dict(await request.form())
+        outcome = str(form.get("outcome") or "")
+        gmail_id = _form_text(form, "gmail_draft_id", 200)
+        with connect(db_path) as db:
+            row = db.execute(
+                "SELECT state FROM gmail_drafts WHERE id = ? AND request_id = ?",
+                (draft_record_id, request_id),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Gmail draft record not found.")
+            if row["state"] != "unknown":
+                raise HTTPException(status_code=409, detail="Only an unresolved Gmail draft can be reconciled.")
+            if outcome == "found" and gmail_id:
+                db.execute(
+                    """UPDATE gmail_drafts SET state = 'created', gmail_draft_id = ?,
+                       error_summary = '', updated_at = ? WHERE id = ?""",
+                    (gmail_id, utc_now(), draft_record_id),
+                )
+            elif outcome == "not_found" and _checked(form.get("checked_gmail")):
+                db.execute(
+                    """UPDATE gmail_drafts SET state = 'failed', error_summary = ?,
+                       updated_at = ? WHERE id = ?""",
+                    ("Owner confirmed the draft is absent from Gmail Drafts; manual retry is allowed.", utc_now(), draft_record_id),
+                )
+            else:
+                return RedirectResponse(
+                    f"/preparations/{request_id}?notice=Choose+the+reconciled+result+after+checking+Gmail+Drafts.",
+                    status_code=303,
+                )
+        return RedirectResponse(f"/preparations/{request_id}?notice=Gmail+draft+status+reconciled.", status_code=303)
+
+    @app.post("/preparations/{request_id}/record-stage")
+    async def record_application_stage_route(request: Request, request_id: str):
+        form = dict(await request.form())
+        record = get_preparation(db_path, request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Preparation request not found.")
+        with connect(db_path) as db:
+            packet_row = db.execute(
+                "SELECT id, status FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+                (request_id,),
+            ).fetchone()
+        if not packet_row or packet_row["status"] != "approved":
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Approve+the+final+packet+before+recording+an+application+outcome.",
+                status_code=303,
+            )
+        stage = str(form.get("stage") or "")
+        try:
+            if stage == "submitted":
+                if not _checked(form.get("owner_attestation")):
+                    raise ValueError("Confirm that you submitted the application outside Clue.")
+                mark_snapshot_applied(db_path, record["snapshot"])
+            else:
+                with connect(db_path) as db:
+                    exists = db.execute(
+                        "SELECT 1 FROM applications WHERE job_id = ? OR canonical_url = ? LIMIT 1",
+                        (record["job_id"], record["snapshot"].get("canonical_url", "")),
+                    ).fetchone()
+                if not exists:
+                    raise ValueError("Record your manual submission first, then add later stage updates.")
+            record_stage(
+                db_path,
+                job_id=record["job_id"],
+                request_id=request_id,
+                stage=stage,
+                details=str(form.get("details") or ""),
+            )
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        return RedirectResponse("/outcomes?notice=Owner-reported+stage+saved.", status_code=303)
+
+    @app.post("/preparations/{request_id}/interview-feedback")
+    async def record_interview_feedback_route(request: Request, request_id: str):
+        form = dict(await request.form())
+        record = get_preparation(db_path, request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Preparation request not found.")
+        with connect(db_path) as db:
+            exists = db.execute(
+                "SELECT 1 FROM applications WHERE job_id = ? OR canonical_url = ? LIMIT 1",
+                (record["job_id"], record["snapshot"].get("canonical_url", "")),
+            ).fetchone()
+        if not exists:
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Record+the+manual+submission+before+adding+interview+feedback.",
+                status_code=303,
+            )
+        try:
+            tags = [part.strip() for part in str(form.get("gap_tags") or "").split(",") if part.strip()]
+            record_interview_feedback(
+                db_path,
+                job_id=record["job_id"],
+                request_id=request_id,
+                stage=str(form.get("stage") or ""),
+                self_assessment=str(form.get("self_assessment") or ""),
+                employer_feedback=str(form.get("employer_feedback") or ""),
+                gap_tags=tags,
+            )
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        return RedirectResponse("/outcomes?notice=Interview+feedback+saved.", status_code=303)
+
+    @app.post("/preparations/{request_id}/receipt")
+    async def upload_application_receipt(
+        request_id: str,
+        receipt_file: UploadFile | None = File(default=None),  # noqa: B008 - FastAPI parameter metadata.
+    ):
+        record = get_preparation(db_path, request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Preparation request not found.")
+        with connect(db_path) as db:
+            owner_submission = db.execute(
+                """SELECT 1 FROM application_events WHERE request_id = ? AND stage = 'submitted'
+                   AND event_type = 'owner_submission_attestation' LIMIT 1""",
+                (request_id,),
+            ).fetchone()
+        if not owner_submission:
+            return RedirectResponse(
+                f"/preparations/{request_id}?notice=Record+your+manual+submission+before+adding+a+receipt.",
+                status_code=303,
+            )
+        if receipt_file is None or not receipt_file.filename:
+            return RedirectResponse(f"/preparations/{request_id}?notice=Choose+a+receipt+file+first.", status_code=303)
+        suffix = Path(receipt_file.filename).suffix.casefold()
+        if suffix not in {".pdf", ".png", ".jpg", ".jpeg", ".eml", ".txt"}:
+            return RedirectResponse(f"/preparations/{request_id}?notice=Use+a+PDF,+image,+EML,+or+TXT+receipt.", status_code=303)
+        content = await receipt_file.read(10 * 1024 * 1024 + 1)
+        if len(content) > 10 * 1024 * 1024:
+            return RedirectResponse(f"/preparations/{request_id}?notice=Receipt+files+must+be+10+MB+or+smaller.", status_code=303)
+        relative = Path("application-packets") / request_id / "receipts" / f"{uuid.uuid4().hex}{suffix}"
+        destination = (current_settings.data_dir / relative).resolve()
+        if not destination.is_relative_to(current_settings.data_dir.resolve()):
+            raise HTTPException(status_code=400, detail="Receipt path is outside local storage.")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
+        details = {
+            "receipt_filename": Path(receipt_file.filename).name[:200],
+            "receipt_path": str(destination),
+            "receipt_sha256": sha256(content).hexdigest(),
+        }
+        record_stage(
+            db_path,
+            job_id=record["job_id"],
+            request_id=request_id,
+            stage="submitted",
+            details_data=details,
+            evidence_level="receipt_imported",
+            event_type="receipt_imported",
+        )
+        return RedirectResponse(f"/preparations/{request_id}?notice=Receipt+stored+locally.", status_code=303)
+
+    @app.get("/outcomes/receipts/{event_id}")
+    async def download_application_receipt(event_id: str):
+        with connect(db_path) as db:
+            row = db.execute(
+                "SELECT details_json FROM application_events WHERE id = ? AND event_type = 'receipt_imported'",
+                (event_id,),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Receipt not found.")
+        try:
+            details = json.loads(row["details_json"])
+            path = Path(details["receipt_path"]).resolve()
+        except (KeyError, json.JSONDecodeError, TypeError):
+            raise HTTPException(status_code=404, detail="Receipt is unavailable.") from None
+        root = (current_settings.data_dir / "application-packets").resolve()
+        if not path.is_relative_to(root) or not path.is_file():
+            raise HTTPException(status_code=404, detail="Receipt is unavailable.")
+        if sha256(path.read_bytes()).hexdigest() != details.get("receipt_sha256"):
+            raise HTTPException(status_code=409, detail="Receipt changed after it was recorded.")
+        return FileResponse(path, filename=details.get("receipt_filename", path.name))
 
     @app.get("/applied", response_class=HTMLResponse)
     async def applied_page(request: Request):
@@ -1036,6 +1679,7 @@ def create_app(
     async def settings_page(request: Request):
         settings_row = get_settings(db_path)
         usage = monthly_jev_usage(db_path, current_settings.monthly_jev_budget_usd)
+        openai_usage = monthly_openai_usage(db_path)
         return render(
             request,
             "settings.html",
@@ -1043,6 +1687,12 @@ def create_app(
                 "active_page": "settings",
                 "jev_consented": bool(settings_row.get("jev_consent_at")),
                 "usage": usage,
+                "openai_settings": settings_row,
+                "openai_usage": openai_usage,
+                "openai_key_configured": bool(current_settings.openai_api_key),
+                "openai_enabled": bool(settings_row.get("openai_consent_at")),
+                "gmail_client_configured": bool(current_settings.gmail_oauth_client_id),
+                "gmail_connected": bool(settings_row.get("gmail_oauth_connected_at")),
                 "notice": request.query_params.get("notice", ""),
             },
         )
@@ -1054,6 +1704,47 @@ def create_app(
         set_jev_consent(db_path, accepted)
         message = "Jev+is+enabled." if accepted else "Jev+is+disabled."
         return RedirectResponse(f"/settings?notice={message}", status_code=303)
+
+    @app.post("/settings/openai-controls")
+    async def save_openai_controls_route(request: Request):
+        form = dict(await request.form())
+        try:
+            values = {
+                "consent": _checked(form.get("openai_consent")),
+                "monthly_cap_usd": float(form.get("monthly_cap_usd") or 0),
+                "opportunity_cap_usd": float(form.get("opportunity_cap_usd") or 0),
+                "input_usd_per_million": float(form.get("input_usd_per_million") or 0),
+                "output_usd_per_million": float(form.get("output_usd_per_million") or 0),
+                "rate_card_revision": _form_text(form, "rate_card_revision", 80),
+                "search_usd_per_thousand": 0.0,
+            }
+            save_openai_controls(db_path, **values)
+        except (ValueError, TypeError) as exc:
+            return RedirectResponse(
+                f"/settings?{urlencode({'notice': str(exc) or 'Enter valid non-negative budget and rate values.'})}",
+                status_code=303,
+            )
+        state = "enabled" if values["consent"] else "disabled"
+        return RedirectResponse(f"/settings?notice=OpenAI+data-sharing+consent+{state}.", status_code=303)
+
+    @app.post("/settings/gmail/connect")
+    async def connect_gmail_route():
+        try:
+            authorization_url = start_local_oauth(db_path, current_settings)
+        except GmailDraftError as exc:
+            return RedirectResponse(
+                f"/settings?{urlencode({'notice': str(exc)})}", status_code=303
+            )
+        return RedirectResponse(authorization_url, status_code=303)
+
+    @app.post("/settings/gmail/disconnect")
+    async def disconnect_gmail_route():
+        WindowsDPAPITokenStore(current_settings.data_dir).delete()
+        set_gmail_connection(db_path, False)
+        return RedirectResponse(
+            "/settings?notice=Local+Gmail+authorization+removed.+Revoke+the+Google+grant+in+your+Google+Account+if+you+also+want+to+withdraw+it.",
+            status_code=303,
+        )
 
     @app.post("/data/delete")
     async def delete_all_data(request: Request):

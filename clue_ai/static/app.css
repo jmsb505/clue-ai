@@ -778,3 +778,54 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
   .qualification-list li { grid-template-columns: minmax(0, 1fr); }
   .qualification-list li > small { grid-column: 1; }
 }
+
+.evidence-upload-panel, .preparation-snapshot-panel { padding: 23px 25px; }
+.evidence-upload-form { display: grid; grid-template-columns: minmax(190px, .85fr) minmax(260px, 1.4fr) auto; gap: 13px; align-items: end; margin-top: 18px; }
+.evidence-upload-form .field { margin: 0; }
+.evidence-upload-form .button { min-height: 43px; white-space: nowrap; }
+.evidence-library { margin-top: 30px; }
+.evidence-source-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.evidence-source-card, .evidence-claim-card { padding: 20px; }
+.evidence-source-heading, .evidence-claim-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.evidence-source-heading h3, .preparation-row h3 { margin: 7px 0 0; font-size: 15px; overflow-wrap: anywhere; }
+.evidence-source-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0; }
+.evidence-source-actions form { margin: 0; }
+.evidence-source-settings { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--line); }
+.evidence-source-settings .button { justify-self: start; }
+.evidence-claim-list { display: grid; gap: 12px; }
+.evidence-claim-heading { align-items: center; }
+.evidence-claim-card blockquote { margin: 14px 0; padding: 12px 14px; border-left: 3px solid #badbc9; border-radius: 0 10px 10px 0; background: #f6f9f6; color: #394d45; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.evidence-claim-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.evidence-claim-form .field-wide { grid-column: 1 / -1; }
+.evidence-claim-form .button { justify-self: start; }
+.extracted-source-panel { padding: 23px 25px; }
+.extracted-source-text { max-height: 70vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: #33453e; font: 12px/1.75 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.preparation-list { display: grid; gap: 12px; }
+.preparation-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 22px; }
+.preparation-row-main { min-width: 0; }
+.preparation-row h3 a { text-decoration: none; }
+.preparation-row h3 a:hover { color: var(--teal); }
+.preparation-row p { margin: 7px 0; color: #718087; font-size: 10px; line-height: 1.6; }
+.preparation-row small { color: #87928c; font-size: 8px; }
+.preparation-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 15px 0; }
+.preparation-facts div { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfa; }
+.preparation-facts dt { color: #849089; font-size: 8px; }
+.preparation-facts dd { margin: 5px 0 0; color: #344b41; font-size: 10px; font-weight: 650; overflow-wrap: anywhere; }
+.preparation-stage-list { display: grid; gap: 12px; margin: 0 0 18px; padding: 0; list-style: none; }
+.preparation-stage-list li { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-left: 3px solid #d8e1dc; background: #fafbf9; }
+.preparation-stage-list li.is-complete { border-left-color: #69a786; }
+.preparation-stage-list b { color: #40564b; font-size: 10px; }
+.preparation-stage-list span { color: #85918a; font-size: 9px; }
+
+@media (max-width: 850px) {
+  .evidence-source-grid { grid-template-columns: 1fr; }
+  .evidence-upload-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .evidence-upload-form .button { grid-column: 1 / -1; justify-self: start; }
+}
+@media (max-width: 600px) {
+  .evidence-upload-form, .evidence-claim-form { grid-template-columns: 1fr; }
+  .evidence-upload-form .button, .evidence-claim-form .field-wide { grid-column: auto; }
+  .preparation-row { align-items: flex-start; flex-direction: column; }
+  .preparation-facts { grid-template-columns: 1fr; }
+  .evidence-source-heading { flex-direction: column; }
+}

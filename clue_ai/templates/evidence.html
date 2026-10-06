@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Evidence library · Clue AI{% endblock %}
+{% block eyebrow %}YOUR PRIVATE SOURCE MATERIAL{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">LOCAL EVIDENCE · OWNER REVIEW</span>
+    <h1>Keep claims<br><em>tied to their sources.</em></h1>
+    <p>Technical and descriptive profiles, CV references, and writing samples stay in your local data folder. New claim suggestions are unreviewed until you approve them.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>EV</span><i>✳</i></div>
+</section>
+
+{% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+{% if notice %}<div class="alert alert-success" role="status">{{ notice }}</div>{% endif %}
+
+<section class="panel evidence-upload-panel">
+  <div class="panel-header">
+    <div><span class="kicker kicker-muted">PRIVATE ON THIS DEVICE</span><h2>Add source material</h2></div>
+    <span class="mini-badge">No API sharing enabled</span>
+  </div>
+  <p class="panel-muted">Upload your technical profile, descriptive profile, CV references, or an explicitly selected writing sample. Text extraction is local. Uploading does not approve facts or send anything to an AI provider.</p>
+  <form class="evidence-upload-form" action="/evidence/upload" method="post" enctype="multipart/form-data">
+    <label class="field">
+      <span>Source type</span>
+      <select name="source_type" required>
+        <option value="technical_profile">Technical profile · claim source</option>
+        <option value="descriptive_profile">Descriptive profile · writing preferences</option>
+        <option value="resume">Resume / CV · content and layout reference</option>
+        <option value="writing_sample">Writing sample · opt-in only</option>
+      </select>
+    </label>
+    <label class="file-picker" for="evidence-file">
+      <span class="file-picker-icon" aria-hidden="true">↥</span>
+      <span><b>Choose a source file</b><small>PDF, DOCX, Markdown, or TXT · up to 12 MB</small></span>
+      <input id="evidence-file" type="file" name="source_file" accept=".pdf,.docx,.md,.markdown,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain" required>
+    </label>
+    <button class="button button-dark" type="submit">Store locally <span aria-hidden="true">→</span></button>
+  </form>
+</section>
+
+<section class="panel evidence-upload-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">OPTIONAL STYLE GUIDANCE</span><h2>Writing preferences</h2></div><span class="mini-badge">Revision {{ writing_preferences.revision }}</span></div>
+  <p class="panel-muted">Write a short set of preferences in your own words: tone, length, technical detail, and any genuine role motivation you want considered. This text is sent only after you trigger a listing and enable OpenAI consent. Up to three explicitly selected descriptive profiles or writing samples may also inform the Rewriter; samples are style cues only.</p>
+  <form action="/evidence/writing-preferences" method="post" class="evidence-preferences-form">
+    <label class="field field-wide"><span>Owner-confirmed guidance</span><textarea name="content" rows="6" maxlength="4000" placeholder="For example: Keep the tone direct and specific. Preserve technical details. For this role, I am especially interested in…">{{ writing_preferences.content }}</textarea></label>
+    <button class="button button-outline button-small" type="submit">Save writing preferences</button>
+  </form>
+</section>
+
+<section class="evidence-library">
+  <div class="section-heading">
+    <div><span class="kicker kicker-muted">SOURCE LIBRARY</span><h2>Your references</h2></div>
+    <span class="mini-badge">{{ sources|length }} stored</span>
+  </div>
+  {% if sources %}
+    <div class="evidence-source-grid">
+      {% for source in sources %}
+        <article class="panel evidence-source-card">
+          <div class="evidence-source-heading">
+            <div><span class="kicker kicker-muted">{{ source_types[source.source_type] }}</span><h3>{{ source.filename }}</h3></div>
+            <span class="tag {% if source.permitted %}tag-green{% else %}tag-muted{% endif %}">{% if source.permitted %}Selected reference{% else %}Not selected{% endif %}</span>
+          </div>
+          <p class="panel-muted">{{ source.extracted_chars }} extracted characters · {{ source.claim_count }} claim suggestions · {{ source.approved_count or 0 }} approved</p>
+          {% if source.source_type == 'descriptive_profile' %}<p class="panel-muted">If selected, the Rewriter may use your stated preferences and motivations as writing context. It is never used as factual career evidence.</p>{% elif source.source_type == 'writing_sample' %}<p class="panel-muted">If selected, the Rewriter receives this sample for style only. It must not copy its factual or biographical claims.</p>{% endif %}
+          <div class="evidence-source-actions">
+            <a class="text-link" href="/evidence/sources/{{ source.id }}">Review extracted text <span aria-hidden="true">→</span></a>
+            <form action="/evidence/sources/{{ source.id }}/suggest-claims" method="post"><button class="quiet-button" type="submit">Create unreviewed claim suggestions</button></form>
+          </div>
+          <form class="evidence-source-settings" action="/evidence/sources/{{ source.id }}/settings" method="post">
+            <label class="check-field"><input type="checkbox" name="permitted" value="on" {% if source.permitted %}checked{% endif %}><span><b>Allow as a selected reference</b><small>Separate API consent and budget limits are still required.</small></span></label>
+            {% if source.source_type == 'resume' %}
+              <label class="check-field"><input type="checkbox" name="default_cv" value="on" {% if source.is_default_cv %}checked{% endif %}><span><b>Use as the default CV</b><small>Original file remains unchanged.</small></span></label>
+              <label class="field"><span>Structure policy</span><select name="structure_policy"><option value="preserve" {% if source.structure_policy == 'preserve' %}selected{% endif %}>Preserve this CV's structure</option><option value="allow_improvements" {% if source.structure_policy == 'allow_improvements' %}selected{% endif %}>Allow structure improvements in tailored copies</option></select></label>
+            {% else %}<input type="hidden" name="structure_policy" value="preserve">{% endif %}
+            <button class="button button-outline button-small" type="submit">Save source settings</button>
+          </form>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="panel empty-state"><h3>No private source material yet</h3><p>Add your profile documents and CV references above. You can keep several CVs and choose which ones may be used.</p></div>
+  {% endif %}
+</section>
+
+<section class="evidence-library">
+  <div class="section-heading">
+    <div><span class="kicker kicker-muted">CLAIM REGISTER</span><h2>Review factual claims</h2></div>
+    <span class="mini-badge">{{ claims|selectattr('status', 'equalto', 'approved')|list|length }} approved · {{ claims|selectattr('status', 'equalto', 'unreviewed')|list|length }} need review</span>
+  </div>
+  {% if claims %}
+    <div class="evidence-claim-list">
+      {% for claim in claims %}
+        <article class="panel evidence-claim-card">
+          <div class="evidence-claim-heading"><span class="tag {% if claim.status == 'approved' %}tag-green{% elif claim.status == 'rejected' %}tag-muted{% else %}tag-amber{% endif %}">{{ claim.status }}</span><span class="panel-muted">Source: {{ claim.filename }} · {{ source_types[claim.source_type] }}</span></div>
+          <blockquote>{{ claim.evidence_excerpt }}</blockquote>
+          <form class="evidence-claim-form" action="/evidence/claims/{{ claim.id }}/review" method="post">
+            <label class="field field-wide"><span>Claim wording</span><textarea name="claim_text" rows="3" maxlength="600" required readonly>{{ claim.claim_text }}</textarea><small>Change the source file and re-import if the wording needs correction. Generated edits will remain separate drafts.</small></label>
+            <label class="field"><span>Review status</span><select name="status"><option value="unreviewed" {% if claim.status == 'unreviewed' %}selected{% endif %}>Needs review</option><option value="approved" {% if claim.status == 'approved' %}selected{% endif %}>Approve as supported</option><option value="rejected" {% if claim.status == 'rejected' %}selected{% endif %}>Reject</option></select></label>
+            <label class="field"><span>Evidence level</span><select name="evidence_level">{% for level, label in [('unknown','Unknown'),('measured_result','Measured result'),('implemented','Implemented'),('demonstration','Demonstration'),('coursework','Coursework'),('exposure','Exposure'),('planned','Planned work')] %}<option value="{{ level }}" {% if claim.evidence_level == level %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+            <label class="field"><span>Category</span><input name="category" maxlength="80" value="{{ claim.category }}" placeholder="For example, evaluation"></label>
+            <label class="field"><span>Role family</span><select name="role_family"><option value="">General</option>{% for lane in ['applied_ai_llm', 'computer_vision', 'edge_inference', 'ai_product_backend'] %}<option value="{{ lane }}" {% if claim.role_family == lane %}selected{% endif %}>{{ lane.replace('_', ' ')|title }}</option>{% endfor %}</select></label>
+            <label class="field field-wide"><span>Owner note</span><textarea name="owner_note" rows="2" maxlength="1000" placeholder="Metric context, personal contribution, version, or limits">{{ claim.owner_note }}</textarea></label>
+            <button class="button button-outline button-small" type="submit">Save review</button>
+          </form>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="panel empty-state"><h3>No claims to review</h3><p>After adding a source, create unreviewed suggestions. Only claims you approve can be used as factual evidence in an application draft.</p></div>
+  {% endif %}
+</section>
+
+<section class="privacy-inline">
+  <span class="privacy-inline-icon" aria-hidden="true">⌂</span>
+  <div><b>Private and removable.</b><p>Source files, extracted text, claims, and review notes are stored under ignored <code>.data/</code>. They are not included in Git. Full local-data deletion removes them.</p></div>
+  <a href="/settings">Data controls <span aria-hidden="true">→</span></a>
+</section>
+{% endblock %}

@@ -14,7 +14,8 @@ from clue_ai.config import Settings
 from clue_ai.database import connect
 
 SEARCH_TABLES = (
-    "search_results", "search_runs", "source_query_checks", "job_user_state", "job_sources", "jobs"
+    "search_results", "search_runs", "source_query_checks",
+    "job_user_state", "job_sources", "jobs"
 )
 
 
@@ -81,7 +82,8 @@ def main() -> None:
     result = reset_search_data(settings.database_path)
     print(f"Reset {result.removed['search_runs']} searches and {result.removed['jobs']} listings.")
     print("Cleared rankings, saved/hidden jobs, query caches and source/company refresh timers.")
-    print("Kept your CV, profile, application tracker, API settings, source choices and Jev spend history.")
+    print("Kept owner-triggered preparation packets and feedback; private evidence sources remain available.")
+    print("Kept your CV, profile, application tracker, API settings, source choices and provider spend history.")
     print("Kept researched listing URLs to prevent the same unchanged jobs from returning; full personal-data deletion clears this ledger.")
     print(f"Local backup: {result.backup_path}")
     print("Clue remains stopped. Start it when you are ready for a fresh search.")

@@ -258,6 +258,20 @@
           {% else %}
             <span class="tag tag-muted">Listing link unavailable</span>
           {% endif %}
+          {% if job.score_state == 'scored' and job.filter_status == 'match' %}
+            {% if preparation_cvs and preparation_claims_ready %}
+              <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
+                <input type="hidden" name="run_id" value="{{ run.id }}">
+                <label class="sr-only" for="cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
+                <select id="cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
+                  {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv or (preparation_cvs|length == 1) %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
+                </select>
+                <button class="button button-dark button-small" type="submit" aria-label="Prepare application materials for {{ job.title }} at {{ job.company }}">Prepare application <span aria-hidden="true">→</span></button>
+              </form>
+            {% else %}
+              <a class="button button-outline button-small" href="/evidence" aria-label="Set up CV and approved claims before preparing {{ job.title }}">Set up materials <span aria-hidden="true">→</span></a>
+            {% endif %}
+          {% endif %}
           <form action="/jobs/{{ job.id }}/save" method="post">
             <input type="hidden" name="return_to" value="/searches/{{ run.id }}">
             <button class="quiet-button {% if job.saved %}is-saved{% endif %}" type="submit" aria-label="{% if job.saved %}Saved{% else %}Save{% endif %} {{ job.title }}">

@@ -24,6 +24,9 @@
         <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}" {% if active_page == 'profile' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">◎</span><span>CV &amp; profile</span>
         </a>
+        <a href="/evidence" class="{% if active_page == 'evidence' %}is-active{% endif %}" {% if active_page == 'evidence' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">▤</span><span>Evidence library</span>
+        </a>
         <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}" {% if active_page == 'search' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">⌕</span><span>Search preferences</span>
         </a>
@@ -35,6 +38,12 @@
         </a>
         <a href="/applied" class="{% if active_page == 'applied' %}is-active{% endif %}" {% if active_page == 'applied' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">✓</span><span>Applied roles</span>
+        </a>
+        <a href="/preparations" class="{% if active_page == 'preparations' %}is-active{% endif %}" {% if active_page == 'preparations' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">✳</span><span>Application prep</span>
+        </a>
+        <a href="/outcomes" class="{% if active_page == 'outcomes' %}is-active{% endif %}" {% if active_page == 'outcomes' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">↗</span><span>Outcomes &amp; interviews</span>
         </a>
       </nav>
       <p class="rail-label rail-label-spaced">WORKSPACE</p>

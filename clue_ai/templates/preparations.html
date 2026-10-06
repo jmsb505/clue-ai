@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Application preparation · Clue AI{% endblock %}
+{% block eyebrow %}OWNER-TRIGGERED WORK{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">ONE LISTING AT A TIME</span>
+    <h1>Application<br><em>preparation queue.</em></h1>
+    <p>Only listings you select enter this queue. Each request keeps the saved job and Jev snapshot that you reviewed when you clicked Prepare application.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>AP</span><i>↗</i></div>
+</section>
+
+<section class="section-heading">
+  <div><span class="kicker kicker-muted">YOUR REQUESTS</span><h2>Preparation history</h2></div>
+  <span class="mini-badge">{{ preparations|length }} requests</span>
+</section>
+{% if preparations %}
+  <div class="preparation-list">
+    {% for item in preparations %}
+      <article class="panel preparation-row">
+        <div class="preparation-row-main">
+          <span class="tag {% if item.state == 'completed' %}tag-green{% elif item.state in ['blocked', 'failed'] %}tag-amber{% else %}tag-muted{% endif %}">{{ item.state|title }}</span>
+          <h3><a href="/preparations/{{ item.id }}">{{ item.snapshot.title }} · {{ item.snapshot.company or 'Company not provided' }}</a></h3>
+          <p>{{ item.status_message }}</p>
+          <small>Owner-triggered · {{ item.created_at[:16].replace('T', ' ') }} UTC · input snapshot {{ item.snapshot_sha256[:12] }}</small>
+        </div>
+        <a class="button button-outline button-small" href="/preparations/{{ item.id }}">Open snapshot <span aria-hidden="true">→</span></a>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="panel empty-state"><h3>No preparation requests yet</h3><p>Run your normal search and Jev assessment. For an eligible listing, use its Prepare application button when you want to start work on that role.</p><a class="button button-dark" href="/searches">Open search history <span aria-hidden="true">→</span></a></div>
+{% endif %}
+{% endblock %}
