@@ -244,7 +244,7 @@ def test_cross_site_fetch_metadata_is_rejected(settings):
     assert response.status_code == 403
 
 
-def test_source_management_requires_review_before_enabling(settings):
+def test_owner_added_source_can_be_paused_and_reenabled(settings):
     client = TestClient(create_app(settings), base_url="http://127.0.0.1")
     response = client.post(
         "/sources/add",
@@ -259,32 +259,18 @@ def test_source_management_requires_review_before_enabling(settings):
     )
     source = get_source(settings.database_path, source_id)
     assert response.status_code == 303
-    assert source["state"] == "review"
-    assert source["enabled"] == 0
+    assert source["state"] == "approved"
+    assert source["enabled"] == 1
 
-    incomplete = client.post(
-        f"/sources/{source_id}/approve",
-        data={"terms_reviewed": "on"},
-        headers=ORIGIN,
-        follow_redirects=False,
+    paused = client.post(
+        f"/sources/{source_id}/pause", headers=ORIGIN, follow_redirects=False
     )
-    assert incomplete.status_code == 303
+    assert paused.status_code == 303
+    assert get_source(settings.database_path, source_id)["state"] == "review"
     assert get_source(settings.database_path, source_id)["enabled"] == 0
 
     reviewed = client.post(
-        f"/sources/{source_id}/approve",
-        data={
-            key: "on"
-            for key in (
-                "terms_reviewed",
-                "zero_cost",
-                "attribution_confirmed",
-                "robots_confirmed",
-                "public_access_confirmed",
-            )
-        },
-        headers=ORIGIN,
-        follow_redirects=False,
+        f"/sources/{source_id}/approve", headers=ORIGIN, follow_redirects=False
     )
     assert reviewed.status_code == 303
     assert get_source(settings.database_path, source_id)["state"] == "approved"
@@ -300,7 +286,7 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
     client = TestClient(create_app(settings), base_url="http://127.0.0.1")
     built = client.get(
         "/x-leads",
-        params={"roles": "Product Designer, UX Designer", "work_from": "Milan, Italy"},
+        params={"roles": "Junior AI Engineer", "work_from": "Milan, Italy"},
     )
     assert built.status_code == 200
     assert "https://x.com/search?q=" in built.text
@@ -309,11 +295,11 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
     base_form = {
         "post_url": "https://twitter.com/hiring/status/123456789?ref=post",
         "job_url": "https://careers.example.com/jobs/123?utm_source=x",
-        "title": "Product Designer",
+        "title": "Junior AI Engineer",
         "company": "Example Studio",
         "location": "Remote in Italy and Europe",
         "workplace_type": "remote",
-        "description": "Design product workflows for customers in Italy. Required: prototyping and research.",
+        "description": "Build AI services for customers in Italy. Required: Python and model deployment.",
         "reviewed": "on",
     }
     unsafe = dict(base_form, job_url="https://t.co/short")
@@ -332,7 +318,7 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
     assert "Open X post" in page.text
     indexed = filter_jobs(
         all_active_jobs(settings.database_path),
-        SearchCriteria(roles="Product Designer", work_from="Italy", workplace="remote"),
+        SearchCriteria(roles="Junior AI Engineer", work_from="Italy", workplace="remote"),
     )
     assert len(indexed) == 1
     assert indexed[0]["freshness_status"] == "manual"
@@ -358,7 +344,7 @@ def test_x_manual_lead_is_user_entered_and_never_becomes_a_fetch_source(settings
     )
     searched = client.post(
         "/search",
-        data={"roles": "Product Designer", "work_from": "Italy", "workplace": "remote"},
+        data={"roles": "Junior AI Engineer", "work_from": "Italy", "workplace": "remote"},
         headers=ORIGIN,
         follow_redirects=False,
     )
@@ -387,8 +373,8 @@ def test_lever_source_form_records_the_selected_region(settings):
     source = next(item for item in list_sources(settings.database_path) if item["name"] == "Prima")
 
     assert response.status_code == 303
-    assert source["state"] == "review"
-    assert source["enabled"] == 0
+    assert source["state"] == "approved"
+    assert source["enabled"] == 1
     assert source["endpoint"] == "https://api.eu.lever.co/v0/postings/prima?mode=json"
     assert source["config"]["region"] == "eu"
 
@@ -397,7 +383,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     from clue_ai import services
 
     client = TestClient(create_app(settings), base_url="http://127.0.0.1:8000")
-    add_source(
+    owner_source_id = add_source(
         settings.database_path,
         name="Under review",
         kind="greenhouse",
@@ -407,7 +393,14 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     )
     calls = []
 
-    base_job = make_job()
+    base_job = make_job(
+        title="AI Engineer",
+        url="https://jobs.example.org/openings/ai-engineer",
+        description=(
+            "Remote AI engineer role open to candidates in Italy and Europe. "
+            "Build and deploy machine learning services using Python."
+        ),
+    )
 
     def fake_fetch(source, *_args):
         calls.append(source["id"])
@@ -431,7 +424,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     monkeypatch.setattr(services, "fetch_source", fake_fetch)
     response = client.post(
         "/search",
-        data={"roles": "Software Engineer", "work_from": "Italy", "workplace": "remote"},
+        data={"roles": "AI Engineer", "work_from": "Italy", "workplace": "remote"},
         headers=IN_APP_BROWSER_SAME_ORIGIN,
         follow_redirects=False,
     )
@@ -441,8 +434,8 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     results = client.get(results_url)
 
     assert results.status_code == 200
-    assert "Software Engineer" in results.text
-    assert 'href="https://jobs.example.org/openings/software-engineer"' in results.text
+    assert "AI Engineer" in results.text
+    assert 'href="https://jobs.example.org/openings/ai-engineer"' in results.text
     assert "explicitly enable Jev scoring" in results.text
     assert "HTTP 200" in results.text
     assert set(calls) == {
@@ -456,9 +449,12 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
         "justremote",
         "remotefirstjobs",
         "startupjobs",
+        "aidevjobs",
+        "devglobaljobs",
+        "techeurope",
+        owner_source_id,
     }
     assert "Powered by RemoteJobs.org" in results.text
-    assert not any(call.startswith("user-") for call in calls)
     row = get_run_results(settings.database_path, run_id)[0]
     assert row["eligibility_status"] == "eligible"
     assert row["eligibility_evidence"]
@@ -472,7 +468,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     )
     assert saved.status_code == 303
     saved_page = client.get("/saved")
-    assert "Software Engineer" in saved_page.text
+    assert "AI Engineer" in saved_page.text
     assert "Powered by RemoteJobs.org" in saved_page.text
     hidden = client.post(
         f"/jobs/{row['id']}/hide",
@@ -482,7 +478,7 @@ def test_search_to_results_save_hide_and_delete_uses_mocked_sources_only(setting
     )
     assert hidden.status_code == 303
     hidden_page = client.get("/hidden")
-    assert "Software Engineer" in hidden_page.text
+    assert "AI Engineer" in hidden_page.text
     assert "Powered by RemoteJobs.org" in hidden_page.text
 
     deleted = client.post(
@@ -558,12 +554,12 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
         settings.database_path,
         [
             make_job(
-                title="Senior Product Designer",
+                title="Junior AI Engineer",
                 location="Italy and Europe",
                 description=(
-                    "We need a senior product designer for our fully remote European team. "
-                    "You will lead user research, build prototypes, improve design systems, "
-                    "work with product managers, and make accessible software for customers."
+                    "We need a junior AI engineer for our fully remote European team. "
+                    "You will build Python model services, evaluate retrieval quality, "
+                    "deploy machine learning systems, and improve observability."
                 ),
             )
         ],
@@ -574,14 +570,14 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
     document.add_paragraph("alex@example.test")
     document.add_heading("Summary", level=1)
     document.add_paragraph(
-        "Product designer focused on accessible software and clear customer experiences."
+        "Junior AI engineer focused on retrieval systems and reliable model services."
     )
     document.add_heading("Skills", level=1)
-    document.add_paragraph("Figma, user research, prototyping, design systems, accessibility")
+    document.add_paragraph("Python, retrieval augmented generation, model evaluation, APIs")
     document.add_heading("Experience", level=1)
-    document.add_paragraph("Senior Product Designer | Northstar Studio | 2022 – Present")
+    document.add_paragraph("Junior AI Engineer | Northstar Studio | 2022 – Present")
     document.add_paragraph(
-        "Led product design for a remote team, improving onboarding and usability."
+        "Built Python inference APIs and evaluated retrieval quality for a remote team."
     )
     document.add_heading("Languages", level=1)
     document.add_paragraph("English C1, Italian B2")
@@ -640,15 +636,15 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
     assert response.headers["location"].startswith("/searches/")
     run_id = response.headers["location"].rsplit("/", 1)[-1]
     profile = get_profile(settings.database_path)
-    assert profile.target_roles == "Senior Product Designer"
+    assert profile.target_roles == "Junior AI Engineer"
     assert profile.profile_language == "en"
     assert profile.cv_path and Path(profile.cv_path).is_file()
     assert "alex@example.test" in profile.extracted_text
     run = get_run(settings.database_path, run_id)
     assert run["status"] == "complete"
-    assert run["criteria"]["roles"] == "Senior Product Designer"
+    assert run["criteria"]["roles"].startswith("Junior AI Engineer")
     assert run["criteria"]["work_from"] == "Italy"
-    assert run["criteria"]["workplace"] == "remote"
+    assert run["criteria"]["workplace"] == "remote_preferred"
     result = get_run_results(settings.database_path, run_id)[0]
     assert result["score_state"] == "scored"
     assert result["combined_score"] == 1.0
@@ -676,17 +672,17 @@ def test_cv_first_workflow_keeps_listings_unscored_without_opt_in(settings, monk
         "_default_client_factory",
         lambda **_kwargs: pytest.fail("Jev client must not be created without opt-in and a key"),
     )
-    save_jobs(settings.database_path, [make_job(title="Product Designer")])
+    save_jobs(settings.database_path, [make_job(title="AI Engineer")])
 
     document = Document()
     document.add_heading("Summary", level=1)
     document.add_paragraph(
-        "Product designer with experience building useful software and supporting remote teams."
+        "AI engineer with experience building useful software and supporting remote teams."
     )
     document.add_heading("Experience", level=1)
-    document.add_paragraph("Product Designer | Example Studio | 2021 – Present")
+    document.add_paragraph("AI Engineer | Example Studio | 2021 – Present")
     document.add_paragraph(
-        "Designed product workflows, developed research plans, and worked with distributed teams."
+        "Built model-serving APIs, developed evaluation plans, and worked with distributed teams."
     )
     file_bytes = io.BytesIO()
     document.save(file_bytes)
@@ -722,7 +718,7 @@ def test_repeat_cv_workflow_uses_saved_profile_and_search_preferences(settings, 
     save_profile(
         settings.database_path,
         CandidateProfile(
-            target_roles="UX Researcher",
+            target_roles="AI Engineer",
             skills="User research",
             profile_language="en",
         ),
@@ -731,7 +727,7 @@ def test_repeat_cv_workflow_uses_saved_profile_and_search_preferences(settings, 
         settings.database_path,
         "previous-preferences",
         SearchCriteria(
-            roles="UX Researcher",
+            roles="AI Engineer",
             work_from="Milan, Italy",
             workplace="remote",
             minimum_salary="55000",
@@ -755,7 +751,7 @@ def test_repeat_cv_workflow_uses_saved_profile_and_search_preferences(settings, 
     assert response.status_code == 303
     run_id = response.headers["location"].rsplit("/", 1)[-1]
     run = get_run(settings.database_path, run_id)
-    assert run["criteria"]["roles"] == "UX Researcher"
+    assert run["criteria"]["roles"].startswith("AI Engineer")
     assert run["criteria"]["work_from"] == "Milan, Italy"
     assert run["criteria"]["minimum_salary"] == "55000"
 

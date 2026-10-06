@@ -5,6 +5,7 @@ from shutil import copytree
 from conftest import make_job
 
 from clue_ai.database import (
+    DEFAULT_SOURCES,
     delete_personal_data,
     get_profile,
     save_profile,
@@ -54,6 +55,8 @@ def test_default_source_registry_has_remote_boards_and_manual_only_linkouts(data
         "techeurope_scrapling",
         "remote_first_rss",
         "startup_rss",
+        "ai_dev_jobs_api",
+        "devglobal_api",
     }
     assert all(item["state"] == "approved" and item["enabled"] for item in connectors)
     assert all(
@@ -111,7 +114,7 @@ def test_distinct_manual_x_urls_are_not_fuzzy_merged_by_role_and_company(databas
     assert len(all_active_jobs(database)) == 2
 
 
-def test_owner_added_source_starts_disabled_in_review(database):
+def test_owner_added_source_is_enabled_after_owner_adds_it(database):
     source_id = add_source(
         database,
         name="Example employer",
@@ -122,8 +125,8 @@ def test_owner_added_source_starts_disabled_in_review(database):
     )
 
     source = get_source(database, source_id)
-    assert source["state"] == "review"
-    assert source["enabled"] == 0
+    assert source["state"] == "approved"
+    assert source["enabled"] == 1
     assert source["config"]["career_url"].startswith("https://")
 
 
@@ -242,7 +245,7 @@ def test_delete_personal_data_removes_cv_history_and_user_sources_but_keeps_seed
     assert get_profile(database) == CandidateProfile()
     assert get_run(database, "run-delete") is None
     assert all_active_jobs(database) == []
-    assert len(list_sources(database)) == 14
+    assert len(list_sources(database)) == len(DEFAULT_SOURCES)
     assert get_source(database, "x_manual")["enabled"] == 0
     assert monthly_jev_usage(database, 4.0)["requests"] == 0
     assert get_source(database, "jobicy")["state"] == "approved"

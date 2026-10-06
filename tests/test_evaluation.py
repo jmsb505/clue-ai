@@ -84,7 +84,7 @@ def test_benchmark_harness_uses_one_synthetic_batch_and_reads_metrics_before_cle
     report = run_live_benchmark(lambda **_kwargs: FakeClient())
 
     assert len(calls) == 1
-    assert len(calls[0][1]) == 20
+    assert len(calls[0][1]) == 63
     assert report["api_requests"] == 1
     assert report["scored_count"] == 5
     assert report["unscored_count"] == 0

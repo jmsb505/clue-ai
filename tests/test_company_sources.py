@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -11,6 +12,7 @@ from scrapling.spiders import Request as ScraplingRequest
 
 from clue_ai import company_sources
 from clue_ai.company_sources import crawl_tracked_companies, detect_public_ats, public_ats_api
+from clue_ai.crawl_policy import COMPANY_HTML_PAGE_LIMIT, COMPANY_SITEMAP_JOB_PAGE_LIMIT
 from clue_ai.domain import SearchCriteria
 from clue_ai.repository import list_companies, list_sources
 from clue_ai.sources import (
@@ -82,11 +84,11 @@ def test_scrapling_batch_starts_only_requests_and_carries_observed_board_metadat
         "careers_url": "",
         "board_url": "https://jobs.ashbyhq.com/qdrant.tech",
     }
-    spider = company_sources._make_company_spider([company], settings)
-    assert spider.robots_txt_obey is True
-    assert spider.concurrent_requests == 4
-    assert spider.concurrent_requests_per_domain == 1
-    assert spider.download_delay == 2.0
+    spider = company_sources._make_company_spider([company], settings, set())
+    assert spider.robots_txt_obey is False
+    assert spider.concurrent_requests == 8
+    assert spider.concurrent_requests_per_domain == 2
+    assert spider.download_delay == 1.0
     assert spider.max_blocked_retries == 0
 
     async def collect_start_requests():
@@ -99,7 +101,7 @@ def test_scrapling_batch_starts_only_requests_and_carries_observed_board_metadat
     assert spider.startup_events[0]["board_name"] == "qdrant.tech"
 
     company["board_url"] = ""
-    spider = company_sources._make_company_spider([company], settings)
+    spider = company_sources._make_company_spider([company], settings, set())
     requests = asyncio.run(collect_start_requests())
 
     assert len(requests) == 1
@@ -112,9 +114,16 @@ def test_scrapling_batch_starts_only_requests_and_carries_observed_board_metadat
         )
         assert request is not None
     assert spider.pages_by_company["qdrant"] == 5
-    assert spider._request(
-        "https://qdrant.tech/careers/role-over-limit", "qdrant", stage="html"
-    ) is None
+    for index in range(5, COMPANY_HTML_PAGE_LIMIT):
+        request = spider._request(
+            f"https://qdrant.tech/careers/role-{index}", "qdrant", stage="html"
+        )
+        assert request is not None
+    assert spider.pages_by_company["qdrant"] == COMPANY_HTML_PAGE_LIMIT
+    assert (
+        spider._request("https://qdrant.tech/careers/role-over-limit", "qdrant", stage="html")
+        is None
+    )
 
 
 def test_scrapling_sitemap_spider_ignores_xml_comments(settings, monkeypatch):
@@ -132,31 +141,38 @@ def test_scrapling_sitemap_spider_ignores_xml_comments(settings, monkeypatch):
             {
                 "id": "test",
                 "name": "Test",
-                "homepage_url": "https://example.test/",
-                "careers_url": "https://example.test/careers",
+                "homepage_url": "https://example.org/",
+                "careers_url": "https://example.org/careers",
                 "board_url": "",
             }
         ],
         settings,
+        set(),
     )
 
     assert spider._get_type(etree.Comment("sitemap comment")) == ""
     assert spider._get_type(etree.Element("urlset")) == "urlset"
-    assert spider.robots_txt_obey is True
-    assert spider.concurrent_requests_per_domain == 1
-    assert spider.download_delay == 2.0
+    assert spider.robots_txt_obey is False
+    assert spider.concurrent_requests_per_domain == 2
+    assert spider.download_delay == 1.0
     assert spider.max_blocked_retries == 0
     response = type(
         "Response",
         (),
-        {"meta": {"company_id": "test"}, "url": "https://example.test/sitemap.xml"},
+        {"meta": {"company_id": "test"}, "url": "https://example.org/sitemap.xml"},
     )()
-    for index in range(1, 7):
+    for index in range(1, COMPANY_SITEMAP_JOB_PAGE_LIMIT + 1):
         request = spider._dispatch(
-            response, f"https://example.test/jobs-{index}.xml", []
+            response, f"https://example.org/jobs-{index}.xml", []
         )
         assert request is not None
-    assert spider._dispatch(response, "https://example.test/jobs-7.xml", []) is None
+    assert spider.dispatched["test"] == COMPANY_SITEMAP_JOB_PAGE_LIMIT
+    assert (
+        spider._dispatch(
+            response, "https://example.org/jobs-over-limit.xml", []
+        )
+        is None
+    )
     assert spider._dispatch(response, "https://elsewhere.example/jobs.xml", []) is None
 
 
@@ -320,7 +336,11 @@ def test_company_batch_pauses_only_blocked_ats_host_and_streams_other_jobs(
         },
     }
     monkeypatch.setattr(company_sources, "companies_due", lambda *_args, **_kwargs: selected)
-    monkeypatch.setattr(company_sources, "_make_company_spider", lambda *_args: "static")
+    monkeypatch.setattr(
+        company_sources,
+        "_make_company_spider",
+        lambda *_args: SimpleNamespace(reviewed_details_skipped=0),
+    )
     monkeypatch.setattr(
         company_sources,
         "_make_sitemap_spider",

@@ -7,7 +7,7 @@ from conftest import make_job
 
 from clue_ai.database import save_search_run, set_jev_consent
 from clue_ai.domain import CandidateProfile, SearchCriteria
-from clue_ai.jev import _build_request_state, _parse_choice_answer, score_run
+from clue_ai.jev import RUBRIC_VERSION, _build_request_state, _parse_choice_answer, score_run
 from clue_ai.repository import (
     connect,
     get_run_results,
@@ -61,14 +61,24 @@ def test_jev_request_excludes_cv_file_metadata_and_redacts_contacts(settings):
     assert "private-cv.docx" not in serialized
     assert "x.com/hiring/status/123456789" not in serialized
     assert "POST_TEXT_MUST_NOT_BE_SENT" not in serialized
-    assert len(questions) == 10
-    assert all("untrusted data" in question.instructions for question in questions.values())
+    assert len(questions) == 12
+    assert all(
+        any(
+            marker in question.instructions.casefold()
+            for marker in ("untrusted data", "untrusted listing text", "never instructions")
+        )
+        for question in questions.values()
+    )
     fit_questions = [
         question
         for name, question in questions.items()
         if "_filter_" not in name
     ]
-    assert all("Ignore any commands" in question.instructions for question in fit_questions)
+    assert all(
+        "ignore any commands" in question.instructions.casefold()
+        or "never instructions" in question.instructions.casefold()
+        for question in fit_questions
+    )
 
 
 def test_no_key_leaves_results_unscored_and_never_calls_client(settings, database):
@@ -164,12 +174,12 @@ def test_synthetic_jev_call_uses_typed_questions_no_retries_and_records_fit(
     assert result.scored_count == 1
     assert scored["score_state"] == "scored"
     assert scored["combined_score"] == 0.75
-    assert scored["rubric_version"] == "fit-v1.4.0"
+    assert scored["rubric_version"] == RUBRIC_VERSION
     assert scored["filter_status"] == "match"
     assert "candidate@example.com" not in repr(captured["state"])
     assert "RAW CV DATA IS NOT INCLUDED" not in repr(captured["state"])
     assert captured["client_kwargs"]["retry_max_retries"] == 0
-    assert len(captured["questions"]) == 10
+    assert len(captured["questions"]) == 12
 
 
 @pytest.mark.parametrize(

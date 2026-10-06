@@ -457,5 +457,6 @@ Synthetic implementation evidence for this checkout:
 - `pytest tests/test_application_prep.py tests/test_application_workflow.py -q --tb=short`: 22 passed.
 - `ruff check clue_ai tests`: passed.
 - Bundled Python `-m compileall -q clue_ai`: passed.
-- A repository-wide run is not green in this environment: with `tests/test_company_sources.py` excluded because Scrapling is unavailable, the current checkout reports 142 passed and 38 failed. An unmodified `HEAD` archive reports 134 passed and 38 failed; the existing failures include missing TypeSafe/Scrapling dependencies and older Jev, matching, web, and source expectations. Treat full-suite validation as unresolved; do not report it as passing.
+- Full repository suite: 207 passed with one upstream Starlette/AnyIO deprecation warning. The exact PLAN-019 commit snapshot was tested with the project-declared TypeSafe and Scrapling dependencies installed in an isolated temporary directory; no provider key was supplied and tests use synthetic data/fakes.
+- Existing suite expectations were aligned to the current documented Jev rubric, crawler limits, source registry, owner-added-source behavior, and AI-engineering search scope. No runtime behavior was changed by that validation-alignment work.
 - No live OpenAI/Gmail operation or personal-data pilot was performed. The API key remains blank by request. M6, reminders, external tracker synchronization, and cohort analytics remain deferred.

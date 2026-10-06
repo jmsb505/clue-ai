@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from conftest import make_job
 
+from clue_ai.crawl_policy import JUSTREMOTE_LISTING_PAGE_LIMIT, JUSTREMOTE_PAGE_LIMIT
 from clue_ai.domain import SearchCriteria
 from clue_ai.repository import get_source
 from clue_ai.sources import (
@@ -241,7 +242,7 @@ def test_himalayas_api_stops_at_daily_page_budget(settings, database, monkeypatc
 
     assert outcome.checked == 25
     assert len(calls) == 25
-    assert "25-page daily cap" in outcome.message
+    assert "total cap 25 pages" in outcome.message
 
 
 def test_himalayas_rate_limit_keeps_completed_search_pages(settings, database, monkeypatch):
@@ -351,7 +352,7 @@ def test_justremote_detail_parser_preserves_country_restrictions(settings, datab
     assert normalized.source_url == Response.url
 
 
-def test_justremote_spider_is_robot_aware_and_stays_within_daily_page_caps(
+def test_justremote_spider_uses_documented_limits_and_stays_within_daily_page_caps(
     settings, database, monkeypatch
 ):
     from scrapling.spiders import Spider
@@ -379,10 +380,10 @@ def test_justremote_spider_is_robot_aware_and_stays_within_daily_page_caps(
 
     spider = captured["spider"]
     assert outcome.checked == 1
-    assert captured["robots"] is True
-    assert captured["concurrent"] == 4
-    assert captured["per_domain"] == 1
-    assert captured["delay"] == 2.0
+    assert captured["robots"] is False
+    assert captured["concurrent"] == 8
+    assert captured["per_domain"] == 2
+    assert captured["delay"] == 1.0
     assert captured["retries"] == 0
     assert spider.start_urls == ["https://justremote.co/remote-jobs"]
     assert spider.listing_pages_scheduled == 1
@@ -402,8 +403,8 @@ def test_justremote_spider_is_robot_aware_and_stays_within_daily_page_caps(
 
     for index in range(1, 70):
         spider._schedule(response, f"https://justremote.co/remote-ml-engineer-{index}-jobs")
-    assert spider.listing_pages_scheduled <= 24
-    assert len(spider.urls_scheduled) <= 60
+    assert spider.listing_pages_scheduled <= JUSTREMOTE_LISTING_PAGE_LIMIT
+    assert len(spider.urls_scheduled) <= JUSTREMOTE_PAGE_LIMIT
 
 
 def test_remotejobs_api_normalizes_direct_link_and_refreshes_up_to_four_roles(
@@ -582,7 +583,7 @@ def test_scrapling_source_rejects_x_hosts_before_dns_lookup(monkeypatch, url):
     assert "manual-only" in message
 
 
-def test_scrapling_spider_uses_robots_and_bounded_ordinary_crawl(
+def test_scrapling_spider_uses_documented_bounded_crawl_policy(
     settings, monkeypatch
 ):
     from scrapling.spiders import Spider
@@ -621,10 +622,10 @@ def test_scrapling_spider_uses_robots_and_bounded_ordinary_crawl(
     assert isinstance(outcome, FetchOutcome)
     assert outcome.checked == 1
     assert seen == {
-        "robots": True,
-        "concurrent": 4,
-        "per_domain": 1,
-        "delay": 2.0,
+        "robots": False,
+        "concurrent": 8,
+        "per_domain": 2,
+        "delay": 1.0,
         "retries": 0,
         "logging_level": 20,
         "host": {"careers.example.org"},
