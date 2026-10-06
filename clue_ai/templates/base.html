@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>{% block title %}Clue AI{% endblock %}</title>
-    <link rel="stylesheet" href="/static/app.css?v=9">
+    <link rel="stylesheet" href="/static/app.css?v=12">
   <script src="/static/app.js" defer></script>
 </head>
 <body {% if status_url %}data-status-url="{{ status_url }}"{% endif %}>
@@ -39,8 +39,8 @@
         <a href="/applied" class="{% if active_page == 'applied' %}is-active{% endif %}" {% if active_page == 'applied' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">✓</span><span>Applied roles</span>
         </a>
-        <a href="/preparations" class="{% if active_page == 'preparations' %}is-active{% endif %}" {% if active_page == 'preparations' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">✳</span><span>Application prep</span>
+        <a href="/applications" class="{% if active_page == 'applications' %}is-active{% endif %}" {% if active_page == 'applications' %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">▣</span><span>Applications</span>
         </a>
         <a href="/outcomes" class="{% if active_page == 'outcomes' %}is-active{% endif %}" {% if active_page == 'outcomes' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">↗</span><span>Outcomes &amp; interviews</span>

@@ -42,4 +42,27 @@
       if (message && !window.confirm(message)) event.preventDefault();
     });
   });
+
+  document.querySelectorAll("[data-copy-target]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const target = document.getElementById(button.dataset.copyTarget || "");
+      const card = button.closest(".packet-outreach-card");
+      const status = card && card.querySelector("[data-copy-status]");
+      if (!target || !status) return;
+      const value = "value" in target ? target.value : target.textContent;
+      if (!value) {
+        status.textContent = "There is no text to copy.";
+        return;
+      }
+      try {
+        if (!navigator.clipboard || !window.isSecureContext) throw new Error("Clipboard unavailable");
+        await navigator.clipboard.writeText(value);
+        status.textContent = `Copied ${button.dataset.copyLabel || "text"}.`;
+      } catch (_error) {
+        target.focus();
+        if (typeof target.select === "function") target.select();
+        status.textContent = `Copy was unavailable. The ${button.dataset.copyLabel || "text"} is selected; use your keyboard's copy shortcut.`;
+      }
+    });
+  });
 })();

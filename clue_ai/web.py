@@ -46,9 +46,12 @@ from clue_ai.application_prep import (
     list_sources as list_preparation_sources,
 )
 from clue_ai.application_workflow import (
+    AttachmentBundleError,
     approve_packet,
+    build_packet_attachment_bundle,
     create_practice_session,
     get_packet,
+    list_packet_versions,
     list_practice_sessions,
     queue_practice_answers,
     run_interview_practice_assessment,
@@ -319,7 +322,274 @@ def create_app(
             pending_text = _read_pending_text(current_settings.cv_dir, pending_id)
             if not pending_text:
                 pending_id = ""
-        suggestions = suggest_profile_sections(pending_text) if pending_text else {}
+        suggestions = suggest_profile_sections(pending_textcv_file is not None and cv_file.filename:
+                content = await cv_file.read(current_settings.max_cv_bytes + 1)
+                extracted_text = extract_resume_text(cv_file.filename, content, current_settings)
+                parsed = parse_candidate_profile(extracted_text)
+                suffix = Path(cv_file.filename).suffix.lower()
+                safe_name = _safe_filename(cv_file.filename, suffix)
+                new_cv_path = current_settings.cv_dir / f"{uuid.uuid4().hex}{suffix}"
+                new_cv_path.write_bytes(content)
+                profile = CandidateProfile(
+                    **parsed,
+                    work_authorized_countries=current_profile.work_authorized_countries,
+                    requires_sponsorship=current_profile.requires_sponsorship,
+                    cv_filename=safe_name,
+                    cv_path=str(new_cv_path),
+                    extracted_text=extracted_text,
+                )
+                save_profile(db_path, profile)
+                profile_saved = True
+            elif not (
+                current_profile.target_roles
+                or current_profile.skills
+                or current_profile.experience
+                or current_profile.summary
+            ):
+                return RedirectResponse(
+                    "/?notice=Choose+a+PDF+or+DOCX+CV+to+start+your+first+search.",
+                    status_code=303,
+                )
+
+            settings_row = get_settings(db_path)
+            if _checked(jev_auto_score) and not settings_row.get("jev_consent_at"):
+                set_jev_consent(db_path, True)
+
+            latest = get_latest_run(db_path)
+            if latest and latest.get("criteria"):
+                criteria = criteria_from_form(latest["criteria"])
+                if criteria.workplace == "remote":
+                    criteria = replace(
+                        criteria, workplace="remote_preferred", include_unknown_location=False
+                    )
+            else:
+                criteria = SearchCriteria(
+                    roles=focused_roles(profile.target_roles),
+                    work_from=str(settings_row.get("default_work_from") or "Italy"),
+                    requires_sponsorship=profile.requires_sponsorship,
+                )
+            if not criteria.roles.strip() and profile.target_roles.strip():
+                criteria = replace(criteria, roles=profile.target_roles)
+
+            run_id = uuid.uuid4().hex
+            save_search_run(db_path, run_id, criteria)
+            old_path = Path(current_profile.cv_path) if current_profile.cv_path else None
+            if (
+                new_cv_path
+                and old_path
+                and old_path.is_file()
+                and old_path.parent.resolve() == current_settings.cv_dir.resolve()
+                and old_path.resolve() != new_cv_path.resolve()
+            ):
+                try:
+                    old_path.unlink()
+                except OSError:
+                    LOGGER.warning("Could not remove the replaced local CV file.")
+        except ResumeError as exc:
+            if new_cv_path and new_cv_path.is_file():
+                new_cv_path.unlink()
+            return RedirectResponse(f"/?notice={_url_message(str(exc))}", status_code=303)
+        except Exception:
+            if new_cv_path and new_cv_path.is_file():
+                new_cv_path.unlink()
+            if profile_saved and current_profile is not None:
+                save_profile(db_path, current_profile)
+            raise
+        finally:
+            operation_lock.release()
+
+        background_tasks.add_task(run_search_serialized, run_id, True)
+        return RedirectResponse(f"/searches/{run_id}", status_code=303)
+
+    @app.post("/profile/remove-cv")
+    async def remove_cv():
+        profile = get_profile(db_path)
+        cv_path = Path(profile.cv_path) if profile.cv_path else None
+        save_profile(
+            db_path,
+            CandidateProfile(
+                summary=profile.summary,
+                target_roles=profile.target_roles,
+                skills=profile.skills,
+                experience=profile.experience,
+                education=profile.education,
+                languages=profile.languages,
+                profile_language=profile.profile_language,
+                work_authorized_countries=profile.work_authorized_countries,
+                requires_sponsorship=profile.requires_sponsorship,
+            ),
+        )
+        if (
+            cv_path
+            and cv_path.is_file()
+            and cv_path.parent.resolve() == current_settings.cv_dir.resolve()
+        ):
+            cv_path.unlink()
+        return RedirectResponse(
+            "/profile?notice=CV+file+and+extracted+text+removed.", status_code=303
+        )
+
+    @app.get("/search", response_class=HTMLResponse)
+    async def search_page(request: Request):
+        profile = get_profile(db_path)
+        source_run_id = request.query_params.get("from", "")
+        source_run = get_run(db_path, source_run_id) if source_run_id else None
+        latest = get_latest_run(db_path) if source_run is None else source_run
+        if latest and latest.get("criteria"):
+            criteria = criteria_from_form(latest["criteria"])
+            if source_run is None and criteria.workplace == "remote":
+                criteria = replace(
+                    criteria, workplace="remote_preferred", include_unknown_location=False
+                )
+        else:
+            criteria = SearchCriteria(
+                roles=focused_roles(profile.target_roles),
+                must_have="",
+                work_from="Italy",
+                requires_sponsorship=profile.requires_sponsorship,
+            )
+        return render(
+            request,
+            "search.html",
+            {
+                "active_page": "search",
+                "criteria": criteria,
+                "notice": request.query_params.get("notice", ""),
+                "profile": profile,
+            },
+        )
+
+    @app.post("/search")
+    async def start_search(request: Request, background_tasks: BackgroundTasks):
+        form = dict(await request.form())
+        criteria = criteria_from_form(form)
+        run_id = uuid.uuid4().hex
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                "/search?notice=Wait+for+the+current+local+search+operation+to+finish.",
+                status_code=303,
+            )
+        try:
+            if has_active_runs(db_path):
+                return RedirectResponse(
+                    "/search?notice=Finish+the+current+search+before+starting+another.",
+                    status_code=303,
+                )
+            save_search_run(db_path, run_id, criteria)
+        finally:
+            operation_lock.release()
+        background_tasks.add_task(run_search_serialized, run_id, True)
+        return RedirectResponse(f"/searches/{run_id}", status_code=303)
+
+    @app.get("/x-leads", response_class=HTMLResponse)
+    async def x_leads_page(request: Request):
+        profile = get_profile(db_path)
+        latest = get_latest_run(db_path)
+        saved_criteria = (
+            latest.get("criteria")
+            if latest and latest.get("criteria")
+            else {"roles": profile.target_roles, "work_from": "Italy", "workplace": "remote"}
+        )
+        if not str(saved_criteria.get("roles") or "").strip():
+            saved_criteria["roles"] = profile.target_roles
+        roles = str(request.query_params.get("roles", saved_criteria.get("roles", "")))[:500]
+        work_from = str(
+            request.query_params.get("work_from", saved_criteria.get("work_from", "Italy"))
+        )[:100]
+        requested_workplace = request.query_params.get(
+            "workplace", saved_criteria.get("workplace", "remote")
+        )
+        if str(requested_workplace).casefold() == "remote_preferred":
+            requested_workplace = "remote"
+        workplace = _choice(
+            requested_workplace,
+            {"remote", "hybrid", "onsite", "any"},
+        )
+        leads = manual_x_leads(db_path)
+        for lead in leads:
+            normalized = normalize_public_job_url(lead["job_url"])
+            lead["job_host"] = normalized[1] if normalized else "Unknown host"
+        return render(
+            request,
+            "x_leads.html",
+            {
+                "active_page": "x_leads",
+                "roles": roles,
+                "work_from": work_from,
+                "workplace": workplace,
+                "x_search_url": build_x_search_url(roles, work_from, workplace),
+                "leads": leads,
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.post("/x-leads/add")
+    async def add_x_lead_route(request: Request):
+        form = dict(await request.form())
+        title = _form_text(form, "title", 300)
+        company = _form_text(form, "company", 250)
+        location = _form_text(form, "location", 1_000)
+        description = _form_text(form, "description", 20_000)
+        x_post = normalize_x_status_url(_form_text(form, "post_url", 2_000))
+        job_page = normalize_public_job_url(_form_text(form, "job_url", 2_000))
+        workplace = _choice(form.get("workplace_type"), {"remote", "hybrid", "onsite", "unknown"})
+        if not title or not description:
+            return RedirectResponse(
+                "/x-leads?notice=Add+a+job+title+and+details+copied+from+the+original+listing.",
+                status_code=303,
+            )
+        if not _checked(form.get("reviewed")):
+            return RedirectResponse(
+                "/x-leads?notice=Confirm+that+you+reviewed+the+X+post+and+the+original+job+listing.",
+                status_code=303,
+            )
+        if x_post is None:
+            return RedirectResponse(
+                "/x-leads?notice=Use+an+HTTPS+X.com+or+Twitter.com+post+permalink.",
+                status_code=303,
+            )
+        if job_page is None:
+            return RedirectResponse(
+                "/x-leads?notice=Use+the+final+HTTPS+employer+or+ATS+listing+URL,+not+a+shortened+link.",
+                status_code=303,
+            )
+        post_url, status_id = x_post
+        job_url, _ = job_page
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                "/x-leads?notice=Wait+for+the+current+search+or+Jev+operation+to+finish+before+saving+a+lead.",
+                status_code=303,
+            )
+        try:
+            if has_active_runs(db_path):
+                return RedirectResponse(
+                    "/x-leads?notice=Wait+for+the+current+search+or+Jev+operation+to+finish+before+saving+a+lead.",
+                    status_code=303,
+                )
+            saved = save_jobs(
+                db_path,
+                [
+                    NormalizedJob(
+                        source_id="x_manual",
+                        source_name="X.com · manual lead",
+                        external_id=f"{status_id}-{uuid.uuid5(uuid.NAMESPACE_URL, job_url).hex[:12]}",
+                        title=title,
+                        company=company,
+                        description=description,
+                        source_url=job_url,
+                        canonical_url=job_url,
+                        location_raw=location,
+                        workplace_type=workplace,
+                        context_url=post_url,
+                        last_checked_at=utc_now(),
+                    )
+                ],
+            )
+        finally:
+            operation_lock.release()
+        if saved != 1:
+            return RedirectResponse(
+                "/x-leads?notice=Clue+could+not+save+that+l) if pending_text else {}
         return render(
             request,
             "profile.html",
@@ -587,521 +857,7 @@ def create_app(
                     status_code=303,
                 )
 
-            if cv_file is not None and cv_file.filename:
-                content = await cv_file.read(current_settings.max_cv_bytes + 1)
-                extracted_text = extract_resume_text(cv_file.filename, content, current_settings)
-                parsed = parse_candidate_profile(extracted_text)
-                suffix = Path(cv_file.filename).suffix.lower()
-                safe_name = _safe_filename(cv_file.filename, suffix)
-                new_cv_path = current_settings.cv_dir / f"{uuid.uuid4().hex}{suffix}"
-                new_cv_path.write_bytes(content)
-                profile = CandidateProfile(
-                    **parsed,
-                    work_authorized_countries=current_profile.work_authorized_countries,
-                    requires_sponsorship=current_profile.requires_sponsorship,
-                    cv_filename=safe_name,
-                    cv_path=str(new_cv_path),
-                    extracted_text=extracted_text,
-                )
-                save_profile(db_path, profile)
-                profile_saved = True
-            elif not (
-                current_profile.target_roles
-                or current_profile.skills
-                or current_profile.experience
-                or current_profile.summary
-            ):
-                return RedirectResponse(
-                    "/?notice=Choose+a+PDF+or+DOCX+CV+to+start+your+first+search.",
-                    status_code=303,
-                )
-
-            settings_row = get_settings(db_path)
-            if _checked(jev_auto_score) and not settings_row.get("jev_consent_at"):
-                set_jev_consent(db_path, True)
-
-            latest = get_latest_run(db_path)
-            if latest and latest.get("criteria"):
-                criteria = criteria_from_form(latest["criteria"])
-                if criteria.workplace == "remote":
-                    criteria = replace(
-                        criteria, workplace="remote_preferred", include_unknown_location=False
-                    )
-            else:
-                criteria = SearchCriteria(
-                    roles=focused_roles(profile.target_roles),
-                    work_from=str(settings_row.get("default_work_from") or "Italy"),
-                    requires_sponsorship=profile.requires_sponsorship,
-                )
-            if not criteria.roles.strip() and profile.target_roles.strip():
-                criteria = replace(criteria, roles=profile.target_roles)
-
-            run_id = uuid.uuid4().hex
-            save_search_run(db_path, run_id, criteria)
-            old_path = Path(current_profile.cv_path) if current_profile.cv_path else None
-            if (
-                new_cv_path
-                and old_path
-                and old_path.is_file()
-                and old_path.parent.resolve() == current_settings.cv_dir.resolve()
-                and old_path.resolve() != new_cv_path.resolve()
-            ):
-                try:
-                    old_path.unlink()
-                except OSError:
-                    LOGGER.warning("Could not remove the replaced local CV file.")
-        except ResumeError as exc:
-            if new_cv_path and new_cv_path.is_file():
-                new_cv_path.unlink()
-            return RedirectResponse(f"/?notice={_url_message(str(exc))}", status_code=303)
-        except Exception:
-            if new_cv_path and new_cv_path.is_file():
-                new_cv_path.unlink()
-            if profile_saved and current_profile is not None:
-                save_profile(db_path, current_profile)
-            raise
-        finally:
-            operation_lock.release()
-
-        background_tasks.add_task(run_search_serialized, run_id, True)
-        return RedirectResponse(f"/searches/{run_id}", status_code=303)
-
-    @app.post("/profile/remove-cv")
-    async def remove_cv():
-        profile = get_profile(db_path)
-        cv_path = Path(profile.cv_path) if profile.cv_path else None
-        save_profile(
-            db_path,
-            CandidateProfile(
-                summary=profile.summary,
-                target_roles=profile.target_roles,
-                skills=profile.skills,
-                experience=profile.experience,
-                education=profile.education,
-                languages=profile.languages,
-                profile_language=profile.profile_language,
-                work_authorized_countries=profile.work_authorized_countries,
-                requires_sponsorship=profile.requires_sponsorship,
-            ),
-        )
-        if (
-            cv_path
-            and cv_path.is_file()
-            and cv_path.parent.resolve() == current_settings.cv_dir.resolve()
-        ):
-            cv_path.unlink()
-        return RedirectResponse(
-            "/profile?notice=CV+file+and+extracted+text+removed.", status_code=303
-        )
-
-    @app.get("/search", response_class=HTMLResponse)
-    async def search_page(request: Request):
-        profile = get_profile(db_path)
-        source_run_id = request.query_params.get("from", "")
-        source_run = get_run(db_path, source_run_id) if source_run_id else None
-        latest = get_latest_run(db_path) if source_run is None else source_run
-        if latest and latest.get("criteria"):
-            criteria = criteria_from_form(latest["criteria"])
-            if source_run is None and criteria.workplace == "remote":
-                criteria = replace(
-                    criteria, workplace="remote_preferred", include_unknown_location=False
-                )
-        else:
-            criteria = SearchCriteria(
-                roles=focused_roles(profile.target_roles),
-                must_have="",
-                work_from="Italy",
-                requires_sponsorship=profile.requires_sponsorship,
-            )
-        return render(
-            request,
-            "search.html",
-            {
-                "active_page": "search",
-                "criteria": criteria,
-                "notice": request.query_params.get("notice", ""),
-                "profile": profile,
-            },
-        )
-
-    @app.post("/search")
-    async def start_search(request: Request, background_tasks: BackgroundTasks):
-        form = dict(await request.form())
-        criteria = criteria_from_form(form)
-        run_id = uuid.uuid4().hex
-        if not operation_lock.acquire(blocking=False):
-            return RedirectResponse(
-                "/search?notice=Wait+for+the+current+local+search+operation+to+finish.",
-                status_code=303,
-            )
-        try:
-            if has_active_runs(db_path):
-                return RedirectResponse(
-                    "/search?notice=Finish+the+current+search+before+starting+another.",
-                    status_code=303,
-                )
-            save_search_run(db_path, run_id, criteria)
-        finally:
-            operation_lock.release()
-        background_tasks.add_task(run_search_serialized, run_id, True)
-        return RedirectResponse(f"/searches/{run_id}", status_code=303)
-
-    @app.get("/x-leads", response_class=HTMLResponse)
-    async def x_leads_page(request: Request):
-        profile = get_profile(db_path)
-        latest = get_latest_run(db_path)
-        saved_criteria = (
-            latest.get("criteria")
-            if latest and latest.get("criteria")
-            else {"roles": profile.target_roles, "work_from": "Italy", "workplace": "remote"}
-        )
-        if not str(saved_criteria.get("roles") or "").strip():
-            saved_criteria["roles"] = profile.target_roles
-        roles = str(request.query_params.get("roles", saved_criteria.get("roles", "")))[:500]
-        work_from = str(
-            request.query_params.get("work_from", saved_criteria.get("work_from", "Italy"))
-        )[:100]
-        requested_workplace = request.query_params.get(
-            "workplace", saved_criteria.get("workplace", "remote")
-        )
-        if str(requested_workplace).casefold() == "remote_preferred":
-            requested_workplace = "remote"
-        workplace = _choice(
-            requested_workplace,
-            {"remote", "hybrid", "onsite", "any"},
-        )
-        leads = manual_x_leads(db_path)
-        for lead in leads:
-            normalized = normalize_public_job_url(lead["job_url"])
-            lead["job_host"] = normalized[1] if normalized else "Unknown host"
-        return render(
-            request,
-            "x_leads.html",
-            {
-                "active_page": "x_leads",
-                "roles": roles,
-                "work_from": work_from,
-                "workplace": workplace,
-                "x_search_url": build_x_search_url(roles, work_from, workplace),
-                "leads": leads,
-                "notice": request.query_params.get("notice", ""),
-            },
-        )
-
-    @app.post("/x-leads/add")
-    async def add_x_lead_route(request: Request):
-        form = dict(await request.form())
-        title = _form_text(form, "title", 300)
-        company = _form_text(form, "company", 250)
-        location = _form_text(form, "location", 1_000)
-        description = _form_text(form, "description", 20_000)
-        x_post = normalize_x_status_url(_form_text(form, "post_url", 2_000))
-        job_page = normalize_public_job_url(_form_text(form, "job_url", 2_000))
-        workplace = _choice(form.get("workplace_type"), {"remote", "hybrid", "onsite", "unknown"})
-        if not title or not description:
-            return RedirectResponse(
-                "/x-leads?notice=Add+a+job+title+and+details+copied+from+the+original+listing.",
-                status_code=303,
-            )
-        if not _checked(form.get("reviewed")):
-            return RedirectResponse(
-                "/x-leads?notice=Confirm+that+you+reviewed+the+X+post+and+the+original+job+listing.",
-                status_code=303,
-            )
-        if x_post is None:
-            return RedirectResponse(
-                "/x-leads?notice=Use+an+HTTPS+X.com+or+Twitter.com+post+permalink.",
-                status_code=303,
-            )
-        if job_page is None:
-            return RedirectResponse(
-                "/x-leads?notice=Use+the+final+HTTPS+employer+or+ATS+listing+URL,+not+a+shortened+link.",
-                status_code=303,
-            )
-        post_url, status_id = x_post
-        job_url, _ = job_page
-        if not operation_lock.acquire(blocking=False):
-            return RedirectResponse(
-                "/x-leads?notice=Wait+for+the+current+search+or+Jev+operation+to+finish+before+saving+a+lead.",
-                status_code=303,
-            )
-        try:
-            if has_active_runs(db_path):
-                return RedirectResponse(
-                    "/x-leads?notice=Wait+for+the+current+search+or+Jev+operation+to+finish+before+saving+a+lead.",
-                    status_code=303,
-                )
-            saved = save_jobs(
-                db_path,
-                [
-                    NormalizedJob(
-                        source_id="x_manual",
-                        source_name="X.com · manual lead",
-                        external_id=f"{status_id}-{uuid.uuid5(uuid.NAMESPACE_URL, job_url).hex[:12]}",
-                        title=title,
-                        company=company,
-                        description=description,
-                        source_url=job_url,
-                        canonical_url=job_url,
-                        location_raw=location,
-                        workplace_type=workplace,
-                        context_url=post_url,
-                        last_checked_at=utc_now(),
-                    )
-                ],
-            )
-        finally:
-            operation_lock.release()
-        if saved != 1:
-            return RedirectResponse(
-                "/x-leads?notice=Clue+could+not+save+that+link.+Check+the+URL+and+try+again.",
-                status_code=303,
-            )
-        return RedirectResponse(
-            "/x-leads?notice=Lead+saved+locally.+Run+your+search+to+filter+it,+then+choose+Score+with+Jev+if+you+want+fit+signals.",
-            status_code=303,
-        )
-
-    @app.get("/searches/{run_id}", response_class=HTMLResponse)
-    async def search_results(request: Request, run_id: str):
-        run = get_run(db_path, run_id)
-        if run is None:
-            raise HTTPException(status_code=404, detail="Search not found.")
-        result_counts = get_run_result_counts(db_path, run_id)
-        status_views = {
-            "opportunities": "opportunities",
-            "all": None,
-            "match": "match",
-            "review": "review",
-            "conflict": "conflict",
-            "unassessed": "unassessed",
-        }
-        status_count_keys = {
-            "opportunities": "opportunities",
-            "match": "matches",
-            "review": "review",
-            "conflict": "conflicts",
-            "unassessed": "unassessed",
-        }
-        default_view = "opportunities" if result_counts["opportunities"] else "all"
-        active_view = request.query_params.get("view", default_view)
-        if active_view not in status_views:
-            active_view = "all"
-        try:
-            current_page = max(1, int(request.query_params.get("page", "1")))
-        except ValueError:
-            current_page = 1
-        page_size = 50
-        view_status = status_views[active_view]
-        shown_total = (
-            result_counts[status_count_keys[view_status]]
-            if view_status
-            else result_counts["total"]
-        )
-        page_count = max(1, (shown_total + page_size - 1) // page_size)
-        current_page = min(current_page, page_count)
-        jobs = get_run_results(
-            db_path,
-            run_id,
-            filter_status=view_status,
-            limit=page_size,
-            offset=(current_page - 1) * page_size,
-        )
-        for job in jobs:
-            for source in job.get("sources", []):
-                if source.get("id") == "x_manual":
-                    normalized = normalize_public_job_url(source.get("source_url", ""))
-                    source["display_host"] = normalized[1] if normalized else "Unknown host"
-        sources = list_sources(db_path)
-        usage = monthly_jev_usage(db_path, current_settings.monthly_jev_budget_usd)
-        settings_row = get_settings(db_path)
-        evidence_sources = list_preparation_sources(db_path)
-        permitted_cvs = [
-            source for source in evidence_sources
-            if source["source_type"] == "resume" and source["permitted"]
-        ]
-        approved_claim_count = len(approved_claims(db_path))
-        return render(
-            request,
-            "results.html",
-            {
-                "active_page": "results",
-                "run": run,
-                "jobs": jobs,
-                "result_counts": result_counts,
-                "filter_check_labels": FILTER_CHECK_LABELS,
-                "active_view": active_view,
-                "shown_total": shown_total,
-                "current_page": current_page,
-                "page_count": page_count,
-                "page_size": page_size,
-                "jev_pending": result_counts["unassessed"] + result_counts["pending_scores"],
-                "status_url": f"/searches/{run_id}/status",
-                "usage": usage,
-                "jev_consented": bool(settings_row.get("jev_consent_at")),
-                "sources": sources,
-                "preparation_cvs": permitted_cvs,
-                "preparation_claims_ready": approved_claim_count > 0,
-                "notice": request.query_params.get("notice", ""),
-            },
-        )
-
-    @app.get("/searches/{run_id}/status")
-    async def search_status(run_id: str):
-        run = get_run(db_path, run_id)
-        if run is None:
-            raise HTTPException(status_code=404, detail="Search not found.")
-        return JSONResponse(
-            {
-                "status": run["status"],
-                "stage": run["stage"],
-                "message": run["message"],
-                "checked_sources": run["checked_sources"],
-                "found_count": run["found_count"],
-                "matched_count": run["matched_count"],
-                "scored_count": run["scored_count"],
-            }
-        )
-
-    @app.post("/searches/{run_id}/score")
-    async def score_search(
-        request: Request,
-        background_tasks: BackgroundTasks,
-        run_id: str,
-    ):
-        if not operation_lock.acquire(blocking=False):
-            return RedirectResponse(
-                f"/searches/{run_id}?notice=Wait+for+the+current+local+search+operation+to+finish.",
-                status_code=303,
-            )
-        try:
-            run = get_run(db_path, run_id)
-            if run is None:
-                raise HTTPException(status_code=404, detail="Search not found.")
-            settings_row = get_settings(db_path)
-            if not current_settings.api_key:
-                return RedirectResponse(
-                    "/settings?notice=Add+your+TypeSafe+key+to+.env+and+restart+the+app.",
-                    status_code=303,
-                )
-            if not settings_row.get("jev_consent_at"):
-                return RedirectResponse(
-                    "/settings?notice=Review+the+data+notice+and+enable+Jev+first.",
-                    status_code=303,
-                )
-            if not get_run_results(db_path, run_id):
-                return RedirectResponse(
-                    f"/searches/{run_id}?notice=Run+the+search+before+scoring.",
-                    status_code=303,
-                )
-            if not claim_scoring_run(db_path, run_id):
-                return RedirectResponse(f"/searches/{run_id}", status_code=303)
-            background_tasks.add_task(run_scoring_serialized, run_id)
-            return RedirectResponse(f"/searches/{run_id}", status_code=303)
-        finally:
-            operation_lock.release()
-
-    @app.post("/jobs/{job_id}/prepare")
-    async def prepare_job(request: Request, job_id: str, background_tasks: BackgroundTasks):
-        if not operation_lock.acquire(blocking=False):
-            return RedirectResponse(
-                "/preparations?notice=Wait+for+the+current+local+operation+to+finish+before+starting+preparation.",
-                status_code=303,
-            )
-        operation_lock.release()
-        form = dict(await request.form())
-        run_id = str(form.get("run_id") or "")
-        selected_cv_id = str(form.get("selected_cv_id") or "")
-        try:
-            record, created = request_preparation(db_path, job_id, run_id, selected_cv_id)
-        except ValueError as exc:
-            return RedirectResponse(
-                f"/searches/{run_id}?{urlencode({'notice': str(exc)})}",
-                status_code=303,
-            )
-        if created:
-            background_tasks.add_task(run_preparation_serialized, record["id"])
-        notice = "Preparation+started+for+this+listing." if created else "This+listing+already+has+a+request+for+the+same+saved+inputs."
-        return RedirectResponse(f"/preparations/{record['id']}?notice={notice}", status_code=303)
-
-    @app.post("/jobs/{job_id}/{action}")
-    async def job_action(request: Request, job_id: str, action: str):
-        if action not in {"save", "hide", "unsave", "unhide", "applied"}:
-            raise HTTPException(status_code=404, detail="Action not found.")
-        if action == "applied":
-            if not mark_applied(db_path, job_id):
-                raise HTTPException(status_code=404, detail="Listing not found.")
-        elif action == "save":
-            set_job_user_state(db_path, job_id, "saved")
-        elif action == "hide":
-            set_job_user_state(db_path, job_id, "hidden")
-        else:
-            clear_job_user_state(db_path, job_id)
-        form = dict(await request.form())
-        target = _safe_return_path(str(form.get("return_to") or "/"))
-        return RedirectResponse(target, status_code=303)
-
-    @app.get("/preparations", response_class=HTMLResponse)
-    async def preparations_page(request: Request):
-        cancel_followups_for_closed_jobs(db_path)
-        followups = list_followups(db_path)
-        return render(
-            request,
-            "preparations.html",
-            {
-                "active_page": "preparations",
-                "preparations": list_preparations(db_path),
-                "followups": followups,
-                "notice": request.query_params.get("notice", ""),
-            },
-        )
-
-    @app.get("/preparations/{request_id}", response_class=HTMLResponse)
-    async def preparation_detail(request: Request, request_id: str):
-        cancel_followups_for_closed_jobs(db_path)
-        record = get_preparation(db_path, request_id)
-        if record is None:
-            raise HTTPException(status_code=404, detail="Preparation request not found.")
-        from clue_ai.database import connect
-
-        with connect(db_path) as db:
-            latest = db.execute(
-                "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
-                (request_id,),
-            ).fetchone()
-        packet = get_packet(db_path, latest["id"]) if latest else None
-        with connect(db_path) as db:
-            contacts = [
-                dict(item)
-                for item in db.execute(
-                    "SELECT * FROM researched_contacts WHERE request_id = ? ORDER BY confidence, name",
-                    (request_id,),
-                ).fetchall()
-            ]
-            gmail_drafts = [
-                dict(item)
-                for item in db.execute(
-                    """SELECT id, packet_id, recipient, subject, approved_sha256,
-                              gmail_draft_id, state, error_summary, created_at, updated_at
-                       FROM gmail_drafts WHERE request_id = ? ORDER BY created_at DESC""",
-                    (request_id,),
-                ).fetchall()
-            ]
-        outreach_options = []
-        if packet:
-            for index, message in enumerate(packet["output"].get("rewriter", {}).get("outreach_drafts", [])):
-                match = next(
-                    (
-                        item for item in contacts
-                        if item["source_url"] == message.get("contact_source_url")
-                        and item["name"] == message.get("recipient_name")
-                    ),
-                    None,
-                )
-                outreach_options.append({"index": index, "message": message, "contact": match})
-        gmail_connected = bool(get_settings(db_path).get("gmail_oauth_connected_at"))
-        with connect(db_path) as db:
-            applied_record = db.execute(
+            if execute(
                 "SELECT 1 FROM applications WHERE job_id = ? OR canonical_url = ? LIMIT 1",
                 (record["job_id"], record["snapshot"].get("canonical_url", "")),
             ).fetchone()
@@ -1109,10 +865,12 @@ def create_app(
             request,
             "preparation_detail.html",
             {
-                "active_page": "preparations",
+                "active_page": "applications",
                 "preparation": record,
                 "practice_sessions": list_practice_sessions(db_path, request_id),
                 "packet": packet,
+                "packet_history": packet_history,
+                "receipts": receipts,
                 "contacts": contacts,
                 "gmail_drafts": gmail_drafts,
                 "outreach_options": outreach_options,
@@ -1340,6 +1098,295 @@ def create_app(
         if sha256(path.read_bytes()).hexdigest() != artifact["content_sha256"]:
             raise HTTPException(status_code=409, detail="Artifact changed after generation.")
         return FileResponse(path, filename=artifact["filename"])
+
+    @app.post("/applications/{request_id}/packets/{packet_id}/attachments.zip")
+    async def application_attachment_bundle(request: Request, request_id: str, packet_id: str):
+        form = await reink.+Check+the+URL+and+try+again.",
+                status_code=303,
+            )
+        return RedirectResponse(
+            "/x-leads?notice=Lead+saved+locally.+Run+your+search+to+filter+it,+then+choose+Score+with+Jev+if+you+want+fit+signals.",
+            status_code=303,
+        )
+
+    @app.get("/searches/{run_id}", response_class=HTMLResponse)
+    async def search_results(request: Request, run_id: str):
+        run = get_run(db_path, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Search not found.")
+        result_counts = get_run_result_counts(db_path, run_id)
+        status_views = {
+            "opportunities": "opportunities",
+            "all": None,
+            "match": "match",
+            "review": "review",
+            "conflict": "conflict",
+            "unassessed": "unassessed",
+        }
+        status_count_keys = {
+            "opportunities": "opportunities",
+            "match": "matches",
+            "review": "review",
+            "conflict": "conflicts",
+            "unassessed": "unassessed",
+        }
+        default_view = "opportunities" if result_counts["opportunities"] else "all"
+        active_view = request.query_params.get("view", default_view)
+        if active_view not in status_views:
+            active_view = "all"
+        try:
+            current_page = max(1, int(request.query_params.get("page", "1")))
+        except ValueError:
+            current_page = 1
+        page_size = 50
+        view_status = status_views[active_view]
+        shown_total = (
+            result_counts[status_count_keys[view_status]]
+            if view_status
+            else result_counts["total"]
+        )
+        page_count = max(1, (shown_total + page_size - 1) // page_size)
+        current_page = min(current_page, page_count)
+        jobs = get_run_results(
+            db_path,
+            run_id,
+            filter_status=view_status,
+            limit=page_size,
+            offset=(current_page - 1) * page_size,
+        )
+        for job in jobs:
+            for source in job.get("sources", []):
+                if source.get("id") == "x_manual":
+                    normalized = normalize_public_job_url(source.get("source_url", ""))
+                    source["display_host"] = normalized[1] if normalized else "Unknown host"
+        sources = list_sources(db_path)
+        usage = monthly_jev_usage(db_path, current_settings.monthly_jev_budget_usd)
+        settings_row = get_settings(db_path)
+        evidence_sources = list_preparation_sources(db_path)
+        permitted_cvs = [
+            source for source in evidence_sources
+            if source["source_type"] == "resume" and source["permitted"]
+        ]
+        approved_claim_count = len(approved_claims(db_path))
+        return render(
+            request,
+            "results.html",
+            {
+                "active_page": "results",
+                "run": run,
+                "jobs": jobs,
+                "result_counts": result_counts,
+                "filter_check_labels": FILTER_CHECK_LABELS,
+                "active_view": active_view,
+                "shown_total": shown_total,
+                "current_page": current_page,
+                "page_count": page_count,
+                "page_size": page_size,
+                "jev_pending": result_counts["unassessed"] + result_counts["pending_scores"],
+                "status_url": f"/searches/{run_id}/status",
+                "usage": usage,
+                "jev_consented": bool(settings_row.get("jev_consent_at")),
+                "sources": sources,
+                "preparation_cvs": permitted_cvs,
+                "preparation_claims_ready": approved_claim_count > 0,
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.get("/searches/{run_id}/status")
+    async def search_status(run_id: str):
+        run = get_run(db_path, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Search not found.")
+        return JSONResponse(
+            {
+                "status": run["status"],
+                "stage": run["stage"],
+                "message": run["message"],
+                "checked_sources": run["checked_sources"],
+                "found_count": run["found_count"],
+                "matched_count": run["matched_count"],
+                "scored_count": run["scored_count"],
+            }
+        )
+
+    @app.post("/searches/{run_id}/score")
+    async def score_search(
+        request: Request,
+        background_tasks: BackgroundTasks,
+        run_id: str,
+    ):
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                f"/searches/{run_id}?notice=Wait+for+the+current+local+search+operation+to+finish.",
+                status_code=303,
+            )
+        try:
+            run = get_run(db_path, run_id)
+            if run is None:
+                raise HTTPException(status_code=404, detail="Search not found.")
+            settings_row = get_settings(db_path)
+            if not current_settings.api_key:
+                return RedirectResponse(
+                    "/settings?notice=Add+your+TypeSafe+key+to+.env+and+restart+the+app.",
+                    status_code=303,
+                )
+            if not settings_row.get("jev_consent_at"):
+                return RedirectResponse(
+                    "/settings?notice=Review+the+data+notice+and+enable+Jev+first.",
+                    status_code=303,
+                )
+            if not get_run_results(db_path, run_id):
+                return RedirectResponse(
+                    f"/searches/{run_id}?notice=Run+the+search+before+scoring.",
+                    status_code=303,
+                )
+            if not claim_scoring_run(db_path, run_id):
+                return RedirectResponse(f"/searches/{run_id}", status_code=303)
+            background_tasks.add_task(run_scoring_serialized, run_id)
+            return RedirectResponse(f"/searches/{run_id}", status_code=303)
+        finally:
+            operation_lock.release()
+
+    @app.post("/jobs/{job_id}/prepare")
+    async def prepare_job(request: Request, job_id: str, background_tasks: BackgroundTasks):
+        if not operation_lock.acquire(blocking=False):
+            return RedirectResponse(
+                "/preparations?notice=Wait+for+the+current+local+operation+to+finish+before+starting+preparation.",
+                status_code=303,
+            )
+        operation_lock.release()
+        form = dict(await request.form())
+        run_id = str(form.get("run_id") or "")
+        selected_cv_id = str(form.get("selected_cv_id") or "")
+        try:
+            record, created = request_preparation(db_path, job_id, run_id, selected_cv_id)
+        except ValueError as exc:
+            return RedirectResponse(
+                f"/searches/{run_id}?{urlencode({'notice': str(exc)})}",
+                status_code=303,
+            )
+        if created:
+            background_tasks.add_task(run_preparation_serialized, record["id"])
+        notice = "Preparation+started+for+this+listing." if created else "This+listing+already+has+a+request+for+the+same+saved+inputs."
+        return RedirectResponse(f"/preparations/{record['id']}?notice={notice}", status_code=303)
+
+    @app.post("/jobs/{job_id}/{action}")
+    async def job_action(request: Request, job_id: str, action: str):
+        if action not in {"save", "hide", "unsave", "unhide", "applied"}:
+            raise HTTPException(status_code=404, detail="Action not found.")
+        if action == "applied":
+            if not mark_applied(db_path, job_id):
+                raise HTTPException(status_code=404, detail="Listing not found.")
+        elif action == "save":
+            set_job_user_state(db_path, job_id, "saved")
+        elif action == "hide":
+            set_job_user_state(db_path, job_id, "hidden")
+        else:
+            clear_job_user_state(db_path, job_id)
+        form = dict(await request.form())
+        target = _safe_return_path(str(form.get("return_to") or "/"))
+        return RedirectResponse(target, status_code=303)
+
+    @app.get("/applications", response_class=HTMLResponse)
+    @app.get("/preparations", response_class=HTMLResponse, include_in_schema=False)
+    async def preparations_page(request: Request):
+        cancel_followups_for_closed_jobs(db_path)
+        followups = list_followups(db_path)
+        return render(
+            request,
+            "preparations.html",
+            {
+                "active_page": "applications",
+                "preparations": list_preparations(db_path),
+                "followups": followups,
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
+    @app.get("/applications/{request_id}", response_class=HTMLResponse)
+    @app.get("/preparations/{request_id}", response_class=HTMLResponse, include_in_schema=False)
+    async def preparation_detail(request: Request, request_id: str):
+        cancel_followups_for_closed_jobs(db_path)
+        record = get_preparation(db_path, request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Preparation request not found.")
+        from clue_ai.database import connect
+
+        with connect(db_path) as db:
+            receipt_rows = db.execute(
+                """SELECT id, details_json, occurred_at FROM application_events
+                   WHERE request_id = ? AND event_type = 'receipt_imported'
+                   ORDER BY occurred_at DESC, id DESC""",
+                (request_id,),
+            ).fetchall()
+        packet_history = list_packet_versions(db_path, request_id)
+        packet = packet_history[0] if packet_history else None
+        receipts = []
+        for row in receipt_rows:
+            try:
+                details = json.loads(row["details_json"])
+            except (json.JSONDecodeError, TypeError):
+                details = {}
+            receipts.append(
+                {
+                    "event_id": row["id"],
+                    "occurred_at": row["occurred_at"],
+                    "filename": str(details.get("receipt_filename") or "Submission receipt"),
+                    "sha256": str(details.get("receipt_sha256") or ""),
+                }
+            )
+        with connect(db_path) as db:
+            contacts = [
+                dict(item)
+                for item in db.execute(
+                    "SELECT * FROM researched_contacts WHERE request_id = ? ORDER BY confidence, name",
+                    (request_id,),
+                ).fetchall()
+            ]
+            gmail_drafts = [
+                dict(item)
+                for item in db.execute(
+                    """SELECT id, packet_id, recipient, subject, approved_sha256,
+                              gmail_draft_id, state, error_summary, created_at, updated_at
+                       FROM gmail_drafts WHERE request_id = ? ORDER BY created_at DESC""",
+                    (request_id,),
+                ).fetchall()
+            ]
+        outreach_options = []
+        if packet:
+            for index, message in enumerate(packet["output"].get("rewriter", {}).get("outreach_drafts", [])):
+                match = next(
+                    (
+                        item for item in contacts
+                        if item["source_url"] == message.get("contact_source_url")
+                        and item["name"] == message.get("recipient_name")
+                    ),
+                    None,
+                )
+                outreach_options.append({"index": index, "message": message, "contact": match})
+        gmail_connected = bool(get_settings(db_path).get("gmail_oauth_connected_at"))
+        with connect(db_path) as db:
+            applied_record = db.quest.form()
+        artifact_ids = [str(value) for value in form.getlist("artifact_id")]
+        try:
+            content, filename = build_packet_attachment_bundle(
+                db_path,
+                current_settings,
+                request_id,
+                packet_id,
+                artifact_ids,
+            )
+        except AttachmentBundleError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.post("/preparations/{request_id}/packets/{packet_id}/gmail-draft")
     async def create_gmail_draft_route(request: Request, request_id: str, packet_id: str):

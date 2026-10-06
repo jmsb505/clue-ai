@@ -47,6 +47,22 @@ The FastAPI/Jinja interface has a CV-first upload-to-search path, an editable pr
 
 PLAN-003 adds an X-lead page in the existing Jinja/CSS system with labeled role/location controls, explicit external-link actions, a manual verification checklist, and a separate lead form. M1 route tests cover navigation and the link/import flow. The page does not automatically open X or a submitted job URL; a separate visual or spoken screen-reader review has not been recorded for this page.
 
+## Application workspaces — 2026-10-06
+
+**Purpose:** Keep each prepared role's files, contact evidence, email draft, and owner-recorded progress together without requiring Google authorization.
+
+| Candidate | Product fit, accessibility, and maintenance | Decision |
+|---|---|---|
+| Reuse FastAPI/Jinja, native section links and forms, existing local packet records, and project CSS | Matches the single-user local product, keeps packet identity and file ownership unchanged, and avoids new services or UI dependencies. Native links/forms work with a keyboard; copy/download enhancements still need clear status feedback and narrow-layout checks. | **ADAPT.** Add an Applications index and a dossier route per existing preparation request. Group immutable packet revisions and receipts, then add a local copy-and-download email handoff. |
+| Add a separate application CRM/database or cloud file store | Would duplicate the existing applied tracker or move personal packets outside local storage. No need for a second source of truth has been established. | **REJECT.** Keep the existing request ID and SQLite/file records as the dossier identity. |
+| Require Gmail OAuth to prepare an outreach email | Adds a Google project and restricted-scope consent even though the owner only needs to review, copy, and send the message manually. | **REJECT as the default.** Keep the existing Gmail draft adapter optional; no Google setup is needed for the dossier or local handoff. |
+
+**Layout:** The Applications index puts owner-set reminders first, followed by compact role cards with company, current preparation/application state, last update, and one clear “Open application” link. A dossier opens with the job identity and owner stage, then uses native anchors for **Overview**, **Files**, **Research**, **Outreach**, and **Progress**. File cards group the current packet first, older revisions below it, and receipts in their own row. Each email preview keeps the verified address next to its contact-source link.
+
+**Visual direction:** Preserve the existing ink/teal/lime/paper palette and UI/body/serif/utility type roles. Use a quiet file-revision spine with explicit `Current`, `Older`, and `Receipt` labels as the page's signature. Keep motion to the existing short transitions; document sections and all essential content remain visible without animation.
+
+**Validation:** Semantic headings, labeled links, current-page state, native section navigation, copy status live region, and selected-text fallback are present. Focused synthetic tests confirm dossier and ZIP request/packet binding; an isolated stubbed JS run confirmed copy success and fallback without touching the system clipboard. Browser review confirmed the sourced email, subject/body, attachments, and a narrow layout where horizontal scrolling stays within navigation. Existing reduced-motion behavior remains active. No remote fonts, image assets, component package, or external reference product was added.
+
 ## Full-candidate Jev results — 2026-10-02
 
 **Purpose:** Make every collected listing Jev assessed discoverable without turning a thousand-card search into one enormous page.

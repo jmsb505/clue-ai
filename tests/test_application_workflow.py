@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from email import policy
 from email.parser import BytesParser
+from hashlib import sha256
 from pathlib import Path
 from typing import ClassVar
 
@@ -1238,3 +1239,81 @@ def test_repository_template_keeps_openai_key_blank():
     template = Path(".env.example").read_text(encoding="utf-8")
     assert "OPENAI_API_KEY=" in template
     assert not any(line.strip().startswith("OPENAI_API_KEY=") and line.partition("=")[2].strip() for line in template.splitlines())
+
+
+def test_application_workspace_groups_packet_versions_and_submission_receipts(settings, database):
+    record, _cv, _technical, _descriptive, _sample, _claim_id, _resume = _create_preparation(settings, database)
+    enabled = _enable_synthetic_openai(settings, database)
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+    )
+    with connect(database) as db:
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+
+    client = TestClient(create_app(enabled), base_url="http://127.0.0.1")
+    approved = client.post(
+        f"/preparations/{record['id']}/packets/{packet_id}/approve",
+        data={"confirm_review": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303
+    submitted = client.post(
+        f"/preparations/{record['id']}/record-stage",
+        data={"stage": "submitted", "owner_attestation": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert submitted.status_code == 303
+    uploaded = client.post(
+        f"/preparations/{record['id']}/receipt",
+        files={"receipt_file": ("confirmation.txt", b"Synthetic receipt", "text/plain")},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert uploaded.status_code == 303
+
+    older_bytes = b"Older synthetic application file"
+    older_path = settings.data_dir / "application-packets" / record["id"] / "v0" / "older-resume.txt"
+    older_path.parent.mkdir(parents=True, exist_ok=True)
+    older_path.write_bytes(older_bytes)
+    with connect(database) as db:
+        db.execute(
+            """INSERT INTO preparation_packets
+               (id, request_id, revision, input_revision_sha256, output_json, status, created_at)
+               VALUES ('historical-packet', ?, 0, 'older-input-revision', ?, 'obsolete', '2026-10-05T00:00:00Z')""",
+            (record["id"], json.dumps({"research": {}, "diagnoser": {}, "recruiter": {}, "rewriter": {}})),
+        )
+        db.execute(
+            """INSERT INTO packet_artifacts
+               (id, packet_id, artifact_type, filename, file_path, content_sha256, created_at)
+               VALUES ('historical-artifact', 'historical-packet', 'resume', 'older-resume.txt', ?, ?, '2026-10-05T00:00:00Z')""",
+            (str(older_path), sha256(older_bytes).hexdigest()),
+        )
+
+    index = client.get("/applications")
+    assert index.status_code == 200
+    assert "Applications" in index.text
+    assert f"/applications/{record['id']}" in index.text
+    assert "Application stage · Submitted" in index.text
+
+    detail = client.get(f"/applications/{record['id']}")
+    assert detail.status_code == 200
+    assert "Files for this application" in detail.text
+    assert "Current packet · version 1 · Approved" in detail.text
+    assert "Older packet · version 0 · Obsolete · 1 file" in detail.text
+    assert "confirmation.txt" in detail.text
+    assert "alex@example.org" in detail.text
+    assert "/outcomes/receipts/" in detail.text
+    historical_download = client.get("/packets/historical-packet/artifacts/historical-artifact")
+    assert historical_download.status_code == 200
+    assert historical_download.content == older_bytes
+    assert client.get(f"/preparations/{record['id']}").status_code == 200
+    assert client.get("/applications/not-a-request").status_code == 404

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Application preparation · Clue AI{% endblock %}
+{% block title %}Applications · Clue AI{% endblock %}
 {% block eyebrow %}OWNER-TRIGGERED WORK{% endblock %}
 {% block content %}
 <section class="page-intro">
   <div>
-    <span class="kicker kicker-muted">ONE LISTING AT A TIME</span>
-    <h1>Application<br><em>preparation queue.</em></h1>
-    <p>Only listings you select enter this queue. Each request keeps the saved job and Jev snapshot that you reviewed when you clicked Prepare application.</p>
+    <span class="kicker kicker-muted">YOUR APPLICATION FILES</span>
+    <h1>Applications<br><em>in one place.</em></h1>
+    <p>Each folder belongs to one listing you chose to prepare. Open it to find the packet versions, contact research, outreach draft, and any receipts or updates you saved.</p>
   </div>
   <div class="intro-mark" aria-hidden="true"><span>AP</span><i>↗</i></div>
 </section>
@@ -21,11 +21,11 @@
       <article class="panel preparation-row">
         <div class="preparation-row-main">
           <span class="tag {% if followup.overdue %}tag-amber{% elif followup.due %}tag-green{% else %}tag-muted{% endif %}">{% if followup.overdue %}Overdue · {{ followup.due_on }}{% elif followup.due %}Follow-up ready · {{ followup.due_on }}{% else %}Due {{ followup.due_on }}{% endif %}</span>
-          <h3><a href="/preparations/{{ followup.request_id }}">{{ followup.snapshot.title }} · {{ followup.snapshot.company or 'Company not provided' }}</a></h3>
+          <h3><a href="/applications/{{ followup.request_id }}">{{ followup.snapshot.title }} · {{ followup.snapshot.company or 'Company not provided' }}</a></h3>
           <p>{{ followup.kind|title }} follow-up{% if followup.note %} · {{ followup.note }}{% endif %}</p>
           <small>This is an in-app reminder only. Clue will not contact anyone.</small>
         </div>
-        <a class="button button-outline button-small" href="/preparations/{{ followup.request_id }}">Review next action <span aria-hidden="true">→</span></a>
+        <a class="button button-outline button-small" href="/applications/{{ followup.request_id }}">Review next action <span aria-hidden="true">→</span></a>
       </article>
     {% endfor %}
   </div>
@@ -34,8 +34,8 @@
 {% endif %}
 
 <section class="section-heading">
-  <div><span class="kicker kicker-muted">YOUR REQUESTS</span><h2>Preparation history</h2></div>
-  <span class="mini-badge">{{ preparations|length }} requests</span>
+  <div><span class="kicker kicker-muted">ONE FOLDER PER SELECTED ROLE</span><h2>Your applications</h2></div>
+  <span class="mini-badge">{{ preparations|length }} folders</span>
 </section>
 {% if preparations %}
   <div class="preparation-list">
@@ -43,15 +43,16 @@
       <article class="panel preparation-row">
         <div class="preparation-row-main">
           <span class="tag {% if item.state == 'completed' %}tag-green{% elif item.state in ['blocked', 'failed'] %}tag-amber{% else %}tag-muted{% endif %}">{{ item.state|title }}</span>
-          <h3><a href="/preparations/{{ item.id }}">{{ item.snapshot.title }} · {{ item.snapshot.company or 'Company not provided' }}</a></h3>
+          <h3><a href="/applications/{{ item.id }}">{{ item.snapshot.title }} · {{ item.snapshot.company or 'Company not provided' }}</a></h3>
           <p>{{ item.status_message }}</p>
-          <small>Owner-triggered · {{ item.created_at[:16].replace('T', ' ') }} UTC · input snapshot {{ item.snapshot_sha256[:12] }}</small>
+          {% if item.application_stage %}<p class="application-list-stage">Application stage · {{ item.application_stage|replace('_', ' ')|title }}</p>{% endif %}
+          <small>Last updated · {{ item.updated_at[:16].replace('T', ' ') }} UTC · saved job snapshot {{ item.snapshot_sha256[:12] }}</small>
         </div>
-        <a class="button button-outline button-small" href="/preparations/{{ item.id }}">Open snapshot <span aria-hidden="true">→</span></a>
+        <a class="button button-outline button-small" href="/applications/{{ item.id }}">Open application <span aria-hidden="true">→</span></a>
       </article>
     {% endfor %}
   </div>
 {% else %}
-  <div class="panel empty-state"><h3>No preparation requests yet</h3><p>Run your normal search and Jev assessment. For an eligible listing, use its Prepare application button when you want to start work on that role.</p><a class="button button-dark" href="/searches">Open search history <span aria-hidden="true">→</span></a></div>
+  <div class="panel empty-state"><h3>No application folders yet</h3><p>Run your normal search and Jev assessment. Choose Prepare application on a specific eligible listing to create its folder and start its research and file packet.</p><a class="button button-dark" href="/searches">Open search history <span aria-hidden="true">→</span></a></div>
 {% endif %}
 {% endblock %}
