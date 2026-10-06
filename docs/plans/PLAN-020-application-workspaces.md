@@ -1,6 +1,6 @@
 # PLAN-020 — Per-application workspaces and local outreach handoff
 
-Status: M1 and M2 implemented and locally validated; ready for main delivery
+Status: M1 and M2 implemented, focused-validated, and pushed to `main` at `e85eeaa`
 Created: 2026-10-06 · Last updated: 2026-10-06
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [ADR 0024](../decisions/0024-application-workspaces-and-local-email-handoff.md)
 
