@@ -362,7 +362,7 @@ Treat channel comparisons as descriptive unless controlled evidence supports mor
 
 **Goal:** reconcile application status and turn mature stage feedback into useful preparation.
 
-**Implementation status:** Local v1 implemented: owner submission attestation, separate receipt upload, interview self-assessment/employer-feedback fields, skill-gap tags, and an event summary. Automated spreadsheet reconciliation, cohort conversion analytics, and mature-window statistics are deferred until the owner chooses an outcomes source of truth and the definitions are calibrated.
+**Implementation status:** Local v1 includes owner submission attestation, separate receipt upload, interview self-assessment/employer-feedback fields, skill-gap tags, owner packet feedback, and a descriptive outcome summary. The resolved-status denominator includes only explicitly owner-reported offer/rejected/withdrawn/no-response outcomes; pending or active applications are shown separately and excluded. Review minutes, usefulness rating, and factual-correction count are tied to an exact approved packet version. Automated spreadsheet reconciliation, calibrated cohort conversion analytics, and automatic mature-window classification remain deferred until the owner chooses a source of truth and definitions.
 
 **Subtasks:** tracker import/export mapping with stable identity; application event and interview-stage records; receipt/attestation evidence level; briefing and controlled gap tags; cohort dashboard. Keep any existing Google Sheet compatible during transition and avoid two independent automatic writers.
 
@@ -370,9 +370,9 @@ Treat channel comparisons as descriptive unless controlled evidence supports mor
 
 **Dependencies:** M1–M3; stable identity reconciliation with any existing Google Sheet.
 
-**Acceptance criteria:** receipt differs from owner attestation; pending is not rejection; stage denominators exclude pending cases; self-assessment is distinct from employer feedback; human effort and packet quality are visible.
+**Acceptance criteria:** receipt differs from owner attestation; pending is not rejection; the resolved-outcome denominator includes only explicit terminal owner-reported statuses and excludes pending/active cases; self-assessment is distinct from employer feedback; packet-level owner review time, usefulness, and factual-correction counts are visible.
 
-**Validation:** synthetic tracker reconciliation, missing/duplicate receipt, unresolved stage, mature cohort and deletion scenarios.
+**Validation:** synthetic applied identity aliases, missing/duplicate receipt, unresolved and terminal stage outcomes, pending-exclusion denominator, packet-feedback version binding and summary, and full-deletion scenarios. No cohort conversion or time-to-response claim is made.
 
 **Documentation updates:** event schema, metric definitions, maturity windows, tracker source-of-truth choice.
 
@@ -440,6 +440,7 @@ Take and validate a local database backup before schema changes. Keep additive m
 - Owner-approved the Jev/GPT division on 2026-10-06: Jev validates matching; GPT-6 Luna via the OpenAI Responses API at `reasoning.effort=max` researches and generates drafts under a local tool/budget harness. The owner reviews the complete packet before any Gmail draft is created or application is marked submitted. Outreach sending and applications remain manual.
 - Implemented the private evidence register, per-listing manual trigger, Jev snapshot binding, separate API budget/consent gates, bounded public Researcher, Diagnoser/Recruiter/Rewriter stages, optional interview practice, versioned local artifacts, contact suppression, approval-bound Gmail draft staging, and owner outcome feedback.
 - M3 adds owner-set, local-only follow-up reminders to the preparation queue. Explicit reply, interview/status updates, and inactive listings cancel the reminder; no notification, mailbox read, or message send is automated.
+- M4 adds a resolved-outcome distribution that excludes pending applications, plus optional review-time, packet-usefulness, and factual-correction feedback tied to the exact approved packet version. These owner estimates stay local and are not a hiring or Jev score.
 - `.env.example` intentionally contains an empty `OPENAI_API_KEY=`. Tests use only synthetic records and fake provider/Gmail responses. No real CV, API request, Gmail draft, or employer application was used.
 
 ## Implementation discoveries / decisions
@@ -455,8 +456,9 @@ Take and validate a local database backup before schema changes. Keep additive m
 
 Synthetic implementation evidence for this checkout:
 
-- `pytest tests/test_application_prep.py tests/test_application_workflow.py -q --tb=short`: 22 passed.
-- M3 reminder route and queue validation: `test_owner_followup_reminders_are_visible_and_cancel_on_reply_or_outcome` passed with synthetic data; it covers local queue visibility, due-state evaluation, explicit reply cancellation, cancellation on recorded interview progression, and inactive-listing cancellation.
+- `pytest tests/test_application_workflow.py tests/test_application_prep.py -q --tb=short`: 24 passed after M3/M4 changes.
+- M3 reminder validation covers local queue visibility, due-state evaluation, explicit reply cancellation, cancellation on recorded interview progression, and inactive-listing cancellation.
+- M4 outcome/feedback validation covers pending exclusion from the resolved denominator, exact approved packet feedback, review-time/usefulness/factual-correction reporting, and full personal-data deletion of reminder and packet-feedback records.
 - `ruff check clue_ai tests`: passed.
 - Bundled Python `-m compileall -q clue_ai`: passed.
 - Full repository suite: 207 passed with one upstream Starlette/AnyIO deprecation warning. The exact PLAN-019 commit snapshot was tested with the project-declared TypeSafe and Scrapling dependencies installed in an isolated temporary directory; no provider key was supplied and tests use synthetic data/fakes.

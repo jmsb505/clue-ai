@@ -120,6 +120,29 @@ def mark_snapshot_applied(database_path: Path, snapshot: dict) -> str:
     return application_id
 
 
+def find_applied_snapshot(database_path: Path, snapshot: dict) -> str | None:
+    """Resolve a prepared vacancy to its stable applied-tracker identity."""
+    job_id = str(snapshot.get("id") or "")
+    urls = {canonical_url(str(snapshot.get("canonical_url") or ""))}
+    urls.update(canonical_url(str(value)) for value in snapshot.get("source_urls", []))
+    urls.discard("")
+    if not job_id or not urls:
+        return None
+    with connect(database_path) as db:
+        row = db.execute(
+            f"""SELECT application.job_id FROM applications AS application
+                WHERE application.job_id = ?
+                   OR application.canonical_url IN ({','.join('?' for _ in urls)})
+                   OR EXISTS (
+                       SELECT 1 FROM application_urls AS url
+                       WHERE url.application_id = application.job_id
+                         AND url.url IN ({','.join('?' for _ in urls)})
+                   ) LIMIT 1""",
+            (job_id, *sorted(urls), *sorted(urls)),
+        ).fetchone()
+    return row["job_id"] if row else None
+
+
 def undo_applied(database_path: Path, application_id: str) -> bool:
     with connect(database_path) as db:
         cursor = db.execute("DELETE FROM applications WHERE job_id = ?", (application_id,))

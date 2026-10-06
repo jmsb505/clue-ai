@@ -54,8 +54,15 @@ from clue_ai.application_workflow import (
     run_interview_practice_assessment,
     run_interview_practice_questions,
     run_preparation,
+    verify_packet_approval,
 )
-from clue_ai.applications import applied_jobs, mark_applied, mark_snapshot_applied, undo_applied
+from clue_ai.applications import (
+    applied_jobs,
+    find_applied_snapshot,
+    mark_applied,
+    mark_snapshot_applied,
+    undo_applied,
+)
 from clue_ai.company_catalog import GROUP_LABELS, filter_and_rank_companies
 from clue_ai.config import Settings
 from clue_ai.database import (
@@ -78,8 +85,10 @@ from clue_ai.external_links import (
     normalize_x_status_url,
 )
 from clue_ai.feedback import (
+    get_packet_feedback,
     outcome_summary,
     record_interview_feedback,
+    record_packet_feedback,
     record_stage,
 )
 from clue_ai.filters import criteria_from_form
@@ -1108,6 +1117,7 @@ def create_app(
                 "gmail_drafts": gmail_drafts,
                 "outreach_options": outreach_options,
                 "followup": next(iter(list_followups(db_path, request_id=request_id)), None),
+                "packet_feedback": get_packet_feedback(db_path, packet["id"]) if packet else None,
                 "gmail_connected": gmail_connected,
                 "applied_recorded": bool(applied_record),
                 "notice": request.query_params.get("notice", ""),
@@ -1286,6 +1296,35 @@ def create_app(
             status_code=303,
         )
 
+    @app.post("/preparations/{request_id}/packets/{packet_id}/feedback")
+    async def packet_feedback_route(request: Request, request_id: str, packet_id: str):
+        form = dict(await request.form())
+        packet = get_packet(db_path, packet_id)
+        if packet is None or packet["request_id"] != request_id:
+            raise HTTPException(status_code=404, detail="Packet not found.")
+        try:
+            verify_packet_approval(
+                db_path, current_settings, packet_id, require_current_inputs=False
+            )
+            record_packet_feedback(
+                db_path,
+                packet_id=packet_id,
+                owner_minutes=int(str(form.get("owner_minutes") or "")),
+                quality_rating=int(str(form.get("quality_rating") or "")),
+                factual_corrections=int(str(form.get("factual_corrections") or "0")),
+                owner_note=str(form.get("owner_note") or ""),
+            )
+        except (ValueError, TypeError) as exc:
+            message = str(exc) or "Enter valid packet-review values."
+            return RedirectResponse(
+                f"/preparations/{request_id}?{urlencode({'notice': message})}",
+                status_code=303,
+            )
+        return RedirectResponse(
+            f"/preparations/{request_id}?notice=Packet+review+feedback+saved+locally.",
+            status_code=303,
+        )
+
     @app.get("/packets/{packet_id}/artifacts/{artifact_id}")
     async def packet_artifact_download(packet_id: str, artifact_id: str):
         packet = get_packet(db_path, packet_id)
@@ -1389,18 +1428,14 @@ def create_app(
             if stage == "submitted":
                 if not _checked(form.get("owner_attestation")):
                     raise ValueError("Confirm that you submitted the application outside Clue.")
-                mark_snapshot_applied(db_path, record["snapshot"])
+                application_id = mark_snapshot_applied(db_path, record["snapshot"])
             else:
-                with connect(db_path) as db:
-                    exists = db.execute(
-                        "SELECT 1 FROM applications WHERE job_id = ? OR canonical_url = ? LIMIT 1",
-                        (record["job_id"], record["snapshot"].get("canonical_url", "")),
-                    ).fetchone()
-                if not exists:
+                application_id = find_applied_snapshot(db_path, record["snapshot"])
+                if application_id is None:
                     raise ValueError("Record your manual submission first, then add later stage updates.")
             record_stage(
                 db_path,
-                job_id=record["job_id"],
+                job_id=application_id,
                 request_id=request_id,
                 stage=stage,
                 details=str(form.get("details") or ""),
@@ -1422,12 +1457,8 @@ def create_app(
         record = get_preparation(db_path, request_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Preparation request not found.")
-        with connect(db_path) as db:
-            exists = db.execute(
-                "SELECT 1 FROM applications WHERE job_id = ? OR canonical_url = ? LIMIT 1",
-                (record["job_id"], record["snapshot"].get("canonical_url", "")),
-            ).fetchone()
-        if not exists:
+        application_id = find_applied_snapshot(db_path, record["snapshot"])
+        if application_id is None:
             return RedirectResponse(
                 f"/preparations/{request_id}?notice=Record+the+manual+submission+before+adding+interview+feedback.",
                 status_code=303,
@@ -1436,7 +1467,7 @@ def create_app(
             tags = [part.strip() for part in str(form.get("gap_tags") or "").split(",") if part.strip()]
             record_interview_feedback(
                 db_path,
-                job_id=record["job_id"],
+                job_id=application_id,
                 request_id=request_id,
                 stage=str(form.get("stage") or ""),
                 self_assessment=str(form.get("self_assessment") or ""),
@@ -1463,7 +1494,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Preparation request not found.")
         with connect(db_path) as db:
             owner_submission = db.execute(
-                """SELECT 1 FROM application_events WHERE request_id = ? AND stage = 'submitted'
+                """SELECT job_id FROM application_events WHERE request_id = ? AND stage = 'submitted'
                    AND event_type = 'owner_submission_attestation' LIMIT 1""",
                 (request_id,),
             ).fetchone()
@@ -1493,7 +1524,7 @@ def create_app(
         }
         record_stage(
             db_path,
-            job_id=record["job_id"],
+            job_id=find_applied_snapshot(db_path, record["snapshot"]) or owner_submission["job_id"],
             request_id=request_id,
             stage="submitted",
             details_data=details,

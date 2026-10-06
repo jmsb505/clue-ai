@@ -55,6 +55,22 @@
   {% if packet.output.recruiter.requirements %}<ul class="evidence-list">{% for item in packet.output.recruiter.requirements %}<li><b>{{ item.priority|title }} · {{ item.document_coverage|replace('_', ' ')|title }}:</b> {{ item.requirement }}{% if item.claim_ids %}<small>Approved claims: {{ item.claim_ids|join(', ') }}</small>{% endif %}{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% if packet.output.rewriter.unresolved_questions %}<div class="alert alert-warning"><b>Needs your answer or decision</b><ul>{% for question in packet.output.rewriter.unresolved_questions %}<li>{{ question }}</li>{% endfor %}</ul></div>{% endif %}
   {% if packet.status == 'review' %}<form action="/preparations/{{ preparation.id }}/packets/{{ packet.id }}/approve" method="post" class="packet-approval-form"><label class="check-field"><input type="checkbox" name="confirm_review" value="on" required><span><b>I reviewed this exact version and its sources</b><small>Approval binds to this file set. I will personally submit the application or send any outreach.</small></span></label><button class="button button-dark" type="submit">Approve packet version {{ packet.revision }} <span aria-hidden="true">→</span></button></form>{% elif packet.status == 'approved' %}<p class="tag tag-green">This exact version was approved. Application and outreach actions remain manual.</p>{% else %}<p class="alert alert-warning">This packet was invalidated after a source or contact decision. Retry manually to create a new version.</p>{% endif %}
+  {% if packet.status == 'approved' %}
+    <section class="application-handoff-panel">
+      <h3>Review effort and packet usefulness</h3>
+      <p>Optional owner estimates for this exact version. They stay local and help you compare preparation effort with packet usefulness; they are not a hiring or Jev score.</p>
+      {% if packet_feedback %}<p class="panel-muted">Saved: {{ packet_feedback.owner_minutes }} minutes · usefulness {{ packet_feedback.quality_rating }}/5 · factual corrections {{ packet_feedback.factual_corrections }}{% if packet_feedback.owner_note %}<br>{{ packet_feedback.owner_note }}{% endif %}</p>{% endif %}
+      <form action="/preparations/{{ preparation.id }}/packets/{{ packet.id }}/feedback" method="post" class="outcome-stage-form">
+        <label class="field"><span>Review and correction time (minutes)</span><input type="number" name="owner_minutes" min="0" max="600" value="{{ packet_feedback.owner_minutes if packet_feedback else '' }}" required></label>
+        <label class="field"><span>Packet usefulness (1–5)</span><select name="quality_rating" required>
+          {% for rating in [1, 2, 3, 4, 5] %}<option value="{{ rating }}" {% if packet_feedback and packet_feedback.quality_rating == rating %}selected{% elif not packet_feedback and rating == 3 %}selected{% endif %}>{{ rating }}{% if rating == 1 %} · major rewrite needed{% elif rating == 3 %} · useful with edits{% elif rating == 5 %} · ready with minor edits{% endif %}</option>{% endfor %}
+        </select></label>
+        <label class="field"><span>Factual corrections needed</span><input type="number" name="factual_corrections" min="0" max="99" value="{{ packet_feedback.factual_corrections if packet_feedback else 0 }}" required></label>
+        <label class="field field-wide"><span>Private note (optional)</span><textarea name="owner_note" rows="2" maxlength="1000">{{ packet_feedback.owner_note if packet_feedback else '' }}</textarea></label>
+        <button class="button button-outline button-small" type="submit">Save packet review</button>
+      </form>
+    </section>
+  {% endif %}
   {% if outreach_options %}
     <h3>Outreach messages</h3>
     {% for option in outreach_options %}

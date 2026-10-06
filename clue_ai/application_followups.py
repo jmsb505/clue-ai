@@ -116,15 +116,15 @@ def cancel_followups_for_job(database_path: Path, job_id: str, reason: str) -> i
 
 
 def cancel_followups_for_closed_jobs(database_path: Path) -> int:
-    """Drop reminders for roles that disappeared or are no longer active locally."""
+    """Drop reminders for roles still indexed as inactive/closed."""
     with connect(database_path) as db:
         result = db.execute(
             """UPDATE application_followups SET state = 'cancelled',
                       resolution = 'Listing is no longer active.', updated_at = ?
                WHERE state = 'scheduled' AND request_id IN (
                    SELECT request.id FROM preparation_requests AS request
-                   LEFT JOIN jobs AS job ON job.id = request.job_id
-                   WHERE job.id IS NULL OR job.is_active = 0
+                   JOIN jobs AS job ON job.id = request.job_id
+                   WHERE job.is_active = 0
                )""",
             (utc_now(),),
         )

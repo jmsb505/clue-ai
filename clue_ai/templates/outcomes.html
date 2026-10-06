@@ -16,12 +16,32 @@
   <article class="panel"><span class="kicker kicker-muted">APPLICATION EVENTS</span><h2>{{ events|length }}</h2><p>Owner-reported stage updates</p></article>
   <article class="panel"><span class="kicker kicker-muted">INTERVIEW RECORDS</span><h2>{{ feedback_rows|length }}</h2><p>Self-assessment and employer feedback are stored in separate fields</p></article>
   <article class="panel"><span class="kicker kicker-muted">TRACKED APPLICATIONS</span><h2>{{ tracked_applications }}</h2><p>Owner-marked or owner-attested submissions</p></article>
+  <article class="panel"><span class="kicker kicker-muted">RESOLVED OUTCOMES</span><h2>{{ summary.resolution.resolved_count }}</h2><p>Denominator for the status distribution below</p></article>
+  <article class="panel"><span class="kicker kicker-muted">PENDING · EXCLUDED</span><h2>{{ summary.resolution.pending_count }}</h2><p>Pending applications are not counted as rejections or resolved outcomes</p></article>
+</section>
+
+<section class="panel outcomes-section">
+  <div class="panel-header"><div><span class="kicker kicker-muted">OWNER-REPORTED STATUS</span><h2>Resolved application outcomes</h2></div></div>
+  <p class="panel-muted">Counts reflect the latest recorded status for each tracked application. The denominator includes only owner-marked offer, rejected, withdrawn, or no-response outcomes. This descriptive summary does not infer a result for pending applications or claim calibrated cohort conversion.</p>
+  {% if summary.resolution.resolved_count %}<ul class="outcome-event-list">{% for item in summary.resolution.outcomes %}{% if item.count %}<li><span class="tag {% if item.stage == 'offer' %}tag-green{% else %}tag-muted{% endif %}">{{ item.stage|replace('_', ' ')|title }}</span><span><b>{{ item.count }} of {{ summary.resolution.resolved_count }} resolved applications</b><small>{{ item.share_percent }}% of resolved owner-reported outcomes</small></span></li>{% endif %}{% endfor %}</ul>{% else %}<p>No tracked application has an explicitly resolved owner-reported outcome yet.</p>{% endif %}
 </section>
 
 <section class="panel outcomes-section">
   <div class="panel-header"><div><span class="kicker kicker-muted">FUNNEL EVENTS</span><h2>Application stages</h2></div></div>
   {% if events %}<ul class="outcome-event-list">{% for event in events %}<li><span class="tag {% if event.stage == 'offer' %}tag-green{% elif event.stage in ['rejected', 'withdrawn'] %}tag-muted{% else %}tag-amber{% endif %}">{{ event.stage|replace('_', ' ')|title }}</span><span><b>{{ event.title or event.job_id }}{% if event.company %} · {{ event.company }}{% endif %}</b><small>{{ event.event_type|replace('_', ' ')|title }} · {{ event.evidence_level|replace('_', ' ')|title }} · {{ event.occurred_at[:16].replace('T', ' ') }} UTC</small>{% if event.details.owner_note %}<small>{{ event.details.owner_note }}</small>{% endif %}{% if event.details.receipt_filename %}<a class="text-link" href="/outcomes/receipts/{{ event.id }}">Open local receipt · {{ event.details.receipt_filename }}</a>{% endif %}</span></li>{% endfor %}</ul>
   {% else %}<div class="empty-state"><h3>No outcomes recorded</h3><p>After reviewing a packet and applying manually, return to its preparation page and record your own submission attestation.</p><a class="button button-outline" href="/preparations">Open application preparation</a></div>{% endif %}
+</section>
+
+<section class="panel outcomes-section">
+  <div class="panel-header"><div><span class="kicker kicker-muted">LOCAL PREPARATION FEEDBACK</span><h2>Effort and packet usefulness</h2></div></div>
+  <p class="panel-muted">Optional owner estimates are tied to an exact approved packet version. They describe your review effort and usefulness rating, not Jev fit or hiring outcomes.</p>
+  <div class="outcome-summary-grid">
+    <article class="panel"><span class="kicker kicker-muted">PACKETS REVIEWED</span><h2>{{ summary.preparation_quality.count }}</h2><p>Owner feedback records</p></article>
+    <article class="panel"><span class="kicker kicker-muted">AVERAGE REVIEW TIME</span><h2>{% if summary.preparation_quality.average_minutes is not none %}{{ summary.preparation_quality.average_minutes }} min{% else %}—{% endif %}</h2><p>Review and correction estimate</p></article>
+    <article class="panel"><span class="kicker kicker-muted">AVERAGE USEFULNESS</span><h2>{% if summary.preparation_quality.average_quality is not none %}{{ summary.preparation_quality.average_quality }}/5{% else %}—{% endif %}</h2><p>Owner rating of the packet</p></article>
+    <article class="panel"><span class="kicker kicker-muted">FACTUAL CORRECTIONS</span><h2>{{ summary.preparation_quality.factual_corrections }}</h2><p>Reported across reviewed packets</p></article>
+  </div>
+  {% if summary.preparation_quality.reviews %}<ul class="outcome-event-list">{% for item in summary.preparation_quality.reviews %}<li><span class="tag">Version {{ item.revision }}</span><span><b>{{ item.title or item.request_id }}{% if item.company %} · {{ item.company }}{% endif %}</b><small>{{ item.owner_minutes }} minutes · usefulness {{ item.quality_rating }}/5 · {{ item.factual_corrections }} factual corrections · updated {{ item.updated_at[:16].replace('T', ' ') }} UTC</small>{% if item.owner_note %}<small>{{ item.owner_note }}</small>{% endif %}</span></li>{% endfor %}</ul>{% endif %}
 </section>
 
 <section class="panel outcomes-section">

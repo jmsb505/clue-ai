@@ -37,7 +37,7 @@ Jev is the matching validator. GPT-6 Luna (`gpt-6-luna`, `reasoning.effort=max`)
 - Search and Jev matching may operate automatically; GPT research and preparation begin only from a deliberate per-listing owner action. Unrequested listings consume no OpenAI or contact-crawl budget.
 - Gmail draft creation requires a scope that also permits sending. The model has no Gmail tool, and the adapter must omit send operations. A local email handoff is the fallback when that credential scope is not acceptable.
 - GPT-6 Luna max is the configured stage effort requested by the owner. The local ledger records stage-level tokens, tool use, and estimated/settled cost. A real owner-rated writing pilot, latency review, and current price/account verification remain pending until the owner configures the provider after development.
-- The optional background worker, automated follow-up reminders, external tracker synchronization, and cohort analytics are deferred. They require measured usage or a separate owner decision and are not prerequisites for the manual-trigger workflow.
+- Owner-set in-app reminders and packet effort/usefulness feedback are part of the local manual-trigger workflow. Relevant owner-recorded replies, interview/status changes, and inactive listings cancel active reminders. Clue does not send proactive notifications, read mail, or send follow-up messages. The outcome view separates pending applications from explicitly resolved statuses and ties packet feedback to the exact approved version. The optional background worker, external tracker synchronization, calibrated cohort analytics, and proactive notifications remain deferred until there is measured usage or an explicit owner decision.
 
 ## Validation evidence
 

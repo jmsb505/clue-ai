@@ -744,6 +744,70 @@ def test_owner_followup_reminders_are_visible_and_cancel_on_reply_or_outcome(set
         ).fetchone()["state"] == "cancelled"
 
 
+def test_outcomes_exclude_pending_from_resolved_denominator_and_report_packet_effort(settings, database):
+    record, _cv, _technical, _descriptive, _sample, _claim_id, _text = _create_preparation(
+        settings, database
+    )
+    enabled = _enable_synthetic_openai(settings, database)
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+    )
+    with connect(database) as db:
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+    client = TestClient(create_app(enabled), base_url="http://127.0.0.1")
+    approved = client.post(
+        f"/preparations/{record['id']}/packets/{packet_id}/approve",
+        data={"confirm_review": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert approved.status_code == 303
+    submitted = client.post(
+        f"/preparations/{record['id']}/record-stage",
+        data={"stage": "submitted", "owner_attestation": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert submitted.status_code == 303
+    pending_summary = client.get("/outcomes")
+    assert "PENDING · EXCLUDED" in pending_summary.text
+    assert "No tracked application has an explicitly resolved owner-reported outcome yet." in pending_summary.text
+
+    feedback_response = client.post(
+        f"/preparations/{record['id']}/packets/{packet_id}/feedback",
+        data={
+            "owner_minutes": "27",
+            "quality_rating": "4",
+            "factual_corrections": "2",
+            "owner_note": "Two dates needed owner correction.",
+        },
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert feedback_response.status_code == 303
+    assert "feedback+saved" in feedback_response.headers["location"]
+    rejected = client.post(
+        f"/preparations/{record['id']}/record-stage",
+        data={"stage": "rejected", "details": "Synthetic outcome"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert rejected.status_code == 303
+    outcomes = client.get("/outcomes")
+    assert "Resolved application outcomes" in outcomes.text
+    assert "1 of 1 resolved applications" in outcomes.text
+    assert "100.0% of resolved owner-reported outcomes" in outcomes.text
+    assert "27 min" in outcomes.text
+    assert "4/5" in outcomes.text
+    assert "2 factual corrections" in outcomes.text
+
 def test_contact_suppression_invalidates_packet_and_survives_manual_retry(settings, database):
     record, _cv, _technical, _descriptive, _sample, _claim, _text = _create_preparation(
         settings, database
@@ -1124,6 +1188,26 @@ def test_full_personal_data_deletion_removes_preparation_and_provider_records(se
     )
     _enable_synthetic_openai(settings, database)
     set_gmail_connection(database, True)
+    with connect(database) as db:
+        db.execute(
+            """INSERT INTO preparation_packets
+               (id, request_id, revision, input_revision_sha256, output_json, status, created_at)
+               VALUES ('synthetic-packet', ?, 1, 'synthetic-revision', '{}', 'approved', '2026-10-06T00:00:00Z')""",
+            (record["id"],),
+        )
+        db.execute(
+            """INSERT INTO application_followups
+               (id, request_id, kind, due_on, state, created_at, updated_at)
+               VALUES ('synthetic-followup', ?, 'outreach', '2026-10-07', 'scheduled',
+                       '2026-10-06T00:00:00Z', '2026-10-06T00:00:00Z')""",
+            (record["id"],),
+        )
+        db.execute(
+            """INSERT INTO packet_feedback
+               (id, packet_id, owner_minutes, quality_rating, factual_corrections, created_at, updated_at)
+               VALUES ('synthetic-feedback', 'synthetic-packet', 10, 4, 0,
+                       '2026-10-06T00:00:00Z', '2026-10-06T00:00:00Z')"""
+        )
     for dirname in ("cv", "application-packets", "gmail"):
         path = settings.data_dir / dirname / "synthetic"
         path.mkdir(parents=True, exist_ok=True)
@@ -1134,6 +1218,8 @@ def test_full_personal_data_deletion_removes_preparation_and_provider_records(se
         assert db.execute("SELECT COUNT(*) FROM candidate_claims").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM preparation_requests").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM preparation_packets").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM application_followups").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM packet_feedback").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM gmail_drafts").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM openai_usage").fetchone()[0] == 0
         setting = db.execute(

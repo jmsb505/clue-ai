@@ -621,14 +621,21 @@ def approve_packet(database_path: Path, settings: Settings, packet_id: str) -> s
     return approved_hash
 
 
-def verify_packet_approval(database_path: Path, settings: Settings, packet_id: str) -> dict[str, Any]:
+def verify_packet_approval(
+    database_path: Path,
+    settings: Settings,
+    packet_id: str,
+    *,
+    require_current_inputs: bool = True,
+) -> dict[str, Any]:
     packet = get_packet(database_path, packet_id)
     if packet is None or packet["status"] != "approved" or not packet["approved_sha256"]:
         raise ValueError("Approve the complete packet before creating an external Gmail draft.")
     request = get_preparation(database_path, packet["request_id"])
     if request is None:
         raise ValueError("The preparation request was removed; this packet cannot be used externally.")
-    _assert_snapshot_current(database_path, request, settings)
+    if require_current_inputs:
+        _assert_snapshot_current(database_path, request, settings)
     artifacts = []
     for item in packet["artifacts"]:
         path = Path(item["file_path"]).resolve()
