@@ -46,9 +46,12 @@ from clue_ai.application_prep import (
     list_sources as list_preparation_sources,
 )
 from clue_ai.application_workflow import (
+    AttachmentBundleError,
     approve_packet,
+    build_packet_attachment_bundle,
     create_practice_session,
     get_packet,
+    list_packet_versions,
     list_practice_sessions,
     queue_practice_answers,
     run_interview_practice_assessment,
@@ -1041,7 +1044,8 @@ def create_app(
         target = _safe_return_path(str(form.get("return_to") or "/"))
         return RedirectResponse(target, status_code=303)
 
-    @app.get("/preparations", response_class=HTMLResponse)
+    @app.get("/applications", response_class=HTMLResponse)
+    @app.get("/preparations", response_class=HTMLResponse, include_in_schema=False)
     async def preparations_page(request: Request):
         cancel_followups_for_closed_jobs(db_path)
         followups = list_followups(db_path)
@@ -1049,14 +1053,15 @@ def create_app(
             request,
             "preparations.html",
             {
-                "active_page": "preparations",
+                "active_page": "applications",
                 "preparations": list_preparations(db_path),
                 "followups": followups,
                 "notice": request.query_params.get("notice", ""),
             },
         )
 
-    @app.get("/preparations/{request_id}", response_class=HTMLResponse)
+    @app.get("/applications/{request_id}", response_class=HTMLResponse)
+    @app.get("/preparations/{request_id}", response_class=HTMLResponse, include_in_schema=False)
     async def preparation_detail(request: Request, request_id: str):
         cancel_followups_for_closed_jobs(db_path)
         record = get_preparation(db_path, request_id)
@@ -1065,11 +1070,28 @@ def create_app(
         from clue_ai.database import connect
 
         with connect(db_path) as db:
-            latest = db.execute(
-                "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            receipt_rows = db.execute(
+                """SELECT id, details_json, occurred_at FROM application_events
+                   WHERE request_id = ? AND event_type = 'receipt_imported'
+                   ORDER BY occurred_at DESC, id DESC""",
                 (request_id,),
-            ).fetchone()
-        packet = get_packet(db_path, latest["id"]) if latest else None
+            ).fetchall()
+        packet_history = list_packet_versions(db_path, request_id)
+        packet = packet_history[0] if packet_history else None
+        receipts = []
+        for row in receipt_rows:
+            try:
+                details = json.loads(row["details_json"])
+            except (json.JSONDecodeError, TypeError):
+                details = {}
+            receipts.append(
+                {
+                    "event_id": row["id"],
+                    "occurred_at": row["occurred_at"],
+                    "filename": str(details.get("receipt_filename") or "Submission receipt"),
+                    "sha256": str(details.get("receipt_sha256") or ""),
+                }
+            )
         with connect(db_path) as db:
             contacts = [
                 dict(item)
@@ -1109,10 +1131,12 @@ def create_app(
             request,
             "preparation_detail.html",
             {
-                "active_page": "preparations",
+                "active_page": "applications",
                 "preparation": record,
                 "practice_sessions": list_practice_sessions(db_path, request_id),
                 "packet": packet,
+                "packet_history": packet_history,
+                "receipts": receipts,
                 "contacts": contacts,
                 "gmail_drafts": gmail_drafts,
                 "outreach_options": outreach_options,
@@ -1340,6 +1364,29 @@ def create_app(
         if sha256(path.read_bytes()).hexdigest() != artifact["content_sha256"]:
             raise HTTPException(status_code=409, detail="Artifact changed after generation.")
         return FileResponse(path, filename=artifact["filename"])
+
+    @app.post("/applications/{request_id}/packets/{packet_id}/attachments.zip")
+    async def application_attachment_bundle(request: Request, request_id: str, packet_id: str):
+        form = await request.form()
+        artifact_ids = [str(value) for value in form.getlist("artifact_id")]
+        try:
+            content, filename = build_packet_attachment_bundle(
+                db_path,
+                current_settings,
+                request_id,
+                packet_id,
+                artifact_ids,
+            )
+        except AttachmentBundleError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        return Response(
+            content=content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.post("/preparations/{request_id}/packets/{packet_id}/gmail-draft")
     async def create_gmail_draft_route(request: Request, request_id: str, packet_id: str):

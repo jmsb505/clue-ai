@@ -7,8 +7,9 @@ import io
 import json
 import re
 import uuid
+import zipfile
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from docx import Document
@@ -52,6 +53,8 @@ from clue_ai.openai_provider import (
 from clue_ai.scrapling_research import RESEARCH_CHAR_LIMIT, BoundedResearchCrawler
 
 MAX_RESEARCH_API_CALLS = 5
+MAX_PACKET_BUNDLE_FILES = 10
+MAX_PACKET_BUNDLE_BYTES = 20 * 1024 * 1024
 MAX_OUTPUT_TOKENS = {
     "researcher": 2_200,
     "diagnoser": 1_600,
@@ -60,6 +63,14 @@ MAX_OUTPUT_TOKENS = {
     "hiring_manager": 2_400,
 }
 _EMAIL = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])", re.IGNORECASE)
+
+
+class AttachmentBundleError(ValueError):
+    """A selected packet-attachment bundle could not be built safely."""
+
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status_code = status_code
 
 
 def run_preparation(
@@ -1083,6 +1094,114 @@ def get_packet(database_path: Path, packet_id: str) -> dict[str, Any] | None:
                 (packet_id,),
             ).fetchall()
         ]
+    return result
+
+
+def list_packet_versions(database_path: Path, request_id: str) -> list[dict[str, Any]]:
+    """Return every immutable packet version owned by one preparation request."""
+    with connect(database_path) as db:
+        rows = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC",
+            (request_id,),
+        ).fetchall()
+    return [packet for row in rows if (packet := get_packet(database_path, row["id"])) is not None]
+
+
+def build_packet_attachment_bundle(
+    database_path: Path,
+    settings: Settings,
+    request_id: str,
+    packet_id: str,
+    artifact_ids: list[str],
+) -> tuple[bytes, str]:
+    """Build an in-memory ZIP of selected, approved files from the current packet only."""
+    request = get_preparation(database_path, request_id)
+    packet = get_packet(database_path, packet_id)
+    if request is None or packet is None or packet["request_id"] != request_id:
+        raise AttachmentBundleError(404, "Application packet not found.")
+    packets = list_packet_versions(database_path, request_id)
+    if not packets or packets[0]["id"] != packet_id:
+        raise AttachmentBundleError(409, "Only the current packet can supply email attachments.")
+    if not artifact_ids:
+        raise AttachmentBundleError(400, "Select at least one packet file.")
+    if len(artifact_ids) > MAX_PACKET_BUNDLE_FILES:
+        raise AttachmentBundleError(413, "Select no more than ten packet files at a time.")
+    if len(set(artifact_ids)) != len(artifact_ids):
+        raise AttachmentBundleError(400, "A packet file was selected more than once.")
+    artifacts = {item["id"]: item for item in packet["artifacts"]}
+    if any(artifact_id not in artifacts for artifact_id in artifact_ids):
+        raise AttachmentBundleError(404, "A selected file does not belong to this packet.")
+
+    try:
+        application_root = (settings.data_dir / "application-packets").resolve()
+        request_root = (application_root / request_id).resolve()
+        packet_root = (request_root / f"v{packet['revision']}").resolve()
+    except (OSError, RuntimeError) as exc:
+        raise AttachmentBundleError(404, "Application packet files are unavailable.") from exc
+    if not request_root.is_relative_to(application_root) or not packet_root.is_relative_to(request_root):
+        raise AttachmentBundleError(404, "Application packet files are unavailable.")
+
+    artifact_paths: dict[str, Path] = {}
+    packet_bytes = 0
+    for artifact in packet["artifacts"]:
+        try:
+            path = Path(artifact["file_path"]).resolve()
+            size = path.stat().st_size
+        except (OSError, RuntimeError) as exc:
+            raise AttachmentBundleError(404, "A packet file is missing or unavailable.") from exc
+        if not path.is_relative_to(packet_root) or not path.is_file():
+            raise AttachmentBundleError(404, "A packet file is outside its version folder.")
+        if size > MAX_PACKET_BUNDLE_BYTES:
+            raise AttachmentBundleError(413, "A packet file is too large to verify or bundle.")
+        packet_bytes += size
+        if packet_bytes > MAX_PACKET_BUNDLE_BYTES:
+            raise AttachmentBundleError(413, "The packet exceeds the 20 MB local verification limit.")
+        artifact_paths[artifact["id"]] = path
+    try:
+        # The immutable reviewed packet remains downloadable after its listing is marked applied.
+        verify_packet_approval(database_path, settings, packet_id, require_current_inputs=False)
+    except ValueError as exc:
+        raise AttachmentBundleError(409, str(exc)) from exc
+
+    selected_files: list[tuple[str, bytes]] = []
+    total_bytes = 0
+    used_names: set[str] = set()
+    for artifact_id in artifact_ids:
+        artifact = artifacts[artifact_id]
+        path = artifact_paths[artifact_id]
+        try:
+            content = path.read_bytes()
+        except OSError as exc:
+            raise AttachmentBundleError(404, "A selected packet file is unavailable.") from exc
+        total_bytes += len(content)
+        if total_bytes > MAX_PACKET_BUNDLE_BYTES:
+            raise AttachmentBundleError(413, "Selected packet files exceed the 20 MB bundle limit.")
+        if hashlib.sha256(content).hexdigest() != artifact["content_sha256"]:
+            raise AttachmentBundleError(409, "A selected packet file changed after approval.")
+        filename = _safe_bundle_filename(artifact["filename"], used_names)
+        used_names.add(filename.casefold())
+        selected_files.append((filename, content))
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for filename, content in selected_files:
+            archive.writestr(filename, content)
+    return output.getvalue(), f"application-packet-v{packet['revision']}-attachments.zip"
+
+
+def _safe_bundle_filename(filename: str, used_names: set[str]) -> str:
+    """Flatten and normalize archive names, adding a suffix when names collide."""
+    candidate = PurePosixPath(str(filename).replace("\\", "/")).name
+    candidate = re.sub(r'[/:*?"<>|\x00-\x1f]', "_", candidate).strip(" .")
+    if candidate in {"", ".", ".."}:
+        candidate = "attachment"
+    stem = PurePosixPath(candidate).stem or "attachment"
+    suffix = PurePosixPath(candidate).suffix
+    result = candidate
+    index = 2
+    while result.casefold() in used_names:
+        result = f"{stem} ({index}){suffix}"
+        index += 1
     return result
 
 

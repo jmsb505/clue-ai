@@ -590,8 +590,12 @@ def list_preparations(database_path: Path) -> list[dict[str, Any]]:
     with connect(database_path) as db:
         rows = db.execute(
             """SELECT id, job_id, run_id, snapshot_json, snapshot_sha256, state,
-                      status_message, created_at, updated_at
-               FROM preparation_requests ORDER BY created_at DESC"""
+                      status_message, created_at, updated_at,
+                      (SELECT event.stage FROM application_events event
+                       WHERE event.request_id = preparation_requests.id
+                         AND event.event_type IN ('owner_submission_attestation', 'owner_stage_update')
+                       ORDER BY event.occurred_at DESC, event.id DESC LIMIT 1) AS application_stage
+               FROM preparation_requests ORDER BY updated_at DESC, created_at DESC"""
         ).fetchall()
     result = []
     for row in rows:
@@ -606,10 +610,18 @@ def get_preparation(database_path: Path, request_id: str) -> dict[str, Any] | No
         row = db.execute(
             "SELECT * FROM preparation_requests WHERE id = ?", (request_id,)
         ).fetchone()
+        stage = db.execute(
+            """SELECT stage FROM application_events
+               WHERE request_id = ?
+                 AND event_type IN ('owner_submission_attestation', 'owner_stage_update')
+               ORDER BY occurred_at DESC, id DESC LIMIT 1""",
+            (request_id,),
+        ).fetchone()
     if row is None:
         return None
     result = dict(row)
     result["snapshot"] = json.loads(result["snapshot_json"])
+    result["application_stage"] = stage["stage"] if stage else ""
     return result
 
 

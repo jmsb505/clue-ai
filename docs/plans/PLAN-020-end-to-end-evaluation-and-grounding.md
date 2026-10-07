@@ -260,7 +260,7 @@ Expected Git checkpoint: Push only code, generic tests, public docs, and sanitiz
 
 ## Final integration validation
 
-- [x] Final full suite (287 passed in 62.82 seconds; one pytest cache-path permission warning) in a disposable dependency-complete environment after the latest Jev and prompt changes; Ruff, `compileall`, and `git diff --check` also pass.
+- [x] Final full suite after integrating the application dossier (289 passed in 59.54 seconds) in a disposable dependency-complete environment; Ruff, `compileall`, `node --check clue_ai/static/app.js`, and staged/working-tree diff checks also pass.
 - [ ] Writing quality and portfolio representativeness require broader evidence and owner review of the exact packet. Current synthetic checks pass mechanics but do not establish personal voice, fit, or portfolio acceptance.
 - [ ] The owner reviews the exact generated packet against the writing rubric. This review remains separate from the synthetic sample feedback. Automated filter, Jev, grounding, usage, privacy-boundary, and document checks pass on synthetic cases.
 - [x] Synthetic live Jev reports distinguish model behavior from assistant-authored labels. The current provider/document run passed its mechanical checks and settled its local usage ledger.
@@ -309,4 +309,4 @@ This checkpoint supersedes earlier status notes above where they say current vis
 
 ## Completion evidence
 
-See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). The latest synthetic `SYN-02` flow passed final tailored-resume approval, packet quality, DOCX reopen, visual inspection, and usage settlement. A repeated `SYN-01` returned Jev `review` and stopped before GPT; an earlier full `SYN-01` run passed. The remaining gates are paired writing-quality evaluation, exact-packet review, representative portfolio coverage, and the single owner-triggered real listing/CV pilot.
+See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). The latest synthetic `SYN-02` flow passed final tailored-resume approval, packet quality, DOCX reopen, visual inspection, and usage settlement. A repeated `SYN-01` returned Jev `review` and stopped before GPT; an earlier full `SYN-01` run passed. After integrating the dossier/email handoff from main, the two new integration failures were traced to tests omitting synthetic Jev stubs; explicit fake support and resume-review decisions were added, both targeted tests passed, and the full suite passed 289 tests. The remaining gates are paired writing-quality evaluation, exact-packet review, representative portfolio coverage, and the single owner-triggered real listing/CV pilot.

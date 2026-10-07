@@ -530,7 +530,7 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
   .brand { grid-column: 1; grid-row: 1; margin: 0; }
   .brand-name { display: none; }
   .main-nav { min-width: 0; flex: initial; justify-content: flex-start; gap: 4px; overflow: visible; }
-  .main-nav:first-of-type { grid-column: 2; grid-row: 1; }
+  .main-nav:first-of-type { grid-column: 2; grid-row: 1; overflow-x: auto; overflow-y: hidden; }
   .main-nav:last-of-type {
     grid-column: 1 / -1; grid-row: 2; padding-top: 5px;
     border-top: 1px solid rgba(255,255,255,.1);
@@ -816,6 +816,39 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
 .preparation-stage-list li.is-complete { border-left-color: #69a786; }
 .preparation-stage-list b { color: #40564b; font-size: 10px; }
 .preparation-stage-list span { color: #85918a; font-size: 9px; }
+.application-section-nav { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 14px; padding: 7px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.application-section-nav a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 13px; border-radius: 9px; color: #50625b; font-size: 10px; font-weight: 650; text-decoration: none; }
+.application-section-nav a:hover, .application-section-nav a:focus-visible { background: var(--mint); color: var(--ink); }
+.application-section { scroll-margin-top: 18px; }
+.application-file-shelf { border-left: 4px solid var(--teal); }
+.application-file-shelf h3 { margin: 22px 0 9px; color: #40564b; font-size: 12px; }
+.packet-artifact-list { display: grid; gap: 8px; margin: 10px 0 18px; padding: 0; list-style: none; }
+.packet-artifact-list li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: #fbfcfa; }
+.packet-artifact-list li > span { display: grid; gap: 3px; min-width: 0; }
+.packet-artifact-list b { color: #40564b; font-size: 10px; }
+.packet-artifact-list small { color: #718087; font-size: 9px; overflow-wrap: anywhere; }
+.application-archive-revision { margin-top: 9px; border-top: 1px solid var(--line); }
+.application-archive-revision summary { padding: 14px 3px 5px; color: #50625b; font-size: 10px; font-weight: 650; cursor: pointer; }
+.application-list-stage { color: #40564b !important; font-weight: 650; }
+.application-email-preview { display: grid; gap: 14px; margin: 13px 0; padding: 16px; border: 1px solid var(--line); border-radius: 13px; background: #fbfcfa; }
+.email-preview-header, .email-preview-control { display: flex; align-items: center; justify-content: space-between; gap: 9px; }
+.email-preview-header h4, .application-email-preview h4 { margin: 0; color: var(--ink); font-size: 12px; }
+.email-preview-field { display: grid; gap: 6px; min-width: 0; }
+.email-preview-field > label { color: #50625b; font-size: 9px; font-weight: 700; }
+.email-preview-control input, .email-preview-field textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px 11px; background: #fff; color: var(--ink); font: inherit; font-size: 10px; line-height: 1.6; }
+.email-preview-control input { overflow: hidden; text-overflow: ellipsis; }
+.email-preview-field textarea { resize: vertical; white-space: pre-wrap; }
+.email-preview-source { margin: 0; color: #718087; font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; }
+.email-preview-source a { color: var(--teal); font-weight: 650; }
+.copy-status { min-height: 1.4em; margin: 0; color: #2f705d; font-size: 10px; }
+.attachment-bundle-form { display: grid; justify-items: start; gap: 10px; }
+.attachment-bundle-form fieldset { display: grid; width: 100%; gap: 7px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 11px; }
+.attachment-bundle-form legend { padding: 0 5px; color: #40564b; font-size: 10px; font-weight: 700; }
+.attachment-choice { display: flex; align-items: flex-start; gap: 9px; padding: 9px 10px; border-radius: 8px; background: #fff; cursor: pointer; }
+.attachment-choice input { flex: 0 0 auto; margin: 2px 0 0; accent-color: var(--teal); }
+.attachment-choice span { display: grid; min-width: 0; gap: 3px; }
+.attachment-choice b { color: #40564b; font-size: 9px; }
+.attachment-choice small { color: #718087; font-size: 9px; overflow-wrap: anywhere; }
 
 @media (max-width: 850px) {
   .evidence-source-grid { grid-template-columns: 1fr; }
@@ -827,5 +860,10 @@ h1 em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter
   .evidence-upload-form .button, .evidence-claim-form .field-wide { grid-column: auto; }
   .preparation-row { align-items: flex-start; flex-direction: column; }
   .preparation-facts { grid-template-columns: 1fr; }
+  .application-section-nav { flex-wrap: nowrap; overflow-x: auto; }
+  .application-section-nav a { flex: 0 0 auto; }
+  .packet-artifact-list li { align-items: flex-start; flex-direction: column; }
+  .email-preview-control { align-items: stretch; flex-direction: column; }
+  .email-preview-header { align-items: flex-start; flex-direction: column; }
   .evidence-source-heading { flex-direction: column; }
 }
