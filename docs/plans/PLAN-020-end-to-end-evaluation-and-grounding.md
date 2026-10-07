@@ -1,6 +1,6 @@
 # PLAN-020 — End-to-end quality evaluation and evidence grounding
 
-Status: M1–M4 are complete. M5's three-listing exploratory evaluation and four IFOM retries are recorded. The latest IFOM packet (prompt `.16`) passed Jev claim support for both cover-letter paragraphs, final CV approval, packet quality, and usage settlement; its CV had zero bullet edits and the exact DOCX files have not been visually rendered. The packet remains in owner review. Personal voice acceptance, useful CV tailoring, and hiring outcomes remain unproven.
+Status: M1–M4 are complete. M5's three-listing exploratory evaluation, four IFOM retries, and Word-based visual inspection are recorded. The latest IFOM packet (prompt `.16`) passed Jev claim support for both cover-letter paragraphs, final CV approval, packet quality, and usage settlement; its CV had zero bullet edits. The one-page letter has no greeting or closing and substantial unused space; the two-page resume has a sparse final page. No clipping or overlap was visible. Owner review, useful CV tailoring, and hiring outcomes remain open. PR #4 is open; GitHub returned no status checks or PR workflow runs for the commit.
 Created: 2026-10-06 · Last updated: 2026-10-07
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md), [ADR 0025](../decisions/0025-jev-approval-of-tailored-resume.md)
 
@@ -95,7 +95,7 @@ The current eight-case Jev benchmark has author-assigned synthetic relevance lab
 - GPT-6 Luna may produce inconsistent output across live runs. Capture model ID, prompt/schema versions, token usage, request status, and rubric scores, but keep personal response bodies local.
 - The reconstructed DOCX workflow does not promise pixel-perfect fidelity to complex source layouts. Evaluate text/order integrity and inspect rendered output; document unsupported layout cases.
 - Confidence calibration cannot be inferred from assistant-authored labels; no owner-labeled relevance set exists.
-- The synthetic `SYN-02` packet was rendered and visually inspected. A Windows DOCX renderer is not available in the current host, so the latest real IFOM resume and cover letter were reopened structurally with `python-docx` but not visually inspected. Complete real-CV layout remains unverified.
+- The synthetic `SYN-02` packet was rendered and visually inspected. The packaged LibreOffice renderer is unavailable on Windows; the latest real IFOM `.16` resume and cover letter were rendered through hidden Microsoft Word PDF export and Poppler and visually inspected. They show no clipping/overlap, but the letter lacks a greeting/closing and the resume's second page is sparse. Earlier `.12` live files and complete real-CV layout remain unverified.
 
 ## Milestones
 
@@ -230,7 +230,7 @@ Subtasks:
 
 - [x] Verify separate synthetic API consent and app-side usage controls in the disposable test database.
 - [x] Select one scored Jev `review` listing with verified eligible location and no explicit conflict; use only its individual trigger, preserving the saved Jev result exactly. All pilot requests used that same listing; no second listing was triggered.
-- [x] Apply Jev evidence-support checks, structurally reopen the generated DOCX artifacts, and report unsupported, unresolved, and unchanged content. The final packet had 2/2 supported letter paragraphs, no unsupported assertions, an explicitly approved CV, and zero bullet edits. Visual rendering was not available on the Windows host.
+- [x] Apply Jev evidence-support checks, reopen and visually inspect the generated DOCX artifacts, and report unsupported, unresolved, and unchanged content. The final packet had 2/2 supported letter paragraphs, no unsupported assertions, an explicitly approved CV, and zero bullet edits. Word export plus Poppler rendered one cover-letter page and two resume pages; no clipping or overlap was visible. The letter lacks a greeting and closing and leaves most of its page blank; the resume's second page is sparse.
 - [x] Leave Gmail disconnected; perform no send, external write, or application submission.
 - [x] Keep personal-fit calibration marked unknown. An owner-label worksheet is deferred until the owner chooses to calibrate personal ranking preferences; no calibration claim is made.
 
@@ -250,7 +250,7 @@ Validation:
 
 - [x] Confirm the selected Jev snapshot and its status are unchanged after generation and grounding checks.
 - [x] Reopen both generated DOCX files structurally; Jev supported both letter paragraphs and approved the final CV.
-- [ ] Visually render and inspect the exact real-data DOCX files; the current Windows host has no supported renderer. Synthetic `SYN-02` visual inspection passed separately.
+- [x] Visually render and inspect the exact latest real-data DOCX files using hidden Microsoft Word PDF export and bundled Poppler. Inspect every page; record the underfilled letter and sparse second resume page as usability issues. Synthetic `SYN-02` visual inspection passed separately.
 - [x] Verify every OpenAI and Jev usage receipt settled and record remaining Clue-local cap after the pilot.
 
 Documentation updates:
@@ -278,14 +278,15 @@ Acceptance criteria:
 
 - [x] All three listings have recorded, unchanged Jev match and eligibility results; GPT use is separate from matching authority.
 - [x] Unapproved evidence IDs cannot enter Jev evidence checks or generated artifacts; remaining claims require Jev support and explicit final-CV approval.
-- [x] The latest IFOM `.16` run produced a review packet with 2/2 supported letter paragraphs, explicit final-CV approval, complete local usage settlement, and zero CV edits. The exact DOCX files were structurally reopened; visual rendering is unavailable on this host.
+- [x] The latest IFOM `.16` run produced a review packet with 2/2 supported letter paragraphs, explicit final-CV approval, complete local usage settlement, and zero CV edits. The exact DOCX files were reopened and visually rendered with Word and Poppler: one-page letter, two-page resume, no clipping/overlap; the letter lacks salutation/closing and the resume's second page is sparse.
 - [x] The two other initial listings failed closed and produced no artifacts. Their unresolved outputs are not counted as successful drafting.
-- [ ] Owner review confirms that the actual IFOM letter follows the writing guidelines and that the unchanged CV is useful for this application. Personal-fit calibration, representative portfolio coverage, contact-discovery reliability, visual rendering, and hiring outcomes remain unknown.
+- [ ] Owner review confirms that the actual IFOM letter follows the writing guidelines and that the unchanged CV is useful for this application. Personal-fit calibration, representative portfolio coverage, contact-discovery reliability, and hiring outcomes remain unknown.
 
 Validation:
 
 - [x] Focused workflow, public recruitment-inbox, prompt, and AI-title filter regressions pass.
 - [x] Full repository suite, Ruff, byte-compilation, JavaScript syntax, and `git diff --check` after this M5 change pass; details are in Final integration validation below.
+- [x] Rendered the latest live DOCX files through hidden Microsoft Word PDF export and Poppler, then inspected the cover-letter page and both resume pages. Presentation gaps are recorded above and in the evaluation report.
 - [x] All known OpenAI and Jev usage rows for the live evaluations are settled; the evaluation report records the sanitized totals and Clue-local controls.
 
 Documentation updates:
@@ -300,8 +301,9 @@ Expected Git checkpoint: Validate and push the code, tests, decision record, pla
 - [x] Writing quality and portfolio representativeness limits are recorded. The live packet is specific and Jev-grounded but includes repeated relevance bridges; one attempt to replace them with transfer claims was rolled back after Jev returned unresolved. Broader voice acceptance still requires owner review.
 - [ ] The owner reviews the exact generated packet against the writing rubric before approving it for external use. This review remains separate from the synthetic sample feedback.
 - [x] Synthetic live Jev reports distinguish model behavior from assistant-authored labels. The current provider/document run passed its mechanical checks and settled its local usage ledger.
-- [x] The original single-listing pilot completed Jev claim support, final-resume approval, and packet-quality checks after output-limit and local-budget tuning. Its DOCX artifacts were reopened structurally; visual rendering was not available. Later M5 tested two additional postings and four IFOM retries.
+- [x] The original single-listing pilot completed Jev claim support, final-resume approval, and packet-quality checks after output-limit and local-budget tuning. Its DOCX artifacts were reopened structurally; visual rendering for that earlier packet remains unverified. Later M5 tested two additional postings and four IFOM retries, and visually rendered the latest `.16` packet.
 - [x] Source-of-truth docs, ADR, and roadmap agree with current synthetic evidence and the remaining acceptance gates; no changelog exists.
+- [x] Pushed milestone branch `codex/plan-020-three-listing-evaluation` and opened [PR #4](https://github.com/jmsb505/clue-ai/pull/4). GitHub reports it mergeable but returned no commit status checks or PR workflow runs; local checks above are the available validation evidence. The PR remains open while owner review of the generated output is pending.
 
 ## Rollback / recovery
 
@@ -357,4 +359,4 @@ This entry supersedes earlier M4 status notes. The bounded pilot used one scored
 
 ## Completion evidence
 
-See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). Synthetic `SYN-02` passed its Jev, generation, artifact, usage, and visual gates. The owner-requested three-listing exploration kept all original Jev decisions unchanged; prompt `.16` produced the latest IFOM packet with 2/2 Jev-supported letter paragraphs, explicit final-CV approval, packet quality, and settled usage. The CV had zero bullet edits. Both DOCX files reopened structurally but have not been visually rendered; the packet remains in owner review. Personal-fit calibration, useful CV tailoring, repeatable contact research, hiring outcomes, and broad personal-voice acceptance remain unknown. Final repository validation and Git progression will be recorded after the M5 checks.
+See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). Synthetic `SYN-02` passed its Jev, generation, artifact, usage, and visual gates. The owner-requested three-listing exploration kept all original Jev decisions unchanged; prompt `.16` produced the latest IFOM packet with 2/2 Jev-supported letter paragraphs, explicit final-CV approval, packet quality, and settled usage. The CV had zero bullet edits. Both DOCX files were rendered with Word and Poppler and visually inspected; the letter lacks a greeting/closing and the resume's final page is sparse. The packet remains in owner review. Personal-fit calibration, useful CV tailoring, repeatable contact research, hiring outcomes, and broad personal-voice acceptance remain unknown. PR #4 is open; GitHub returned no status checks or PR workflow runs, and local validation passed.
