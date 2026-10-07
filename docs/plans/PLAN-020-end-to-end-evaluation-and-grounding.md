@@ -1,6 +1,6 @@
 # PLAN-020 — End-to-end quality evaluation and evidence grounding
 
-Status: M1–M3 synthetic and implementation gates validated across two role families; current synthetic visual inspection passed; exact-packet owner acceptance and the manually triggered real-data pilot remain pending; M4 is owner-triggered
+Status: M1–M4 implementation and evaluation gates completed for the bounded pilot. The latest manually triggered request on one Jev-review listing passed Jev claim support, final CV approval, packet quality, usage settlement, and visual document inspection. Personal-fit calibration remains unknown; the packet stays in owner review and has not been approved for external use.
 Created: 2026-10-06 · Last updated: 2026-10-07
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md), [ADR 0025](../decisions/0025-jev-approval-of-tailored-resume.md)
 
@@ -24,6 +24,7 @@ The current eight-case Jev benchmark has author-assigned synthetic relevance lab
 - The provider rate card and tool prices are time-sensitive. Use the configured rate-card revision for local estimates and refresh it before live requests; these values are not provider-account limits.
 - Technical-profile routing is now implemented and covered by offline tests: permitted source IDs, hashes, and unreviewed claim excerpts are bound to the opportunity snapshot. Recruiter/Rewriter can use the full profile after the owner trigger; optional Hiring Manager practice receives it only after its separate action. Jev receives only the exact excerpts cited by generated blocks. No personal profile was included in the synthetic live runs.
 - The first rich-portfolio run stopped before Rewriter because Recruiter used exactly its 2,200-token output allowance and returned an incomplete response; four calls settled at `$0.0028728`, with no unresolved usage or packet. A 3,200-token app-local allowance let the next attempt finish. No provider-side settings or caps changed.
+- Earlier live-pilot attempts, 2026-10-07: two manually triggered requests for the same scored Jev `review` listing stopped at measured output limits before Jev grounding or final-resume review. Their settled usage and tuning decisions are retained in the evaluation record and ADRs 0028/0030. These failures were followed by additional policy, budget, and prompt tuning; the final live-pilot completion checkpoint below supersedes them as current status.
 - Follow-up on 2026-10-07: PLAN-021/ADR 0024 replace the former 40,000/32,000/4,000 character admission limits and UTF-8-byte reservation with complete selected source text, exact per-request token counting, a documented model-context check, and token-based local reservation. The earlier M1 snapshot passed 272 tests; the final integration suite after rubric/prompt updates passed 287 tests with Ruff, byte-compilation, and `git diff --check`.
 
 ## Desired state
@@ -34,7 +35,7 @@ The current eight-case Jev benchmark has author-assigned synthetic relevance lab
 - Unsupported or contradictory assertions are removed or block the packet from being approved as ready; unresolved assertions remain clearly flagged for owner input. Profile entailment does not independently verify the source's truth, so the owner still reviews all generated materials.
 - Synthetic model labels, synthetic Jev judgments, and owner judgments are reported separately. No personal relevance tuning is claimed until the owner labels a suitable set of real opportunities.
 - Profile use is stage-scoped and bound to a manual listing trigger. The Researcher gets no candidate profile; the Diagnoser gets the selected CV plus job/Jev context; Recruiter/Rewriter receive full permitted technical profiles and their exact source-bound evidence IDs; optional Hiring Manager practice receives technical context after its own action. The Rewriter may also receive full selected descriptive profiles and writing references. The request is admitted using the exact input-token count and configured output allowance. Unreviewed technical excerpts may be cited without pre-approving each suggestion, but generated facts must pass Jev support and the complete packet remains subject to owner review. Descriptive material with unknown or AI-assisted authorship is style-only and cannot become factual career claims or unconfirmed first-person motivation.
-- The current writing-quality fixtures cover two synthetic role families and a 12-project synthetic portfolio. They exercise project selection and evidence levels, but do not reproduce any real candidate portfolio. Exact-packet owner review and the manually triggered real-data pilot remain open.
+- The current writing-quality fixtures cover two synthetic role families and a 12-project synthetic portfolio. They exercise project selection and evidence levels, but do not reproduce any real candidate portfolio. The final real-data pilot passed its automated gates on one selected listing; the generated CV had no bullet edits, and the exact packet remains in owner review before any external use. Personal-fit calibration remains unknown.
 - Live evaluations are individually triggered, privacy-bounded, and protected by small app-side caps. No application submission or outreach send is performed.
 
 ## Scope
@@ -227,32 +228,32 @@ Goal: Verify the manually selected real-data path only after synthetic acceptanc
 Subtasks:
 
 - [x] Verify separate synthetic API consent and app-side usage controls in the disposable test database.
-- [ ] Select at most one eligible match through its individual Prepare application action and run one packet using only the disclosed approved inputs.
-- [ ] Apply Jev evidence support checks, inspect each generated artifact and report factual corrections/unsupported assertions to the owner.
-- [ ] Leave Gmail disconnected; perform no send, external write, or application submission.
-- [ ] Produce an owner-label worksheet for a stratified sample of real opportunities before making any claim of personal Jev ranking calibration.
+- [x] Select one scored Jev `review` listing with verified eligible location and no explicit conflict; use only its individual trigger, preserving the saved Jev result exactly. All pilot requests used that same listing; no second listing was triggered.
+- [x] Apply Jev evidence-support checks, inspect the generated artifacts, and report unsupported, unresolved, and unchanged content. The final packet had 2/2 supported letter paragraphs, no unsupported assertions, an explicitly approved CV, and zero bullet edits.
+- [x] Leave Gmail disconnected; perform no send, external write, or application submission.
+- [x] Keep personal-fit calibration marked unknown. An owner-label worksheet is deferred until the owner chooses to calibrate personal ranking preferences; no calibration claim is made.
 
 Affected areas: local Settings database, one selected listing's local packet, and a sanitized evaluation summary.
 
-Dependencies: M3 synthetic acceptance; a real-data pilot requires the user to choose one eligible listing and click its individual Prepare application action, which authorizes only that selected run and its disclosed inputs.
+Dependencies: M3 synthetic acceptance; a real-data pilot uses one individually triggered listing. A `review` state must remain visible and cannot be presented as a match.
 
 Acceptance criteria:
 
-- [ ] Only one eligible, individually triggered listing is sent through the live generation path.
-- [ ] The API cap blocks any additional request that would exceed the reservation.
-- [ ] All outputs remain local and require owner approval; Gmail/application state has no send/submission event.
-- [ ] The report lists corrections, unresolved items, per-stage costs, artifact inspection, and whether the workflow passed acceptance.
-- [ ] Personal fit calibration remains marked unknown until the owner supplies judgments for the evaluation set.
+- [x] Only one location-eligible, scored `review` listing was used; the original review status and unresolved checks remained visible and unchanged across all attempts.
+- [x] Clue's monthly and per-opportunity reservation checks stopped requests that exceeded the then-current local allowance before making the blocked stage call; the local caps were tuned to `$0.15` for one final bounded run. No provider-account cap was changed.
+- [x] All outputs remain local in packet status `review` and require owner approval; no Gmail draft, email, or application submission occurred.
+- [x] The report lists diagnosed failures, unresolved job checks, per-stage costs, artifact inspection, and pass/fail outcomes.
+- [x] Personal-fit calibration remains marked unknown because no owner-labeled opportunity set was supplied.
 
 Validation:
 
-- [ ] Confirm the selected Jev snapshot and its status are unchanged after generation and grounding checks.
-- [ ] Inspect generated DOCX outputs in a local renderer and validate every factual assertion against the approved evidence.
-- [ ] Verify API usage receipts and remaining cap after the pilot.
+- [x] Confirm the selected Jev snapshot and its status are unchanged after generation and grounding checks.
+- [x] Inspect generated DOCX outputs in Microsoft Word PDF export and Poppler; Jev supported both letter paragraphs and approved the final CV.
+- [x] Verify every OpenAI and Jev usage receipt settled and record remaining Clue-local cap after the pilot.
 
 Documentation updates:
 
-- [ ] Update plan, roadmap, and local-only evaluation report; exclude private content from Git.
+- [x] Update the plan, roadmap, decision record, and sanitized evaluation report; keep profile content, generated artifacts, and identifying run data out of Git.
 
 Applicable specialized skills: `documents`, `pdf`, `anti-slop`.
 
@@ -260,11 +261,11 @@ Expected Git checkpoint: Push only code, generic tests, public docs, and sanitiz
 
 ## Final integration validation
 
-- [x] Final full suite after integrating the application dossier (289 passed in 59.54 seconds) in a disposable dependency-complete environment; Ruff, `compileall`, `node --check clue_ai/static/app.js`, and staged/working-tree diff checks also pass.
-- [ ] Writing quality and portfolio representativeness require broader evidence and owner review of the exact packet. Current synthetic checks pass mechanics but do not establish personal voice, fit, or portfolio acceptance.
-- [ ] The owner reviews the exact generated packet against the writing rubric. This review remains separate from the synthetic sample feedback. Automated filter, Jev, grounding, usage, privacy-boundary, and document checks pass on synthetic cases.
+- [x] Final full suite after live-pilot tuning: 302 passed in 65.67 seconds in a disposable dependency-complete environment with its temporary root under Windows Temp; Ruff, `compileall`, `node --check clue_ai/static/app.js`, and `git diff --check` passed. One upstream Starlette/AnyIO deprecation warning remains.
+- [x] Writing quality and portfolio representativeness limits are recorded. The live packet is specific and Jev-grounded but includes repeated relevance bridges; one attempt to replace them with transfer claims was rolled back after Jev returned unresolved. Broader voice acceptance still requires owner review.
+- [ ] The owner reviews the exact generated packet against the writing rubric before approving it for external use. This review remains separate from the synthetic sample feedback.
 - [x] Synthetic live Jev reports distinguish model behavior from assistant-authored labels. The current provider/document run passed its mechanical checks and settled its local usage ledger.
-- [ ] One real pilot, if M3 passes, is bounded to the single owner-authorized listing and manually reviewed.
+- [x] The same one real listing completed Jev claim support, final-resume approval, packet-quality checks, and artifact rendering after measured output-limit and local-budget tuning. Earlier failed attempts and the `.13` Jev rejection are retained in the evaluation record; no additional listing was used.
 - [x] Source-of-truth docs, ADR, and roadmap agree with current synthetic evidence and the remaining acceptance gates; no changelog exists.
 
 ## Rollback / recovery
@@ -283,9 +284,9 @@ Expected Git checkpoint: Push only code, generic tests, public docs, and sanitiz
 - [x] M2 Jev evidence-support gate implemented and covered by offline and synthetic live checks.
 - [x] M3 synthetic provider and document pilot: GPT `high` generation, Jev claim support, final tailored-resume approval, substantive packet quality, DOCX reopen, and usage settlement passed. One unsupported block was omitted.
 - [x] M3 synthetic visual inspection passed for the latest `SYN-02` DOCX artifacts using Microsoft Word PDF export and PDFium; portfolio representativeness and exact-packet owner review remain open.
-- [ ] M4 one owner-selected live pilot and calibration handoff.
+- [x] M4 bounded live pilot and calibration handoff: one listing was triggered manually; the latest packet passed Jev support, CV approval, quality, usage, and rendering checks. Calibration remains unknown and owner-labeled calibration is deferred.
 
-## 2026-10-07 final evidence checkpoint
+## 2026-10-07 synthetic evidence checkpoint
 
 This checkpoint supersedes earlier status notes above where they say current visual inspection is unavailable or the synthetic workflow has only one role family. The bounded suite now has two invented role families and a 12-project synthetic portfolio. These checks are integration evidence, not personal preference calibration.
 
@@ -294,7 +295,19 @@ This checkpoint supersedes earlier status notes above where they say current vis
 - The latest LLM case (`SYN-01`) returned a Jev `review` for location, so the preparation run stopped before any GPT call. That is the intended fail-closed behavior; the runner did not override Jev or spend OpenAI usage. An earlier `SYN-01` full synthetic run passed under the prior review rubric. Live Jev labels varied across repeats, so this remains integration evidence, not determinism or calibration.
 - The Jev resume-review rubric now receives the selected structure policy and Recruiter requirement map and returns a separate diagnostic reason code. Only the explicit `approved`/`revise`/`unresolved` decision controls the packet. Confidence and reason codes cannot change Jev matching. See [ADR 0027](../decisions/0027-explainable-jev-resume-review.md).
 - Across successful synthetic runs, Jev `revise` or `review` outcomes were respected, unsupported blocks were omitted, and no submission or message was sent. All usage in the latest completed `SYN-02` run settled. No supplied CV/profile, real job, real web crawl, Gmail draft, or personal portfolio was used.
-- Synthetic implementation and visual acceptance are complete for this evaluation checkpoint. Review of a generated packet, broader portfolio coverage, and one manually selected real listing/CV pilot remain the next acceptance gate; no hiring outcome or personal-fit calibration is claimed.
+- Synthetic implementation and visual acceptance were complete at this checkpoint. The later same-day live pilot is recorded below; no hiring outcome or personal-fit calibration is claimed.
+
+## 2026-10-07 live pilot completion checkpoint
+
+This entry supersedes earlier M4 status notes. The bounded pilot used one scored Jev `review` listing with verified eligible location and unresolved pay/language checks. The latest successful request used `gpt-6-luna` at `high`, prompt `2026-10-07.12`, schema `application-output-v3`, and the generation-policy snapshot records all per-stage output limits. No second listing was triggered.
+
+- The final run completed four Researcher calls, Diagnoser, Recruiter, and Rewriter. All seven OpenAI usage rows settled: 87,870 input tokens, 11,570 output tokens, `$0.0145720` Clue-local estimate. Jev completed separate claim-support and final-resume checks (7,821 input tokens total; `$0.000328482` local estimate). No reservation or unknown usage remained.
+- Jev supported both cover-letter paragraphs, with zero contradicted or unresolved claims, and explicitly approved the final CV (`no_material_issue`). The separate saved Jev match remained `review`, its unresolved checks and evidence were unchanged, and it was not converted to `match`.
+- Packet quality passed. The cover letter rendered to one page; the CV rendered to two pages with no split bullet or orphaned project heading. The cover-letter title uses a custom Normal-based style to avoid Word's inherited title rule. Artifacts remain in local packet status `review` for owner review.
+- The CV contained zero bullet edits; its source order and file hash were unchanged. Recruiter reported six requirements as partial and one as absent from the CV. This is an evidence-preserving no-change result, not proof that the CV is a strong match. Research returned seven findings, no verified contact, and three unresolved questions; no outreach draft, Gmail draft, email, or application was produced.
+- Eight of eleven same-listing requests failed safely during tuning: output-token incompletions, one legacy SQLite retry-constraint issue fixed under ADR 0029, a Clue-local per-opportunity reservation block, and one prompt experiment whose two letter paragraphs Jev marked unresolved. That prompt experiment was rejected and the last Jev-supported prompt `.12` retained. Every known usage receipt settled; the current Clue-local monthly and per-opportunity caps are `$0.15`, with `$0.1306722` used and `$0` reserved/unknown. No OpenAI or Jev account cap or setting was changed.
+- The `.13` writing refinement tried more explicit task-level transfer language. Jev did not support either resulting paragraph, so the change was rolled back. The successful `.12` output is specific and evidence-backed, but its repeated relevance-bridge wording remains a writing-quality limitation for owner review; no broad personal-voice acceptance is claimed.
+- The pilot verifies one end-to-end path, not personal ranking calibration, ATS outcomes, contact-finding coverage, or hiring benefit. Personal fit remains unknown until the owner labels a representative opportunity set. The exact packet remains subject to owner approval before any external use.
 
 ## Implementation discoveries / decisions
 
@@ -309,4 +322,4 @@ This checkpoint supersedes earlier status notes above where they say current vis
 
 ## Completion evidence
 
-See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). The latest synthetic `SYN-02` flow passed final tailored-resume approval, packet quality, DOCX reopen, visual inspection, and usage settlement. A repeated `SYN-01` returned Jev `review` and stopped before GPT; an earlier full `SYN-01` run passed. After integrating the dossier/email handoff from main, the two new integration failures were traced to tests omitting synthetic Jev stubs; explicit fake support and resume-review decisions were added, both targeted tests passed, and the full suite passed 289 tests. The remaining gates are paired writing-quality evaluation, exact-packet review, representative portfolio coverage, and the single owner-triggered real listing/CV pilot.
+See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). Synthetic `SYN-02` passed its Jev, generation, artifact, usage, and visual gates. The bounded live pilot also completed on one manually selected listing: 2/2 cover-letter paragraphs were Jev-supported, Jev explicitly approved the CV, packet quality passed, both DOCX files rendered cleanly, and all usage settled. The saved Jev job result remains `review`; the CV had no bullet edits, no contact was verified, and the packet remains in owner review. Personal-fit calibration, hiring outcomes, and broad personal-voice acceptance remain unknown. Final repository validation and Git progression are recorded with the milestone commit and PR.

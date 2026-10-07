@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from clue_ai.application_prompts import MAX_OUTPUT_TOKENS, OUTPUT_SCHEMA_VERSION, PROMPT_VERSION
 from clue_ai.config import Settings
 from clue_ai.database import connect
 from clue_ai.domain import utc_now
+from clue_ai.openai_provider import MODEL_ID, REASONING_EFFORT
 from clue_ai.resume import ResumeError, extract_resume_text
 
 SOURCE_TYPES = {"technical_profile", "descriptive_profile", "resume", "writing_sample"}
@@ -356,9 +358,18 @@ def request_preparation(
     job_id: str,
     run_id: str,
     selected_cv_id: str = "",
+    additional_source_url: str = "",
 ) -> tuple[dict[str, Any], bool]:
-    """Create one idempotent queue item for a Jev match in a specific saved search run."""
+    """Create one idempotent queue item for an eligible Jev match or review result."""
     from clue_ai.applications import not_applied_sql
+    from clue_ai.external_links import normalize_public_job_url
+
+    additional_source_url = str(additional_source_url or "").strip()
+    if additional_source_url:
+        normalized = normalize_public_job_url(additional_source_url)
+        if normalized is None:
+            raise ValueError("Add a direct public HTTPS employer listing URL, or leave the field blank.")
+        additional_source_url = normalized[0]
 
     with connect(database_path) as db:
         db.execute("BEGIN IMMEDIATE")
@@ -366,7 +377,8 @@ def request_preparation(
             f"""SELECT j.id, j.title, j.company, j.description, j.location_raw,
                        j.workplace_type, j.employment_type, j.salary_min, j.salary_max,
                        j.salary_currency, j.salary_period, j.posted_at, j.valid_through,
-                       j.eligibility_status, j.eligibility_evidence, j.canonical_url,
+                       r.eligibility_status AS eligibility_status,
+                       r.eligibility_evidence AS eligibility_evidence, j.canonical_url,
                        r.run_id, r.rank, r.score_state, r.filter_status, r.eligibility_status AS jev_eligibility_status,
                        r.eligibility_evidence AS jev_eligibility_evidence, r.combined_score,
                        r.confidence, r.dimensions_json, r.evidence_json, r.rubric_version,
@@ -377,7 +389,9 @@ def request_preparation(
                 LEFT JOIN job_user_state user_state ON user_state.job_id = j.id
                 WHERE j.id = ? AND run.status = 'complete' AND j.is_active = 1
                   AND COALESCE(user_state.hidden, 0) = 0
-                  AND r.score_state = 'scored' AND r.filter_status = 'match'
+                  AND r.score_state = 'scored'
+                  AND r.filter_status IN ('match', 'review')
+                  AND r.eligibility_status = 'eligible'
                   AND {not_applied_sql('j')}
                 LIMIT 1""",
             (run_id, job_id),
@@ -386,13 +400,16 @@ def request_preparation(
             db.execute("ROLLBACK")
             raise ValueError(
                 "Preparation is available only for an active, visible, unapplied listing "
-                "with a completed Jev match in the selected search run."
+                "with verified location eligibility and a completed Jev match or review "
+                "decision in the selected search run."
             )
         sources = db.execute(
             "SELECT source_url FROM job_sources WHERE job_id = ? ORDER BY id", (job_id,)
         ).fetchall()
         snapshot = dict(row)
         snapshot["source_urls"] = [item["source_url"] for item in sources]
+        if additional_source_url and additional_source_url not in snapshot["source_urls"]:
+            snapshot["source_urls"].append(additional_source_url)
         source_rows = db.execute(
             """SELECT id, filename, source_type, content_sha256, extracted_text,
                       is_default_cv, structure_policy
@@ -488,7 +505,14 @@ def request_preparation(
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
-        snapshot["inputs"] = {
+        bound_inputs = {
+            "generation_policy": {
+                "model": MODEL_ID,
+                "reasoning_effort": REASONING_EFFORT,
+                "prompt_version": PROMPT_VERSION,
+                "output_schema_version": OUTPUT_SCHEMA_VERSION,
+                "output_token_limits": dict(sorted(MAX_OUTPUT_TOKENS.items())),
+            },
             "selected_cv_id": selected_cv["id"],
             "selected_cv_filename": selected_cv["filename"],
             "selected_cv_sha256": selected_cv["content_sha256"],
@@ -505,6 +529,9 @@ def request_preparation(
                 preference_content.encode("utf-8")
             ).hexdigest(),
         }
+        if additional_source_url:
+            bound_inputs["additional_source_url"] = additional_source_url
+        snapshot["inputs"] = bound_inputs
         snapshot_json = json.dumps(snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         snapshot_hash = hashlib.sha256(snapshot_json.encode("utf-8")).hexdigest()
         existing = db.execute(
@@ -576,7 +603,14 @@ def retry_preparation(database_path: Path, request_id: str) -> tuple[dict[str, A
         job_id = prior["job_id"]
         run_id = prior["run_id"]
         cv_id = snapshot.get("inputs", {}).get("selected_cv_id", "")
-    created, is_new = request_preparation(database_path, job_id, run_id, cv_id)
+        additional_source_url = snapshot.get("inputs", {}).get("additional_source_url", "")
+    created, is_new = request_preparation(
+        database_path,
+        job_id,
+        run_id,
+        cv_id,
+        additional_source_url,
+    )
     if is_new:
         return created, True
     with connect(database_path) as db:

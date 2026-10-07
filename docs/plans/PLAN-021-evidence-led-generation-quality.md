@@ -1,6 +1,6 @@
 # PLAN-021 — Evidence-led generation quality and context budgeting
 
-Status: M1 complete; M2 synthetic pipeline checks pass for two role families, but paired baseline and representative portfolio/owner rubric acceptance remain open; M3 Jev-approved packet gates pass on synthetic fixtures, while real public-research and manually triggered real-data validation remain open
+Status: M1 complete; M2 synthetic pipeline checks pass for two role families, but paired baseline and representative portfolio/owner rubric acceptance remain open; M3 Jev-approved packet gates pass on synthetic fixtures; two live attempts on one listing reached the public Researcher page but failed on measured output limits before grounding or packet creation
 Created: 2026-10-07 · Last updated: 2026-10-07
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [PLAN-020](PLAN-020-end-to-end-evaluation-and-grounding.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md)
 
@@ -237,7 +237,7 @@ Expected Git checkpoint: Commit on the milestone branch and merge to main only a
 - [x] M2 versioned writing rubric and meaningful-artifact gate are implemented; latest synthetic packet passed structural/quality gates.
 - [ ] M2 broader portfolio and career-level generation coverage, paired per-agent quality comparison, and exact-packet owner review remain open; two role families and exact visual inspection are complete.
 - [x] M3 explicit Jev approval of the final tailored resume and complete-packet gates passed the latest synthetic integration.
-- [ ] M3 manually selected real listing/CV pilot and exact-packet owner review remain open.
+- [x] M3 bounded real listing/CV validation passed automated gates on one manually triggered listing: Jev supported 2/2 cover-letter paragraphs, explicitly approved the final CV, and the packet passed quality, usage, and rendered-document checks. The saved listing remained `review`; no CV bullet was edited and no contact was verified.
 
 ## Implementation discoveries / decisions
 
@@ -248,7 +248,7 @@ Expected Git checkpoint: Commit on the milestone branch and merge to main only a
 
 ## Completion evidence
 
-M1 completion evidence: exact token preflight, context admission, spend reservation, output-ceiling tuning, and regression tests passed. M2/M3 synthetic evidence includes two role families, a 12-project portfolio, per-agent checks, Jev claim support and tailored-resume decisions, held-out Diagnoser/Hiring Manager challenges, and DOCX reopen plus visual inspection. The latest `SYN-02` run passed with all generated factual blocks supported and the resume explicitly approved by Jev. A repeated `SYN-01` correctly stopped on Jev `review` before GPT generation; an earlier full `SYN-01` run passed. This variance is reported rather than tuned away. The fixed support fixture scored 12/12 against authored labels, not owner judgments. The exact packet has not been human-rated, the synthetic portfolio is only a test fixture, and the real-data pilot awaits its individual trigger.
+M1 completion evidence: exact token preflight, context admission, spend reservation, output-ceiling tuning, and regression tests passed. M2/M3 synthetic evidence includes two role families, a 12-project portfolio, per-agent checks, Jev claim support and tailored-resume decisions, held-out Diagnoser/Hiring Manager challenges, and DOCX reopen plus visual inspection. The latest `SYN-02` run passed with all generated factual blocks supported and the resume explicitly approved by Jev. A repeated `SYN-01` correctly stopped on Jev `review` before GPT generation; an earlier full `SYN-01` run passed. This variance is reported rather than tuned away. The fixed support fixture scored 12/12 against authored labels, not owner judgments. The bounded live pilot on one selected listing passed Jev support, final CV approval, packet quality, usage settlement, and visual inspection. The original Jev result remained `review`, and personal-fit calibration remains unknown. The exact packet still needs owner voice/style rating; broader portfolio and paired quality comparison remain open.
 
 ## 2026-10-07 final tuning checkpoint
 
@@ -260,4 +260,4 @@ Evidence-backed changes retained in this checkpoint:
 - Diagnoser output is filtered through the same exact-reference validator used by the adversarial challenge; fabricated IDs are rejected and measured. Hiring Manager practice now copies questions and answers exactly and returns a scored assessment for each answer.
 - Exact current `SYN-02` DOCX files were rendered by exporting through Microsoft Word and rasterizing with PDFium. Both were one page and visually clean. The canonical renderer remains unavailable on this Windows host; the verified fallback is documented.
 
-This completes the available synthetic integration checks for M1–M3, not the broader quality acceptance or M4. Paired baseline scoring, broader career-level generation, exact-packet owner review, representative portfolio coverage, and a real public-research run remain open. M4 awaits the owner’s per-listing trigger with an eligible listing and selected CV. No personal profile data was sent during these evaluations.
+This historical checkpoint completed the available synthetic integration checks for M1–M3. It was followed by the bounded M4 live pilot recorded in PLAN-020, where one individually triggered listing passed Jev grounding, final CV approval, packet quality, usage settlement, and rendered-document checks. Paired baseline scoring, broader career-level generation, representative portfolio coverage, and exact-packet owner voice review remain open. The original Jev result stayed `review`; no email or application action occurred.

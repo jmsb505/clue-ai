@@ -1015,8 +1015,15 @@ def create_app(
         form = dict(await request.form())
         run_id = str(form.get("run_id") or "")
         selected_cv_id = str(form.get("selected_cv_id") or "")
+        additional_source_url = str(form.get("additional_source_url") or "")
         try:
-            record, created = request_preparation(db_path, job_id, run_id, selected_cv_id)
+            record, created = request_preparation(
+                db_path,
+                job_id,
+                run_id,
+                selected_cv_id,
+                additional_source_url,
+            )
         except ValueError as exc:
             return RedirectResponse(
                 f"/searches/{run_id}?{urlencode({'notice': str(exc)})}",
@@ -1067,6 +1074,17 @@ def create_app(
         record = get_preparation(db_path, request_id)
         if record is None:
             raise HTTPException(status_code=404, detail="Preparation request not found.")
+        filter_review_items = []
+        try:
+            dimensions = json.loads(record["snapshot"].get("dimensions_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            dimensions = {}
+        for key, item in dimensions.items():
+            if key.startswith("filter_") and isinstance(item, dict) and item.get("status") == "review":
+                check_key = key.removeprefix("filter_")
+                filter_review_items.append(
+                    {"label": FILTER_CHECK_LABELS.get(check_key, check_key.replace("_", " ").title())}
+                )
         from clue_ai.database import connect
 
         with connect(db_path) as db:
@@ -1133,6 +1151,7 @@ def create_app(
             {
                 "active_page": "applications",
                 "preparation": record,
+                "filter_review_items": filter_review_items,
                 "practice_sessions": list_practice_sessions(db_path, request_id),
                 "packet": packet,
                 "packet_history": packet_history,
