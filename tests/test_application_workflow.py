@@ -30,6 +30,7 @@ from clue_ai.application_prep import (
 from clue_ai.application_prompts import (
     CRAWL_TOOL,
     OUTPUT_SCHEMA_VERSION,
+    OUTPUT_SCHEMAS,
     PROMPT_VERSION,
     ROLE_PROMPTS,
 )
@@ -43,6 +44,8 @@ from clue_ai.application_workflow import (
     _filter_diagnoser_references,
     _get_bound_inputs,
     _grounding_assertions,
+    _looks_like_heading,
+    _looks_like_subheading,
     _parse_stage_result,
     _payload,
     _research_context,
@@ -96,6 +99,7 @@ from clue_ai.web import create_app
 
 ORIGIN = {"Origin": "http://127.0.0.1"}
 JOB_URL = "https://jobs.example.org/openings/software-engineer"
+OFFICIAL_SOURCE_URL = "https://careers.example.org/jobs/software-engineer-intern"
 
 
 def _approve_synthetic_tailored_resume(*_args, **_kwargs):
@@ -134,7 +138,7 @@ def synthetic_claim_support(monkeypatch):
     )
 
 
-def _save_match(database_path: Path) -> str:
+def _save_match(database_path: Path, *, filter_status="match") -> str:
     save_jobs(database_path, [make_job(url=JOB_URL)])
     with connect(database_path) as db:
         job_id = db.execute("SELECT id FROM jobs LIMIT 1").fetchone()["id"]
@@ -143,7 +147,7 @@ def _save_match(database_path: Path) -> str:
     save_run_results(
         database_path,
         "run-workflow",
-        [{"id": job_id, "filter_status": "match", "eligibility_status": "eligible"}],
+        [{"id": job_id, "filter_status": filter_status, "eligibility_status": "eligible"}],
         score_state="scored",
     )
     return job_id
@@ -177,6 +181,8 @@ def _create_preparation(
     technical_text="Implemented reliable Python services and a typed local workflow.\n",
     descriptive_text="I prefer direct, modest writing and collaborative technical teams.\n",
     descriptive_authorship="owner_written",
+    filter_status="match",
+    additional_source_url="",
 ):
     technical = add_source(
         database_path,
@@ -234,8 +240,14 @@ def _create_preparation(
         b"This synthetic sample is not selected and must stay out of prompts.\n",
         authorship_label="owner_written",
     )
-    job_id = _save_match(database_path)
-    record, created = request_preparation(database_path, job_id, "run-workflow", cv["id"])
+    job_id = _save_match(database_path, filter_status=filter_status)
+    record, created = request_preparation(
+        database_path,
+        job_id,
+        "run-workflow",
+        cv["id"],
+        additional_source_url,
+    )
     assert created
     return get_preparation(database_path, record["id"]), cv, technical, descriptive, sample, claim_id, resume_text
 
@@ -254,9 +266,12 @@ def _enable_synthetic_openai(settings: Settings, database_path: Path) -> Setting
 
 
 class FakeCrawler:
+    instances: ClassVar[list[FakeCrawler]] = []
+
     def __init__(self, _settings, allowed_urls):
         self.allowed_urls = set(allowed_urls)
         self.pages = {}
+        self.__class__.instances.append(self)
 
     def crawl(self, url, research_question):
         page = {
@@ -301,7 +316,7 @@ class FakePreparationClient:
         assert payload["model"] == MODEL_ID
         assert payload["reasoning"]["effort"] == REASONING_EFFORT
         assert payload["store"] is False
-        stage = payload["text"]["format"]["name"].removeprefix("clue_").removesuffix("_v2")
+        stage = payload["text"]["format"]["name"].removeprefix("clue_").removesuffix("_v3")
         prompt_input = payload["input"]
         if stage == "researcher" and payload.get("tools"):
             assert payload["tools"] == [CRAWL_TOOL]
@@ -417,12 +432,14 @@ class FakePreparationClient:
                         {
                             "text": "I am interested in the role's Python service work and can bring experience building reliable local workflows.",
                             "claim_ids": [claim_id],
+                            "research_finding_ids": [],
                             "source_urls": [JOB_URL],
                             "preference_source_ids": [],
                         },
                         {
                             "text": "I have also built small local services with clear evidence and careful test boundaries, which fits the role's focus on dependable Python systems.",
                             "claim_ids": [claim_id],
+                            "research_finding_ids": ["RF01"],
                             "source_urls": [JOB_URL],
                             "preference_source_ids": [],
                         }
@@ -568,7 +585,7 @@ def test_owner_trigger_routes_full_descriptive_context_and_approved_claims_to_re
     stage_inputs = {}
     profile_prompt_contexts = {}
     for payload in calls:
-        stage = payload["text"]["format"]["name"].removeprefix("clue_").removesuffix("_v2")
+        stage = payload["text"]["format"]["name"].removeprefix("clue_").removesuffix("_v3")
         stage_inputs.setdefault(stage, []).append(json.dumps(payload["input"], ensure_ascii=False))
         if stage in {"recruiter", "rewriter"}:
             profile_prompt_contexts[stage] = json.loads(payload["input"][0]["content"])[
@@ -699,11 +716,11 @@ def test_long_selected_profiles_are_passed_in_full_when_the_model_context_fits(s
     calls = FakePreparationClient.instances[-1].calls
     recruiter = next(
         payload for payload in calls
-        if payload["text"]["format"]["name"] == "clue_recruiter_v2"
+        if payload["text"]["format"]["name"] == "clue_recruiter_v3"
     )
     rewriter = next(
         payload for payload in calls
-        if payload["text"]["format"]["name"] == "clue_rewriter_v2"
+        if payload["text"]["format"]["name"] == "clue_rewriter_v3"
     )
     recruiter_context = json.loads(recruiter["input"][0]["content"])
     rewriter_context = json.loads(rewriter["input"][0]["content"])
@@ -756,16 +773,28 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     assert packet["output"]["research"]["contacts"][0]["public_email"] == "alex@example.org"
     assert Path(cv["file_path"]).read_text(encoding="utf-8") == original_resume
     resume_artifact = next(item for item in packet["artifacts"] if item["artifact_type"] == "resume")
-    paragraphs = [paragraph.text for paragraph in Document(resume_artifact["file_path"]).paragraphs]
+    resume_doc = Document(resume_artifact["file_path"])
+    paragraphs = [paragraph.text for paragraph in resume_doc.paragraphs]
     assert paragraphs[:2] == ["Experience", "Built reliable Python services for Example Labs."]
     assert paragraphs.index("Education") > paragraphs.index("Experience")
+    assert resume_doc.styles["Normal"].font.name == "Arial"
+    assert resume_doc.styles["Normal"].font.size.pt == 10.5
+    experience_heading = next(p for p in resume_doc.paragraphs if p.text == "Experience")
+    assert experience_heading.style.name == "Heading 1"
+    assert experience_heading.paragraph_format.keep_with_next is True
+    assert resume_doc.paragraphs[1].paragraph_format.keep_together is True
     cover_letter_artifact = next(
         item for item in packet["artifacts"] if item["artifact_type"] == "cover_letter"
     )
     cover_letter_doc = Document(cover_letter_artifact["file_path"])
     cover_letter_paragraphs = [paragraph.text for paragraph in cover_letter_doc.paragraphs]
     assert cover_letter_paragraphs[0] == "Application for Software Engineer"
-    assert cover_letter_doc.paragraphs[0].style.name == "Heading 1"
+    cover_letter_title_style = cover_letter_doc.styles["Clue Cover Letter Title"]
+    assert cover_letter_doc.paragraphs[0].style.name == "Clue Cover Letter Title"
+    assert cover_letter_title_style.base_style.name == "Normal"
+    assert b"w:pBdr" not in cover_letter_title_style._element.xml.encode()
+    assert cover_letter_title_style.font.color.rgb == (0, 0, 0)
+    assert cover_letter_title_style.font.underline is False
     assert "Python service work" in cover_letter_paragraphs[1]
     outreach_artifact = next(
         item for item in packet["artifacts"] if item["artifact_type"] == "outreach_draft"
@@ -841,6 +870,48 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
         output.write(b"tampered")
     with pytest.raises(ValueError, match="changed after approval"):
         verify_packet_approval(database, enabled, packet_id)
+
+
+def test_review_snapshot_can_finish_with_jev_approval_without_mutating_match_status(settings, database):
+    record, *_ = _create_preparation(
+        settings,
+        database,
+        filter_status="review",
+        additional_source_url=OFFICIAL_SOURCE_URL,
+    )
+    enabled = _enable_synthetic_openai(settings, database)
+    FakePreparationClient.instances.clear()
+    FakeCrawler.instances.clear()
+
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+        tailored_resume_reviewer=_approve_synthetic_tailored_resume,
+    )
+
+    completed = get_preparation(database, record["id"])
+    with connect(database) as db:
+        saved_status = db.execute(
+            "SELECT filter_status FROM search_results WHERE run_id = ? AND job_id = ?",
+            ("run-workflow", record["job_id"]),
+        ).fetchone()["filter_status"]
+        application_count = db.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+    packet = get_packet(database, packet_id)
+
+    assert completed["state"] == "review"
+    assert completed["snapshot"]["filter_status"] == "review"
+    assert saved_status == "review"
+    assert packet["output"]["jev_tailored_resume_review"]["status"] == "approved"
+    assert packet["output"]["quality_check"]["status"] == "passed"
+    assert application_count == 0
+    assert OFFICIAL_SOURCE_URL in FakeCrawler.instances[-1].allowed_urls
 
 
 def test_unsupported_or_unresolved_blocks_are_omitted_before_documents(settings, database):
@@ -954,6 +1025,7 @@ def test_saved_job_listing_is_grounding_for_role_facts_only(settings):
             {
                 "text": "The role asks for Python and PyTorch experience.",
                 "claim_ids": [],
+                "research_finding_ids": [],
                 "source_urls": [JOB_URL],
             }
         ],
@@ -997,9 +1069,10 @@ def test_saved_job_listing_is_grounding_for_role_facts_only(settings):
     unsupported = {**rewrite, "cover_letter_paragraphs": [{
         "text": "The role asks for Python and PyTorch experience.",
         "claim_ids": [],
+        "research_finding_ids": [],
         "source_urls": ["https://unverified.example/role"],
     }]}
-    with pytest.raises(OpenAIProviderError, match="unverified research source"):
+    with pytest.raises(OpenAIProviderError, match="exact research finding ID"):
         _validate_rewrite(
             unsupported,
             "cv-synthetic",
@@ -1012,10 +1085,100 @@ def test_saved_job_listing_is_grounding_for_role_facts_only(settings):
         )
 
 
+def test_cover_letter_grounding_binds_exact_research_findings_not_every_fact_on_page():
+    research = {
+        "findings": [
+            {
+                "topic": "unrelated public fact",
+                "fact": "The employer operates several offices.",
+                "source_url": JOB_URL,
+                "quote": "Several offices",
+            },
+            {
+                "topic": "relevant public fact",
+                "fact": "The team builds Python services.",
+                "source_url": JOB_URL,
+                "quote": "builds Python services",
+            },
+        ],
+        "contacts": [],
+    }
+    context_findings = _research_context(research)["findings"]
+    assert [item["id"] for item in context_findings] == ["RF01", "RF02"]
+
+    paragraph = {
+        "text": "My documented Python service work is relevant to the team's Python services.",
+        "claim_ids": ["profile-claim"],
+        "research_finding_ids": ["RF02"],
+        "source_urls": [JOB_URL],
+        "preference_source_ids": [],
+    }
+    rewrite = {
+        "selected_cv_id": "cv-synthetic",
+        "resume_line_order": ["L0001"],
+        "resume_bullet_edits": [],
+        "cover_letter_paragraphs": [paragraph],
+        "application_answers": [],
+        "outreach_drafts": [],
+    }
+    _validate_rewrite(
+        rewrite,
+        "cv-synthetic",
+        {"L0001": "Experience"},
+        {"profile-claim"},
+        research,
+        [],
+        "preserve",
+        job_source_url=JOB_URL,
+        permitted_profile_claim_ids={"profile-claim"},
+    )
+    assertions = _grounding_assertions(
+        rewrite,
+        [],
+        research,
+        job_context={"canonical_url": JOB_URL, "description": "Build Python services."},
+        technical_profile_sources=[
+            {
+                "source_id": "technical-profile",
+                "evidence": [
+                    {
+                        "id": "profile-claim",
+                        "evidence_excerpt": "Documented Python service work.",
+                        "review_status": "unreviewed",
+                    }
+                ],
+            }
+        ],
+    )
+    evidence = assertions[0]["evidence"]
+    assert [item["source_type"] for item in evidence] == [
+        "owner_provided_technical_profile",
+        "verified_public_source",
+        "saved_job_listing",
+    ]
+    assert evidence[1]["source_id"] == "RF02"
+    assert "several offices" not in evidence[1]["text"].casefold()
+
+    paragraph["research_finding_ids"] = ["RF99"]
+    with pytest.raises(OpenAIProviderError, match="unknown research finding"):
+        _validate_rewrite(
+            rewrite,
+            "cv-synthetic",
+            {"L0001": "Experience"},
+            {"profile-claim"},
+            research,
+            [],
+            "preserve",
+            job_source_url=JOB_URL,
+            permitted_profile_claim_ids={"profile-claim"},
+        )
+
+
 def test_rewriter_missing_role_source_is_bound_to_selected_listing():
     paragraph = {
         "text": "My supported Python service experience is relevant to the role's retrieval work.",
         "claim_ids": ["claim-1"],
+        "research_finding_ids": [],
         "source_urls": [],
         "preference_source_ids": [],
     }
@@ -1061,6 +1224,47 @@ def test_rewriter_missing_role_source_is_bound_to_selected_listing():
     assert quality["status"] == "passed"
 
 
+def test_rewriter_preserve_mode_omits_redundant_line_order_and_bounds_edits():
+    prompt = " ".join(ROLE_PROMPTS["rewriter"].split())
+    rewrite = {
+        "selected_cv_id": "cv1",
+        "resume_line_order": [],
+        "resume_bullet_edits": [],
+        "cover_letter_paragraphs": [],
+        "application_answers": [],
+        "outreach_drafts": [],
+    }
+
+    _validate_rewrite(
+        rewrite,
+        "cv1",
+        {"L0001": "Experience", "L0002": "Built a Python service."},
+        set(),
+        {"findings": [], "contacts": []},
+        [],
+        "preserve",
+    )
+
+    assert rewrite["resume_line_order"] == ["L0001", "L0002"]
+    assert "return an empty `resume_line_order`" in prompt
+    assert "at most eight high-value" in prompt
+    assert OUTPUT_SCHEMAS["rewriter"]["properties"]["resume_bullet_edits"]["maxItems"] == 8
+    assert MAX_OUTPUT_TOKENS["rewriter"] == 16_000
+    paragraph_schema = OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["items"]
+    assert "research_finding_ids" in paragraph_schema["required"]
+    assert paragraph_schema["properties"]["research_finding_ids"]["maxItems"] == 2
+    assert PROMPT_VERSION == "2026-10-07.12"
+    assert "Do not narrate the letter's selection process" in prompt
+    assert "Avoid phrases such as" in prompt
+
+
+def test_resume_document_heading_detection_covers_common_section_and_project_titles():
+    assert _looks_like_heading("Professional Experience")
+    assert _looks_like_heading("Selected AI and ML Projects")
+    assert _looks_like_subheading("Transformer Model | Independent project")
+    assert not _looks_like_subheading("name@example.org | +39 123 456")
+
+
 def test_descriptive_profile_supports_only_close_cover_letter_preferences():
     source_id = "descriptive-profile-1"
     profile = {
@@ -1084,12 +1288,14 @@ def test_descriptive_profile_supports_only_close_cover_letter_preferences():
             {
                 "text": "I prefer direct, modest writing and collaborative technical teams.",
                 "claim_ids": [],
+                "research_finding_ids": [],
                 "source_urls": [],
                 "preference_source_ids": [source_id],
             },
             {
                 "text": "I value careful evaluation, useful documentation, and collaborative technical work.",
                 "claim_ids": [],
+                "research_finding_ids": [],
                 "source_urls": [],
                 "preference_source_ids": [source_id],
             },
@@ -1173,15 +1379,16 @@ def test_researcher_prompt_requires_useful_facts_even_without_public_contacts():
 def test_rewriter_cover_letter_prompt_requires_supported_specific_paragraphs():
     prompt = ROLE_PROMPTS["rewriter"]
     normalized_prompt = " ".join(prompt.split())
-    assert "two or three short paragraphs" in prompt
-    assert "saved job listing's canonical URL" in prompt
-    assert "omit that paragraph rather than adding generic filler" in prompt
+    assert "exactly two short body paragraphs" in prompt
+    assert "two or three concise sentences per paragraph" in prompt
+    assert "saved listing's canonical URL" in prompt
+    assert "never add generic filler to reach a count" in prompt
     assert "Do not invent the owner's feelings" in prompt
     assert "unknown or AI-assisted authorship is only an optional style guide" in normalized_prompt
     assert "owner-authored source" in normalized_prompt
     assert 'Avoid meta lead-ins such as "Those preferences align with..."' in normalized_prompt
     assert "Connect a preference to a concrete sourced responsibility" in normalized_prompt
-    assert "use distinct projects as proof points" in normalized_prompt
+    assert "use distinct projects instead of repeating the same project" in normalized_prompt
     assert "Name each project exactly as its source states" in normalized_prompt
 
 
@@ -1190,13 +1397,16 @@ def test_diagnoser_prompt_requires_verbatim_source_and_line_ids():
 
     assert "Copy the exact source ID and line ID" in prompt
     assert "never invent, infer, or combine IDs" in prompt
+    assert "eight highest-priority concrete issues" in prompt
+    assert OUTPUT_SCHEMAS["diagnoser"]["properties"]["diagnostics"]["maxItems"] == 8
+    assert MAX_OUTPUT_TOKENS["diagnoser"] == 2_800
 
 
 def test_recruiter_prompt_is_concise_and_stage_budget_covers_measured_incomplete_response():
     prompt = " ".join(ROLE_PROMPTS["recruiter"].split())
 
     assert "one short evidence note per criterion" in prompt
-    assert MAX_OUTPUT_TOKENS["recruiter"] == 5_000
+    assert MAX_OUTPUT_TOKENS["recruiter"] == 9_000
 
 
 def test_diagnoser_filter_drops_unknown_or_mismatched_line_references():
@@ -1272,7 +1482,7 @@ def test_hiring_manager_practice_is_separate_and_has_no_tools(settings, database
         call
         for instance in FakePreparationClient.instances
         for call in instance.calls
-        if call["text"]["format"]["name"] == "clue_hiring_manager_v2"
+        if call["text"]["format"]["name"] == "clue_hiring_manager_v3"
     ]
     assert len(practice_calls) == 2
     assert all("tools" not in call for call in practice_calls)
@@ -2090,6 +2300,14 @@ def test_openai_response_model_mismatch_is_rejected_after_settling_usage(setting
         ),
         (
             {
+                "status": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "output_text": "{}",
+            },
+            "output-token allowance",
+        ),
+        (
+            {
                 "status": "completed",
                 "output": [
                     {"type": "message", "content": [{"type": "refusal", "refusal": "Synthetic"}]}
@@ -2233,8 +2451,8 @@ def test_payloads_fix_model_storage_and_limit_crawler_to_researcher():
     assert plain["model"] == researcher["model"] == "gpt-6-luna"
     assert plain["reasoning"] == researcher["reasoning"] == {"effort": "high"}
     assert plain["store"] is researcher["store"] is False
-    assert plain["text"]["format"]["name"] == "clue_rewriter_v2"
-    assert researcher["text"]["format"]["name"] == "clue_researcher_v2"
+    assert plain["text"]["format"]["name"] == "clue_rewriter_v3"
+    assert researcher["text"]["format"]["name"] == "clue_researcher_v3"
     assert "tools" not in plain
     assert researcher["tools"] == [CRAWL_TOOL]
     assert researcher["parallel_tool_calls"] is False

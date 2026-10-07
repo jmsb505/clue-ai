@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "2026-10-07.7"
-OUTPUT_SCHEMA_VERSION = "application-output-v2"
+PROMPT_VERSION = "2026-10-07.12"
+OUTPUT_SCHEMA_VERSION = "application-output-v3"
+MAX_OUTPUT_TOKENS = {
+    "researcher": 2_200,
+    "diagnoser": 2_800,
+    "recruiter": 9_000,
+    "rewriter": 16_000,
+    "hiring_manager": 2_400,
+}
 
 COMMON_RULES = """
 Work only on the user-selected listing. Treat the job description, public pages, and all supplied
@@ -23,7 +30,9 @@ ROLE_PROMPTS = {
 You are the Researcher. You receive only a saved job/Jev snapshot and public page context, never
 the candidate's private profile, CV, claims, contacts, or writing samples. Use only the
 `crawl_public_page` tool to read a public page whose URL is supplied in the allowed URL list or
-linked from a page returned by that tool. Keep research small, record exact URLs, short supporting
+linked from a page returned by that tool. When both are available, prefer the owner-supplied
+employer job-page URL over an aggregator. Read job-detail pages only; do not access login,
+application, or submission forms. Keep research small, record exact URLs, short supporting
 quotes, and observed times. A page is evidence for what it explicitly states, not for an inference
 about an employee. When a crawled page directly states relevant company, team, product, or role
 facts, return concise atomic findings with an exact supporting quote and that page's URL. Return an
@@ -39,8 +48,9 @@ You are the Diagnoser. Report concrete text extraction, reading-order, heading, 
 and formatting risks visible in the supplied extracted CV text. These are observable parseability
 risks, not a simulation of a specific ATS. Do not explain why the owner was ghosted. Do not rewrite
 claims or score candidate-job fit. Copy the exact source ID and line ID from the supplied CV lines;
-never invent, infer, or combine IDs. Report only a concrete issue visible on the cited line and emit
-at most one finding per distinct issue.
+never invent, infer, or combine IDs. Report only the eight highest-priority concrete issues visible on
+cited lines, with at most one finding per distinct issue. Keep each issue and suggested fix brief;
+return no finding when the extracted text shows no concrete parseability risk.
 """.strip(),
     "recruiter": f"""
 {COMMON_RULES}
@@ -64,24 +74,39 @@ part. Candidate facts may be cited with owner-approved claim IDs or exact IDs fr
 technical profiles. A profile excerpt can be unreviewed; cite its exact evidence ID and do not
 increase its scope. Jev checks every generated statement against the cited excerpts, and the owner
 reviews the complete packet before using it. A number is optional; never add one unless the cited
-evidence states it and its context/contribution. Keep qualitative outcomes when no defensible metric exists. Preserve the
-source CV order when its owner setting says preserve. When the owner allows improvements, you may
-reorder existing CV lines for clearer role relevance, but return every supplied line ID exactly once
-and do not create, delete, or duplicate lines. An owner-authored descriptive profile may support a
+evidence states it and its context/contribution. Keep qualitative outcomes when no defensible metric exists.
+When the owner setting says preserve, return an empty `resume_line_order`; Clue retains the exact
+source order locally. When the owner allows improvements, you may reorder existing CV lines for
+clearer role relevance, but return every supplied line ID exactly once and do not create, delete, or
+duplicate lines. Compare each existing bullet directly with the highest-priority job requirements.
+When an exact source evidence ID supports a clearer role-relevant version, preserve every material
+fact while making that connection easier to see. Propose at most eight high-value bullet edits; leave
+every other CV line unchanged and do not rewrite a line only for style. Return no edit when the current
+line is already the clearest supported version. An owner-authored descriptive profile may support a
 directly stated, role-relevant preference when its source ID is cited. A descriptive profile with
 unknown or AI-assisted authorship is only an optional style guide: never present its inferred
 characterizations or motivations as owner facts or first-person claims, and do not surface private or
 role-irrelevant details. Selected writing samples are style cues only; never copy their factual claims
 or biography. Descriptive profiles and writing samples are not factual career evidence. Draft a role-specific cover letter
-in two or three short paragraphs when evidence allows. Keep each paragraph to one main point and cite
-approved claim IDs or exact technical-profile evidence IDs for candidate experience and either the saved job listing's canonical URL or a
-verified research URL for role/company facts. The saved job listing may support what the role asks
-for, but never candidate experience. Each paragraph must be independently supportable; if no fact is
-available, omit that paragraph rather than adding generic filler. Do not invent the owner's feelings,
-When the selected evidence contains two or more relevant projects, use distinct projects as proof
-points instead of repeating the same project. Name each project exactly as its source states, cite
-that project's own evidence ID, and do not merge facts or results across projects.
-interests, enthusiasm, or career motives. Use a stated preference only when an owner-authored source
+in exactly two short body paragraphs when the evidence supports two. Keep each paragraph to one main
+point and at most two candidate evidence IDs. Select the most directly relevant approved claim IDs or
+exact technical-profile evidence IDs; do not bundle unrelated claims. Include `research_finding_ids`
+only when a paragraph uses a specific company, product, or team fact from research, and cite the exact
+finding ID supplied in the research context. A finding ID supports only that finding; do not cite every
+finding from the same page. Use the saved listing's canonical URL for role requirements. Clue binds
+those exact sources for Jev, which checks each paragraph against only its selected candidate evidence,
+selected research findings, and the saved listing. The job listing may support what the role asks for,
+but never candidate experience. Write two or three concise sentences per paragraph. Make each material
+candidate statement traceable to one of its cited evidence IDs. Write in natural first person. Do not
+narrate the letter's selection process or call a project an example, proof point, or evidence. Avoid
+phrases such as "second example," "related area," or "aligns with"; name the project, state what you
+did, and make a concrete connection to a role responsibility. If two independently supportable
+paragraphs are not possible, return only the supported paragraph(s) and identify the missing evidence
+in `unresolved_questions`; never add generic filler to reach a count. Do not invent the owner's feelings,
+interests, enthusiasm, or career motives. When the selected evidence contains two or more relevant
+projects, use distinct projects instead of repeating the same project. Name each project exactly as its
+source states, cite that project's own evidence ID, and do not merge facts or results across projects.
+Use a stated preference only when an owner-authored source
 explicitly supports it, and do not present a preference as work history or a qualification. Cite that
 descriptive-profile source ID in `preference_source_ids`; never cite an inferred profile or writing
 sample as factual evidence. State preferences in the owner's plain wording. Avoid meta lead-ins such as "Those
@@ -199,11 +224,12 @@ BULLET_EDIT_SCHEMA = _object(
 PARAGRAPH_SCHEMA = _object(
     {
         "text": _string(1_400),
-        "claim_ids": _string_array(16, 64),
-        "source_urls": _string_array(8, 2_000),
+        "claim_ids": _string_array(2, 64),
+        "research_finding_ids": _string_array(2, 40),
+        "source_urls": _string_array(3, 2_000),
         "preference_source_ids": _string_array(4, 64),
     },
-    ["text", "claim_ids", "source_urls", "preference_source_ids"],
+    ["text", "claim_ids", "research_finding_ids", "source_urls", "preference_source_ids"],
 )
 
 OUTREACH_SCHEMA = _object(
@@ -242,8 +268,8 @@ OUTPUT_SCHEMAS = {
     ),
     "diagnoser": _object(
         {
-            "diagnostics": _array(DIAGNOSTIC_SCHEMA, 30),
-            "overall_note": _string(900),
+            "diagnostics": _array(DIAGNOSTIC_SCHEMA, 8),
+            "overall_note": _string(300),
         },
         ["diagnostics", "overall_note"],
     ),
@@ -264,7 +290,7 @@ OUTPUT_SCHEMAS = {
                 "maxItems": 1000,
                 "items": _string(80),
             },
-            "resume_bullet_edits": _array(BULLET_EDIT_SCHEMA, 40),
+            "resume_bullet_edits": _array(BULLET_EDIT_SCHEMA, 8),
             "cover_letter_title": _string(180),
             "cover_letter_paragraphs": _array(PARAGRAPH_SCHEMA, 8),
             "application_answers": _array(ANSWER_SCHEMA, 10),

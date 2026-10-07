@@ -26,6 +26,7 @@ from clue_ai.application_prep import (
 )
 from clue_ai.application_prompts import (
     CRAWL_TOOL,
+    MAX_OUTPUT_TOKENS,
     OUTPUT_SCHEMA_VERSION,
     OUTPUT_SCHEMAS,
     PROMPT_VERSION,
@@ -55,13 +56,6 @@ from clue_ai.scrapling_research import RESEARCH_CHAR_LIMIT, BoundedResearchCrawl
 MAX_RESEARCH_API_CALLS = 5
 MAX_PACKET_BUNDLE_FILES = 10
 MAX_PACKET_BUNDLE_BYTES = 20 * 1024 * 1024
-MAX_OUTPUT_TOKENS = {
-    "researcher": 2_200,
-    "diagnoser": 1_600,
-    "recruiter": 5_000,
-    "rewriter": 3_600,
-    "hiring_manager": 2_400,
-}
 _EMAIL = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])", re.IGNORECASE)
 
 
@@ -111,6 +105,7 @@ def run_preparation(
             usage_ids,
         )
         research = _save_research(database_path, request_id, research)
+        research = _identify_research_findings(research)
 
         _assert_snapshot_current(database_path, request, settings)
         _set_request_state(database_path, request_id, "generating", "Running the Diagnoser, Recruiter, and Rewriter with the selected CV and permitted profile evidence.")
@@ -398,7 +393,7 @@ def _payload(stage: str, context: dict[str, Any], conversation: list[dict[str, A
         "text": {
             "format": {
                 "type": "json_schema",
-                "name": f"clue_{stage}_v2",
+                "name": f"clue_{stage}_v3",
                 "strict": True,
                 "schema": OUTPUT_SCHEMAS[stage],
             }
@@ -479,6 +474,13 @@ def _api_call(
 
 def _parse_stage_result(response: dict[str, Any], stage: str) -> dict[str, Any]:
     if response.get("status") not in {None, "completed"}:
+        details = response.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else None
+        if reason == "max_output_tokens":
+            raise OpenAIProviderError(
+                f"The {stage} stage reached its configured output-token allowance "
+                f"({MAX_OUTPUT_TOKENS[stage]:,} tokens)."
+            )
         raise OpenAIProviderError(f"The {stage} stage did not complete.")
     chunks: list[str] = []
     for item in response.get("output", []):
@@ -548,14 +550,20 @@ def _validate_rewrite(
     permitted_preference_source_ids: set[str] | None = None,
     permitted_profile_claim_ids: set[str] | None = None,
 ) -> None:
+    research = _identify_research_findings(research)
     if rewrite.get("selected_cv_id") != selected_cv_id:
         raise OpenAIProviderError("Rewriter returned a CV outside the owner-selected source.")
     line_order = rewrite.get("resume_line_order")
     source_order = list(line_map)
-    if not isinstance(line_order, list) or len(line_order) != len(source_order) or set(line_order) != set(source_order):
+    if not isinstance(line_order, list):
+        raise OpenAIProviderError("Rewriter returned an invalid CV line order.")
+    if structure_policy == "preserve":
+        if line_order not in ([], source_order):
+            raise OpenAIProviderError("Rewriter reordered a CV whose owner-selected policy is preserve.")
+        # The local renderer already has the authoritative line order; omit the repeated ID list.
+        rewrite["resume_line_order"] = source_order
+    elif len(line_order) != len(source_order) or set(line_order) != set(source_order):
         raise OpenAIProviderError("Rewriter must preserve every original CV line exactly once.")
-    if structure_policy == "preserve" and line_order != source_order:
-        raise OpenAIProviderError("Rewriter reordered a CV whose owner-selected policy is preserve.")
     valid_claim_ids = claim_ids | (permitted_profile_claim_ids or set())
     for item in rewrite.get("resume_bullet_edits", []):
         if (
@@ -565,19 +573,43 @@ def _validate_rewrite(
             or any(value not in valid_claim_ids for value in item.get("claim_ids", []))
         ):
             raise OpenAIProviderError("A resume edit did not match its source line and approved evidence.")
-    verified_fact_sources = {finding["source_url"] for finding in research.get("findings", [])}
+    findings_by_id = {
+        str(finding["id"]): finding
+        for finding in research.get("findings", [])
+        if finding.get("id") and finding.get("source_url")
+    }
+    verified_fact_sources = {finding["source_url"] for finding in findings_by_id.values()}
     if job_source_url:
         verified_fact_sources.add(job_source_url)
     permitted_preference_source_ids = permitted_preference_source_ids or set()
     for item in rewrite.get("cover_letter_paragraphs", []):
         if any(value not in valid_claim_ids for value in item.get("claim_ids", [])):
             raise OpenAIProviderError("A cover-letter paragraph refers to an unapproved claim.")
-        if not item.get("source_urls") and job_source_url:
-            # The selected listing is the source of its own role requirements. Bind it
-            # deterministically when the model omitted this metadata; never bless a URL
-            # the model supplied unless it was independently verified below.
-            item["source_urls"] = [job_source_url]
+        finding_ids = item.setdefault("research_finding_ids", [])
+        if (
+            not isinstance(finding_ids, list)
+            or len(finding_ids) > 2
+            or any(not isinstance(value, str) for value in finding_ids)
+            or len(finding_ids) != len(set(finding_ids))
+            or any(value not in findings_by_id for value in finding_ids)
+        ):
+            raise OpenAIProviderError("A cover-letter paragraph refers to an unknown research finding.")
+        requested_urls = item.get("source_urls", [])
+        selected_finding_urls = [findings_by_id[value]["source_url"] for value in finding_ids]
+        if any(
+            url not in selected_finding_urls and url != job_source_url
+            for url in requested_urls
+        ):
+            raise OpenAIProviderError(
+                "A cover-letter research URL requires its exact research finding ID."
+            )
+        if not requested_urls and job_source_url:
+            # Bind role facts to the selected listing. Other public facts require an
+            # exact finding ID so a page URL cannot attach unrelated findings.
             item["clue_source_url_binding"] = "selected_listing_fallback"
+        item["source_urls"] = list(dict.fromkeys(
+            ([job_source_url] if job_source_url else []) + selected_finding_urls
+        ))
         if any(url not in verified_fact_sources for url in item.get("source_urls", [])):
             raise OpenAIProviderError("A cover-letter paragraph refers to an unverified research source.")
         if any(
@@ -617,14 +649,18 @@ def _grounding_assertions(
     """Bind each submitted-content block to only its cited owner or public evidence."""
     claim_by_id = {str(item["id"]): item for item in claims}
     public_by_url: dict[str, list[dict[str, str]]] = {}
-    for finding in research.get("findings", []):
+    public_by_finding_id: dict[str, dict[str, str]] = {}
+    identified_findings = _identify_research_findings(research)["findings"]
+    for finding in identified_findings:
+        public_evidence = {
+            "source_type": "verified_public_source",
+            "source_id": str(finding["id"]),
+            "source_url": str(finding.get("source_url") or ""),
+            "text": f"{finding.get('fact', '')} Evidence quote: {finding.get('quote', '')}",
+        }
+        public_by_finding_id[str(finding["id"])] = public_evidence
         public_by_url.setdefault(str(finding.get("source_url") or ""), []).append(
-            {
-                "source_type": "verified_public_source",
-                "source_id": str(finding.get("topic") or ""),
-                "source_url": str(finding.get("source_url") or ""),
-                "text": f"{finding.get('fact', '')} Evidence quote: {finding.get('quote', '')}",
-            }
+            public_evidence
         )
     for contact in research.get("contacts", []):
         if contact.get("suppressed"):
@@ -691,6 +727,7 @@ def _grounding_assertions(
         claim_ids: list[str],
         source_urls: list[str],
         preference_source_ids: list[str] | None = None,
+        public_evidence_override: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         evidence = []
         for claim_id in claim_ids:
@@ -721,8 +758,11 @@ def _grounding_assertions(
                             ),
                         }
                     )
-        for url in source_urls:
-            evidence.extend(public_by_url.get(str(url), []))
+        if public_evidence_override is None:
+            for url in source_urls:
+                evidence.extend(public_by_url.get(str(url), []))
+        else:
+            evidence.extend(public_evidence_override)
         for source_id in preference_source_ids or []:
             profile = descriptive_by_id.get(str(source_id))
             if profile:
@@ -754,6 +794,16 @@ def _grounding_assertions(
             )
         )
     for index, item in enumerate(rewrite.get("cover_letter_paragraphs", [])):
+        paragraph_public_evidence = [
+            public_by_finding_id[finding_id]
+            for finding_id in item.get("research_finding_ids", [])
+            if finding_id in public_by_finding_id
+        ]
+        if job_source_url in item.get("source_urls", []):
+            paragraph_public_evidence.extend(
+                source for source in public_by_url.get(job_source_url, [])
+                if source.get("source_type") == "saved_job_listing"
+            )
         output.append(
             make(
                 f"cover_letter_paragraph_{index}",
@@ -762,6 +812,7 @@ def _grounding_assertions(
                 item.get("claim_ids", []),
                 item.get("source_urls", []),
                 item.get("preference_source_ids", []),
+                paragraph_public_evidence,
             )
         )
     for index, item in enumerate(rewrite.get("application_answers", [])):
@@ -957,19 +1008,27 @@ def _render_artifacts(
     root.mkdir(parents=True, exist_ok=True)
     edits = {item["line_id"]: item["revised_text"] for item in rewrite["resume_bullet_edits"]}
     resume_doc = Document()
+    _configure_application_document(resume_doc, resume=True)
     resume_doc.core_properties.title = "Tailored resume draft"
     lines_by_id = {item["id"]: item for item in lines}
     for line_id in rewrite["resume_line_order"]:
         item = lines_by_id[line_id]
         text = edits.get(item["id"], item["text"])
         if not text.strip():
-            resume_doc.add_paragraph("")
+            paragraph = resume_doc.add_paragraph("")
         elif _looks_like_heading(text):
-            resume_doc.add_paragraph(text.strip(), style="Heading 1")
+            paragraph = resume_doc.add_paragraph(text.strip(), style="Heading 1")
+            paragraph.paragraph_format.keep_with_next = True
+        elif _looks_like_subheading(text):
+            paragraph = resume_doc.add_paragraph(text.strip(), style="Heading 2")
+            paragraph.paragraph_format.keep_with_next = True
         elif item["text"].lstrip().startswith(("-", "•", "*", "▪")):
-            resume_doc.add_paragraph(re.sub(r"^\s*(?:[-•*▪]+)\s*", "", text), style="List Bullet")
+            paragraph = resume_doc.add_paragraph(
+                re.sub(r"^\s*(?:[-•*▪]+)\s*", "", text), style="List Bullet"
+            )
         else:
-            resume_doc.add_paragraph(text)
+            paragraph = resume_doc.add_paragraph(text)
+        paragraph.paragraph_format.keep_together = True
     resume_io = io.BytesIO()
     resume_doc.save(resume_io)
     artifacts = [
@@ -982,7 +1041,11 @@ def _render_artifacts(
     ]
     if cover_letter_paragraphs:
         letter = Document()
-        letter.add_heading(rewrite.get("cover_letter_title") or "Cover letter draft", 1)
+        _configure_application_document(letter, resume=False)
+        letter.add_paragraph(
+            rewrite.get("cover_letter_title") or "Cover letter draft",
+            style="Clue Cover Letter Title",
+        )
         for paragraph in cover_letter_paragraphs:
             letter.add_paragraph(paragraph["text"])
         letter_io = io.BytesIO()
@@ -1570,12 +1633,16 @@ def _assert_snapshot_current(
     from clue_ai.applications import not_applied_sql
 
     snapshot = request["snapshot"]
+    additional_source_url = str(
+        snapshot.get("inputs", {}).get("additional_source_url") or ""
+    )
     with connect(database_path) as db:
         row = db.execute(
             f"""SELECT j.id, j.title, j.company, j.description, j.location_raw,
                        j.workplace_type, j.employment_type, j.salary_min, j.salary_max,
                        j.salary_currency, j.salary_period, j.posted_at, j.valid_through,
-                       j.eligibility_status, j.eligibility_evidence, j.canonical_url,
+                       r.eligibility_status AS eligibility_status,
+                       r.eligibility_evidence AS eligibility_evidence, j.canonical_url,
                        r.run_id, r.rank, r.score_state, r.filter_status,
                        r.eligibility_status AS jev_eligibility_status,
                        r.eligibility_evidence AS jev_eligibility_evidence, r.combined_score,
@@ -1585,7 +1652,9 @@ def _assert_snapshot_current(
                 JOIN search_runs run ON run.id = r.run_id
                 LEFT JOIN job_user_state state ON state.job_id = j.id
                 WHERE j.id = ? AND j.is_active = 1 AND run.status = 'complete'
-                  AND r.score_state = 'scored' AND r.filter_status = 'match'
+                  AND r.score_state = 'scored'
+                  AND r.filter_status IN ('match', 'review')
+                  AND r.eligibility_status = 'eligible'
                   AND COALESCE(state.hidden, 0) = 0 AND {not_applied_sql('j')} LIMIT 1""",
             (request["run_id"], request["job_id"]),
         ).fetchone()
@@ -1593,9 +1662,17 @@ def _assert_snapshot_current(
             "SELECT source_url FROM job_sources WHERE job_id = ? ORDER BY id", (request["job_id"],)
         ).fetchall()
     if row is None:
-        raise StalePreparationError("The listing or Jev match is no longer eligible. Refresh it and start a new preparation request.")
+        raise StalePreparationError("The listing or Jev decision is no longer eligible for preparation. Refresh it and start a new request.")
     current = dict(row)
     current["source_urls"] = [item["source_url"] for item in urls]
+    if additional_source_url:
+        from clue_ai.external_links import normalize_public_job_url
+
+        normalized = normalize_public_job_url(additional_source_url)
+        if normalized is None or normalized[0] != additional_source_url:
+            raise StalePreparationError("The additional employer source is no longer a valid public HTTPS page.")
+        if additional_source_url not in current["source_urls"]:
+            current["source_urls"].append(additional_source_url)
     core = {key: value for key, value in snapshot.items() if key not in {"inputs"}}
     if current != core:
         raise StalePreparationError("The job or Jev snapshot changed after the owner trigger. Review the current result and start a new request.")
@@ -1795,8 +1872,21 @@ def _research_job_context(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
         **_job_context(snapshot),
         "source_urls": snapshot.get("source_urls", []),
+        "owner_supplied_employer_page_url": snapshot.get("inputs", {}).get(
+            "additional_source_url", ""
+        ),
         "jev_read_only": _jev_read_only_context(snapshot),
     }
+
+
+def _identify_research_findings(research: dict[str, Any]) -> dict[str, Any]:
+    """Assign local IDs so each generated paragraph can cite exact public evidence."""
+    findings = [
+        {**item, "id": f"RF{index + 1:02d}"}
+        for index, item in enumerate(research.get("findings", []))
+        if isinstance(item, dict)
+    ]
+    return {**research, "findings": findings}
 
 
 def _jev_read_only_context(snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -1804,6 +1894,7 @@ def _jev_read_only_context(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def _research_context(value: dict[str, Any]) -> dict[str, Any]:
+    identified = _identify_research_findings(value)
     contacts = [
         {
             key: item[key]
@@ -1818,7 +1909,7 @@ def _research_context(value: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "company_summary": value.get("company_summary", ""),
-        "findings": value.get("findings", []),
+        "findings": identified["findings"],
         "contacts": contacts,
         "unresolved_questions": value.get("unresolved_questions", []),
     }
@@ -1853,8 +1944,75 @@ def _filter_diagnoser_references(
 
 def _looks_like_heading(text: str) -> bool:
     value = text.strip().rstrip(":")
-    headings = {"summary", "profile", "experience", "work experience", "education", "skills", "technical skills", "projects", "languages", "certifications", "publications"}
+    headings = {
+        "summary", "profile", "professional profile", "experience", "work experience",
+        "professional experience", "education", "skills", "technical skills", "projects",
+        "selected ai and ml projects", "languages", "certifications", "publications",
+    }
     return value.casefold() in headings or (len(value) <= 65 and value.isupper() and any(char.isalpha() for char in value))
+
+
+def _looks_like_subheading(text: str) -> bool:
+    value = text.strip()
+    return (
+        0 < len(value) <= 110
+        and " | " in value
+        and not value.startswith(("-", "•", "*", "▪"))
+        and not any(marker in value.casefold() for marker in ("@", "https://", "http://"))
+        and not value.endswith((".", "!", "?"))
+    )
+
+
+def _configure_application_document(document: Document, *, resume: bool) -> None:
+    from docx.enum.style import WD_STYLE_TYPE
+    from docx.shared import Inches, Pt, RGBColor
+
+    for section in document.sections:
+        section.top_margin = Inches(0.58 if resume else 0.85)
+        section.bottom_margin = Inches(0.58 if resume else 0.85)
+        section.left_margin = Inches(0.7 if resume else 0.9)
+        section.right_margin = Inches(0.7 if resume else 0.9)
+
+    normal = document.styles["Normal"]
+    normal.font.name = "Arial"
+    normal.font.size = Pt(10.5 if resume else 11)
+    normal.paragraph_format.space_after = Pt(3 if resume else 8)
+    normal.paragraph_format.line_spacing = 1.0
+
+    title = document.styles.add_style(
+        "Clue Cover Letter Title", WD_STYLE_TYPE.PARAGRAPH
+    )
+    title.base_style = normal
+    title.font.name = "Arial"
+    title.font.size = Pt(15)
+    title.font.bold = True
+    title.font.underline = False
+    title.font.color.rgb = RGBColor(0, 0, 0)
+    title.paragraph_format.space_after = Pt(10)
+    title.paragraph_format.keep_with_next = True
+
+    heading_one = document.styles["Heading 1"]
+    heading_one.font.name = "Arial"
+    heading_one.font.size = Pt(14 if resume else 15)
+    heading_one.font.bold = True
+    heading_one.font.color.rgb = RGBColor(40, 82, 122)
+    heading_one.paragraph_format.space_before = Pt(8)
+    heading_one.paragraph_format.space_after = Pt(3)
+    heading_one.paragraph_format.keep_with_next = True
+
+    heading_two = document.styles["Heading 2"]
+    heading_two.font.name = "Arial"
+    heading_two.font.size = Pt(11 if resume else 12)
+    heading_two.font.bold = True
+    heading_two.font.color.rgb = RGBColor(40, 82, 122)
+    heading_two.paragraph_format.space_before = Pt(5)
+    heading_two.paragraph_format.space_after = Pt(2)
+    heading_two.paragraph_format.keep_with_next = True
+
+    bullets = document.styles["List Bullet"]
+    bullets.font.name = "Arial"
+    bullets.font.size = Pt(10.5 if resume else 11)
+    bullets.paragraph_format.space_after = Pt(2)
 
 
 def _quote_supported(quote: str, text: str) -> bool:
