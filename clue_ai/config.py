@@ -11,8 +11,12 @@ os.environ.setdefault(
 )
 
 
-def load_local_environment(path: Path | None = None) -> None:
-    """Load simple KEY=value settings without replacing the caller's environment."""
+def load_local_environment(
+    path: Path | None = None,
+    *,
+    override_keys: set[str] | frozenset[str] = frozenset(),
+) -> None:
+    """Load simple KEY=value settings, optionally preferring selected local values."""
     env_path = path or PROJECT_ROOT / ".env"
     try:
         lines = env_path.read_text(encoding="utf-8").splitlines()
@@ -26,7 +30,10 @@ def load_local_environment(path: Path | None = None) -> None:
         key = key.strip()
         value = value.strip().strip("\"'")
         if key and key.replace("_", "").isalnum():
-            os.environ.setdefault(key, value)
+            if key in override_keys:
+                os.environ[key] = value
+            else:
+                os.environ.setdefault(key, value)
 
 
 def _money(value: str | None, default: float) -> float:

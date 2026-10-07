@@ -14,7 +14,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }
 .\scripts\clue.ps1 start
 ```
 
-Then open http://127.0.0.1:8000. The server binds to this computer only and stays in the foreground. To stop it, run `.\scripts\clue.ps1 stop` from another PowerShell window; the helper terminates Clue's process tree so active searches and Scrapling/browser workers stop with it. A fresh copy of `.env.example` starts with a blank key; the app works without one. This local checkout's ignored `.env` is owner-configured and is never committed.
+Then open http://127.0.0.1:8000. The server binds to this computer only and stays in the foreground. To stop it, run `.\scripts\clue.ps1 stop` from another PowerShell window; the helper terminates Clue's process tree so active searches and Scrapling/browser workers stop with it. A fresh copy of `.env.example` starts with a blank key; the app works without one. Keep API keys in the ignored local `.env`; never commit it. The application launcher prefers the local `.env` value for `OPENAI_API_KEY` over an inherited shell value, preventing a stale key from shadowing the configured one after rotation.
 
 Use the same PowerShell window, or another one, to manage the local server:
 

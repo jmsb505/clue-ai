@@ -59,8 +59,10 @@ FILTER_ASSESSMENT_INSTRUCTIONS = (
     "not a request for generic analyst work. Missing skills, differently worded "
     "job titles, or limited candidate experience must not by themselves cause a filter conflict. "
     "Use review for missing or ambiguous facts. Use conflict only for explicit contradictory "
-    "evidence or a user's explicit include-unknown exclusion. Do not invent listing details, "
-    "infer protected traits or replace this requirement check with an overall fit judgment. "
+    "evidence or a user's explicit include-unknown exclusion. Keep all six requirement checks "
+    "independent: a conflict in pay, seniority, skills, location, language, or another check "
+    "must not change the answer to this check. Do not invent listing details, infer protected "
+    "traits or replace this requirement check with an overall fit judgment. "
 )
 FILTER_CHECK_LABELS = {
     "seniority": "Junior / intern level",
@@ -103,15 +105,20 @@ FILTER_CHECK_INSTRUCTIONS = {
         "criteria supplied in state.search_criteria."
     ),
     "workplace": (
-        "Check the user's workplace selection. remote means remote-only; hybrid means hybrid or "
+        "Check only the user's workplace selection against the normalized workplace_type and an "
+        "explicit contradictory arrangement in the description. remote means remote-only; hybrid means hybrid or "
         "remote; any imposes no restriction. Under remote_preferred, remote is a preference, and "
         "hybrid/on-site work is permitted only in state.search_criteria.local_workplace_city. The "
         "local Clue gate removes other cities and unverified workplace/city evidence before Jev. "
-        "Do not reject a confirmed Milan office role solely because it is not remote."
+        "If workplace_type is remote and the user selected remote, return match unless the "
+        "description explicitly says on-site or hybrid attendance is required. Do not reject a "
+        "confirmed Milan office role solely because it is not remote. Seniority, compensation, "
+        "job title, and candidate fit cannot make a remote arrangement conflict."
     ),
     "requirements": (
         "Check only supplied employment_types, minimum_salary, must_have, posting dates and "
         "availability. With no optional constraints and no closure evidence return match. "
+        "Do not duplicate paid_only or seniority decisions here; those have their own checks. "
         "Employment types are alternatives; synonyms count and unspecified type is review. "
         "Only compare the annual salary floor when currency and period are comparable; unknown "
         "amounts/periods are review if include_unknown_salary allows them, otherwise conflict. "

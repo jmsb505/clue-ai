@@ -1,7 +1,7 @@
-# PLAN-020 — Per-application workspaces and local outreach handoff
+# PLAN-022 — Per-application workspaces and local outreach handoff
 
-Status: M1 and M2 implemented, focused-validated, and pushed to `main` at `e85eeaa`
-Created: 2026-10-06 · Last updated: 2026-10-06
+Status: M1 and M2 implemented and pushed to `main` at `e85eeaa`; integrated Jev-quality branch passes the full 289-test suite and static checks; owner packet review and real-data pilot remain separate acceptance gates
+Created: 2026-10-06 · Last updated: 2026-10-07
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [ADR 0024](../decisions/0024-application-workspaces-and-local-email-handoff.md)
 
 ## Objective
@@ -109,11 +109,11 @@ Validation:
 
 Documentation updates:
 
-- [ ] Update product definition, architecture overview, roadmap, documentation index, and this plan.
+- [x] Update product definition, architecture overview, roadmap, documentation index, and this plan.
 
 Applicable specialized skills: ui-ux-research, frontend-design, anti-slop, milestone-delivery.
 
-Expected Git checkpoint: one validated M1 commit, pushed directly to `main` per the owner's delivery instruction.
+Expected Git checkpoint: validate and push the milestone branch, then merge through a PR after required checks pass; do not bypass repository protection.
 
 ### M2 — Local outreach preview and selected-attachment bundle
 
@@ -144,15 +144,15 @@ Validation:
 - [x] Synthetic route tests cover the preview, no-address state, selected ZIP membership, path sanitization, tampered/missing files, and cross-request/cross-packet access. A Node VM check exercised clipboard success and failure with a stub, leaving the system clipboard untouched.
 - [x] Browser review checked the rendered contact/source, message fields, attachment choices, and responsive layout; safe names were confirmed in the ZIP test. Keyboard status controls use native buttons and a polite live region.
 - [x] Focused workflow tests, Ruff, JavaScript syntax, Python syntax, and diff checks pass.
-- [ ] Full repository suite: attempted, but test collection stops because the active Python environment does not have the existing `scrapling` dependency required by `tests/test_company_sources.py`.
+- [x] Full repository suite: 289 tests passed in a disposable dependency-complete environment after the Jev quality-gate integration; Ruff, Python byte-compilation, JavaScript syntax, and diff checks passed.
 
 Documentation updates:
 
-- [ ] Record local-first handoff behavior, file storage, and the optional status of Gmail in product, architecture, decision, roadmap, and UI research docs.
+- [x] Record local-first handoff behavior, file storage, and the optional status of Gmail in product, architecture, decision, roadmap, documentation index, and UI research docs.
 
 Applicable specialized skills: ui-ux-research, frontend-design, anti-slop, milestone-delivery.
 
-Expected Git checkpoint: one validated M2 commit, pushed directly to `main` per the owner's delivery instruction.
+Expected Git checkpoint: validate and push the milestone branch, then merge through a PR after required checks pass; do not bypass repository protection.
 
 ## Final integration validation
 
@@ -178,4 +178,4 @@ The dossier uses existing records and files. If the new routes or ZIP handoff fa
 
 ## Completion evidence
 
-Focused verification on 2026-10-06: `tests/test_application_workflow.py`, `tests/test_application_prep.py`, and `tests/test_application_email_handoff.py` — 26 passed; `ruff check --no-cache clue_ai tests` passed; `node --check clue_ai/static/app.js` passed; Python source parsing and `git diff --check` passed. An isolated Node VM stub exercised clipboard success and fallback without changing the system clipboard. A synthetic browser review verified the dossier and small-screen layout: the document fits the viewport and the navigation owns its horizontal scrolling. No real contact, application data, OpenAI call, Gmail authorization, email, or submission was used. A full-suite attempt stopped during collection because `scrapling` is absent from the active validation Python environment; no network installation was attempted. A prior PLAN-019 test run separately recorded an unrelated Jev scoring expectation failure.
+Focused verification on 2026-10-06: `tests/test_application_workflow.py`, `tests/test_application_prep.py`, and `tests/test_application_email_handoff.py` — 26 passed; Ruff, JavaScript and Python syntax checks, and `git diff --check` passed. An isolated Node VM stub exercised clipboard success and fallback without changing the system clipboard. A synthetic browser review verified the dossier and small-screen layout: the document fits the viewport and the navigation owns its horizontal scrolling. Post-integration verification on 2026-10-07 passed the full 289-test suite in a disposable dependency-complete environment, plus Ruff, Python byte-compilation, JavaScript syntax validation, and diff checks. The two dossier workflow tests use explicit synthetic stubs for both Jev gates; no real profile, real listing, Gmail authorization, email, or application submission was used.

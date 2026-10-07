@@ -18,6 +18,8 @@
   </div>
 </section>
 
+{% if notice %}<div class="alert alert-success" role="status">{{ notice }}</div>{% endif %}
+
 <p class="results-snapshot-note">This is the saved result snapshot for this run. New searches check refreshed source indexes for new or changed listing links and skip unchanged links already assessed. Turn on “Include previously reviewed listing links” in search settings to assess them again.</p>
 
 {% if run.status in ['queued', 'running', 'scoring'] %}
@@ -33,7 +35,7 @@
 <details class="coverage-panel" {% if run.status == 'complete' %}open{% endif %}>
   <summary>
     <span><span class="coverage-mark" aria-hidden="true">⌁</span><b>Search coverage</b></span>
-    <span class="coverage-summary">{{ run.checked_sources|length }} source notes <span aria-hidden="true">⌄</span></span>
+    <span class="coverage-summary">{{ run.checked_sources|length }} coverage details <span aria-hidden="true">⌄</span></span>
   </summary>
   <div class="coverage-content">
     {% if run.checked_sources %}
@@ -43,7 +45,7 @@
     {% else %}
       <p class="panel-muted">Coverage details will appear as approved sources are checked.</p>
     {% endif %}
-    <p class="tiny-note">Results come from the approved sources listed in your workspace. Coverage is not internet-wide; a listing's publisher remains the authority on whether it is open.</p>
+    <p class="tiny-note">Each enabled automatic source is shown as refreshed, skipped by its query refresh interval, or still inside its source refresh interval. For the last group, active listings already in your local index remain eligible for filtering and ranking. Manual-only and disabled sources are excluded. Coverage is not internet-wide; a listing's publisher remains the authority on whether it is open.</p>
     <a class="text-link" href="/sources">Review source status <span aria-hidden="true">→</span></a>
   </div>
 </details>
@@ -58,6 +60,7 @@
     {% else %}{{ shown_total }} not assessed{% endif %}
   </h2></div>
   <div class="results-actions">
+    <a class="text-link" href="/searches">Search history <span aria-hidden="true">→</span></a>
     {% if result_counts.total and run.status == 'complete' and jev_pending %}
       {% if jev_key_configured and jev_consented %}
         <form action="/searches/{{ run.id }}/score" method="post">

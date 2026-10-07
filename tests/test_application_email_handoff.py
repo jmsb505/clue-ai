@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from test_application_workflow import (
     FakeCrawler,
     FakePreparationClient,
+    _approve_synthetic_tailored_resume,
     _create_preparation,
     _enable_synthetic_openai,
 )
@@ -21,6 +22,18 @@ from clue_ai.web import create_app
 ORIGIN = {"Origin": "http://127.0.0.1"}
 
 
+def _support_synthetic_assertions(_database, _settings, _request_id, assertions):
+    return {
+        "status": "complete",
+        "model": "jev-test",
+        "actual_cost_usd": 0.0,
+        "results": [
+            {"id": item["id"], "status": "supported", "confidence": 0.9}
+            for item in assertions
+        ],
+    }
+
+
 def test_local_email_handoff_and_selected_attachment_bundle(settings, database):
     record, *_ = _create_preparation(settings, database)
     enabled = _enable_synthetic_openai(settings, database)
@@ -30,6 +43,8 @@ def test_local_email_handoff_and_selected_attachment_bundle(settings, database):
         record["id"],
         client_factory=FakePreparationClient,
         crawler_factory=FakeCrawler,
+        claim_support_checker=_support_synthetic_assertions,
+        tailored_resume_reviewer=_approve_synthetic_tailored_resume,
     )
     with connect(database) as db:
         packet_id = db.execute(

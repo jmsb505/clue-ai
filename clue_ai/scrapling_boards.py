@@ -78,6 +78,7 @@ def crawl_justremote(
                 "ordinary",
                 FetcherSession(
                     impersonate=None,
+                    stealthy_headers=False,
                     timeout=settings.network_timeout_seconds,
                     headers={
                         "User-Agent": self.user_agent,

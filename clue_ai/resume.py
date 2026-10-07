@@ -28,7 +28,12 @@ def extract_resume_text(filename: str, content: bytes, settings: Settings) -> st
         text = _extract_docx(content)
     else:
         raise ResumeError("Use a PDF or DOCX file.")
-    text = _clean_text(text)[: settings.max_extracted_chars]
+    text = _clean_text(text)
+    if len(text) > settings.max_extracted_chars:
+        raise ResumeError(
+            f"The CV's extracted text exceeds the {settings.max_extracted_chars:,}-character local limit. "
+            "Shorten the document and upload it again; Clue will not silently omit the remaining text."
+        )
     if len(text.strip()) < 40:
         raise ResumeError(
             "The file has no usable selectable text. For a scanned PDF, use a text-based PDF or DOCX; this app does not send your CV to an OCR service."
@@ -64,16 +69,49 @@ def _extract_docx(content: bytes) -> str:
             members = archive.infolist()
             if len(members) > 800 or sum(item.file_size for item in members) > 25_000_000:
                 raise ResumeError("This DOCX expands beyond the local extraction limit.")
-            if "word/document.xml" not in archive.namelist():
+            member_names = archive.namelist()
+            if "word/document.xml" not in member_names:
                 raise ResumeError("The file is not a valid DOCX document.")
+            has_embedded_images = any(name.startswith("word/media/") for name in member_names)
         document = Document(io.BytesIO(content))
-        text_parts: list[str] = []
+
+        header_parts: list[str] = []
+        footer_parts: list[str] = []
+        seen_headers: set[str] = set()
+        seen_footers: set[str] = set()
+        for section in document.sections:
+            for attribute in ("first_page_header", "even_page_header", "header"):
+                story = getattr(section, attribute)
+                partname = str(story.part.partname)
+                if partname in seen_headers:
+                    continue
+                seen_headers.add(partname)
+                header_parts.extend(_docx_story_text(story))
+            for attribute in ("first_page_footer", "even_page_footer", "footer"):
+                story = getattr(section, attribute)
+                partname = str(story.part.partname)
+                if partname in seen_footers:
+                    continue
+                seen_footers.add(partname)
+                footer_parts.extend(_docx_story_text(story))
+
+        text_parts = [*header_parts]
         for item in document.iter_inner_content():
             if hasattr(item, "text"):
                 text_parts.append(item.text)
             else:
                 for row in item.rows:
                     text_parts.append(" | ".join(cell.text for cell in row.cells))
+        body_text_boxes = _docx_text_box_text(document.element.body)
+        if body_text_boxes:
+            text_parts.append(
+                "Text box content (visual reading order may differ): " + " ".join(body_text_boxes)
+            )
+        text_parts.extend(footer_parts)
+        if has_embedded_images:
+            text_parts.append(
+                "[Embedded image present; image text was not extracted because OCR is not performed.]"
+            )
         return "\n".join(text_parts)
     except ResumeError:
         raise
@@ -81,6 +119,25 @@ def _extract_docx(content: bytes) -> str:
         raise ResumeError("The DOCX could not be read. Try saving it again as a standard DOCX.") from exc
     except Exception as exc:
         raise ResumeError("The DOCX could not be read. Try saving it again as a standard DOCX.") from exc
+
+
+def _docx_story_text(story) -> list[str]:
+    text_parts: list[str] = []
+    for item in story.iter_inner_content():
+        if hasattr(item, "text"):
+            text_parts.append(item.text)
+        else:
+            for row in item.rows:
+                text_parts.append(" | ".join(cell.text for cell in row.cells))
+    text_boxes = _docx_text_box_text(story._element)
+    if text_boxes:
+        text_parts.append("Text box content (visual reading order may differ): " + " ".join(text_boxes))
+    return text_parts
+
+
+def _docx_text_box_text(element) -> list[str]:
+    """Extract text that python-docx's paragraph/table iterator does not expose."""
+    return [value.text for value in element.xpath(".//w:txbxContent//w:t") if value.text]
 
 
 def _clean_text(value: str) -> str:

@@ -2,7 +2,7 @@
 
 - Status: Accepted and implemented
 - Date: 2026-10-06
-- Related: [PLAN-020](../plans/PLAN-020-application-workspaces.md), [PLAN-019](../plans/PLAN-019-application-preparation-framework.md), [ADR 0016](0016-durable-applied-tracker.md), [ADR 0023](0023-application-preparation-and-action-boundaries.md)
+- Related: [PLAN-022](../plans/PLAN-022-application-workspaces.md), [PLAN-019](../plans/PLAN-019-application-preparation-framework.md), [ADR 0016](0016-durable-applied-tracker.md), [ADR 0023](0023-application-preparation-and-action-boundaries.md)
 
 ## Context
 
@@ -29,4 +29,4 @@ The current app already stores a durable preparation request per owner-selected 
 
 ## Validation evidence
 
-PLAN-020 M1/M2 implementation passed focused synthetic validation on 2026-10-06: 26 application workflow/preparation/email-handoff tests, Ruff, JavaScript and Python syntax checks, and `git diff --check`. The selected-file ZIP tests cover path sanitization, current-packet membership, tampered or missing content, and cross-request/packet rejection. A stubbed Node VM check covered clipboard success and selectable-text fallback without touching the system clipboard. A synthetic browser review checked the dossier, source attribution, and narrow layout. No live provider, Gmail, or external application action was used.
+PLAN-022 M1/M2 implementation passed focused synthetic validation on 2026-10-06: 26 application workflow/preparation/email-handoff tests, Ruff, JavaScript and Python syntax checks, and `git diff --check`. The selected-file ZIP tests cover path sanitization, current-packet membership, tampered or missing content, and cross-request/packet rejection. A stubbed Node VM check covered clipboard success and selectable-text fallback without touching the system clipboard. A synthetic browser review checked the dossier, source attribution, and narrow layout. The post-integration full suite passed 289 tests on 2026-10-07; no real profile, Gmail, or external application action was used.

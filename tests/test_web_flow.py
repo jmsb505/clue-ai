@@ -148,7 +148,10 @@ def test_jev_settings_state_external_data_and_local_budget_limits(settings):
     assert "Clue does not inspect your TypeSafe account terms" in response.text
     assert "it cannot guarantee account-wide charges" in response.text
     assert "Clue does not read or control account refill settings" in response.text
-    assert "I understand which profile facts and listing details leave this device" in response.text
+    assert (
+        "I understand which profile facts, listing details, generated statements, and linked evidence leave this device"
+        in response.text
+    )
     assert "I have reviewed the data disclosure and TypeSafe terms above" not in response.text
     assert (
         "The built-in company directory, connector definitions, and manual X lead marker remain."
