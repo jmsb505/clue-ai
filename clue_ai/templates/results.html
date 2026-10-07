@@ -261,7 +261,7 @@
           {% else %}
             <span class="tag tag-muted">Listing link unavailable</span>
           {% endif %}
-          {% if job.score_state == 'scored' and job.filter_status == 'match' %}
+          {% if job.score_state == 'scored' and job.eligibility_status == 'eligible' and job.filter_status in ['match', 'review'] %}
             {% if preparation_cvs and preparation_claims_ready %}
               <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
                 <input type="hidden" name="run_id" value="{{ run.id }}">
@@ -269,8 +269,20 @@
                 <select id="cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
                   {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv or (preparation_cvs|length == 1) %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
                 </select>
-                <button class="button button-dark button-small" type="submit" aria-label="Prepare application materials for {{ job.title }} at {{ job.company }}">Prepare application <span aria-hidden="true">→</span></button>
+                <details class="preparation-source-details">
+                  <summary>Add employer listing link</summary>
+                  <label for="source-{{ job.id }}">Official employer job-page URL <span>(optional)</span></label>
+                  <input id="source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123" aria-describedby="source-help-{{ job.id }}">
+                  <small id="source-help-{{ job.id }}">Clue will read this public page as a research source. It will not open or submit its application form.</small>
+                </details>
+                <button class="button button-dark button-small" type="submit" aria-label="{% if job.filter_status == 'review' %}Prepare materials for review for{% else %}Prepare application materials for{% endif %} {{ job.title }} at {{ job.company }}">{% if job.filter_status == 'review' %}Prepare for review{% else %}Prepare application{% endif %} <span aria-hidden="true">→</span></button>
               </form>
+              {% if job.filter_status == 'review' %}
+                <p class="panel-muted preparation-review-note">Jev marked this listing for review, not as a match. Unresolved checks:
+                  {% for key, check in job.filter_checks.items() if check.status == 'review' %}{{ check.label or key|replace('_', ' ')|title }}{% if not loop.last %}; {% endif %}{% endfor %}.
+                  The dossier will keep these open for your review.
+                </p>
+              {% endif %}
             {% else %}
               <a class="button button-outline button-small" href="/evidence" aria-label="Set up CV and approved claims before preparing {{ job.title }}">Set up materials <span aria-hidden="true">→</span></a>
             {% endif %}

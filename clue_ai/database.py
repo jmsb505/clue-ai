@@ -677,6 +677,7 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "app_settings", "gmail_consent_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "app_settings", "gmail_oauth_connected_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "preparation_requests", "attempt_no", "INTEGER NOT NULL DEFAULT 1")
+        _migrate_preparation_request_retry_uniqueness(db)
         _ensure_column(db, "openai_usage", "reserved_input_tokens", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(
             db,
@@ -688,6 +689,9 @@ def initialize(database_path: Path) -> None:
         db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs(fingerprint)")
         db.execute(
             "CREATE INDEX IF NOT EXISTS idx_preparation_requests_job ON preparation_requests(job_id, created_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_preparation_requests_updated ON preparation_requests(updated_at DESC)"
         )
         _seed_researched_listing_ledger(db)
         now = utc_now()
@@ -773,6 +777,72 @@ def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: 
     known = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
     if column not in known:
         db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _migrate_preparation_request_retry_uniqueness(db: sqlite3.Connection) -> None:
+    """Replace the legacy one-attempt uniqueness rule without losing child rows."""
+    unique_indexes = db.execute("PRAGMA index_list(preparation_requests)").fetchall()
+    has_legacy_index = False
+    for index in unique_indexes:
+        if not index["unique"]:
+            continue
+        quoted_name = str(index["name"]).replace('"', '""')
+        columns = [
+            row["name"]
+            for row in db.execute(f'PRAGMA index_info("{quoted_name}")').fetchall()
+        ]
+        if columns == ["job_id", "snapshot_sha256"]:
+            has_legacy_index = True
+            break
+    if not has_legacy_index:
+        return
+
+    db.execute("PRAGMA foreign_keys = OFF")
+    try:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("DROP TABLE IF EXISTS preparation_requests__retry_migration")
+        db.execute(
+            """CREATE TABLE preparation_requests__retry_migration (
+                 id TEXT PRIMARY KEY,
+                 job_id TEXT NOT NULL,
+                 run_id TEXT NOT NULL,
+                 snapshot_json TEXT NOT NULL,
+                 snapshot_sha256 TEXT NOT NULL,
+                 attempt_no INTEGER NOT NULL DEFAULT 1,
+                 state TEXT NOT NULL DEFAULT 'requested'
+                   CHECK (state IN ('requested', 'researching', 'generating', 'review',
+                                    'completed', 'blocked', 'failed', 'cancelled')),
+                 status_message TEXT NOT NULL DEFAULT '',
+                 created_at TEXT NOT NULL,
+                 updated_at TEXT NOT NULL,
+                 UNIQUE (job_id, snapshot_sha256, attempt_no)
+               )"""
+        )
+        db.execute(
+            """INSERT INTO preparation_requests__retry_migration
+               (id, job_id, run_id, snapshot_json, snapshot_sha256, attempt_no,
+                state, status_message, created_at, updated_at)
+               SELECT id, job_id, run_id, snapshot_json, snapshot_sha256, attempt_no,
+                      state, status_message, created_at, updated_at
+               FROM preparation_requests"""
+        )
+        db.execute("DROP TABLE preparation_requests")
+        db.execute(
+            "ALTER TABLE preparation_requests__retry_migration RENAME TO preparation_requests"
+        )
+        db.execute(
+            "CREATE INDEX idx_preparation_requests_updated ON preparation_requests(updated_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX idx_preparation_requests_job ON preparation_requests(job_id, created_at DESC)"
+        )
+        db.execute("COMMIT")
+    except Exception:
+        if db.in_transaction:
+            db.execute("ROLLBACK")
+        raise
+    finally:
+        db.execute("PRAGMA foreign_keys = ON")
 
 
 def get_profile(database_path: Path) -> CandidateProfile:

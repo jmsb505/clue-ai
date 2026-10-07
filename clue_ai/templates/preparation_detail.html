@@ -19,18 +19,25 @@
   <a href="{% if packet and packet.status == 'approved' %}#application-owner-progress{% else %}#preparation-progress{% endif %}">Progress</a>
 </nav>
 <section id="application-summary" class="panel preparation-snapshot-panel application-section">
-  <div class="panel-header"><div><span class="kicker kicker-muted">JOB AND JEV INPUT BINDING</span><h2>What this request refers to</h2></div><span class="tag tag-green">Jev match snapshot</span></div>
+  <div class="panel-header"><div><span class="kicker kicker-muted">JOB AND JEV INPUT BINDING</span><h2>What this request refers to</h2></div><span class="tag {% if preparation.snapshot.filter_status == 'review' %}tag-amber{% else %}tag-green{% endif %}">{% if preparation.snapshot.filter_status == 'review' %}Jev review · not a match{% else %}Jev match snapshot{% endif %}</span></div>
   <dl class="preparation-facts">
     <div><dt>Company</dt><dd>{{ preparation.snapshot.company or 'Not provided' }}</dd></div>
     <div><dt>Location</dt><dd>{{ preparation.snapshot.location_raw or 'Not provided' }}</dd></div>
     <div><dt>Workplace</dt><dd>{{ preparation.snapshot.workplace_type }}</dd></div>
     <div><dt>Employment</dt><dd>{{ preparation.snapshot.employment_type }}</dd></div>
+    <div><dt>Pay in listing</dt><dd>{% if preparation.snapshot.salary_min or preparation.snapshot.salary_max %}{{ preparation.snapshot.salary_currency }} {{ preparation.snapshot.salary_min or '—' }}{% if preparation.snapshot.salary_max %}–{{ preparation.snapshot.salary_max }}{% endif %}{% if preparation.snapshot.salary_period %} / {{ preparation.snapshot.salary_period }}{% endif %}{% else %}Not stated{% endif %}</dd></div>
     <div><dt>Jev status</dt><dd>{{ preparation.snapshot.filter_status }} · {{ preparation.snapshot.score_state }}</dd></div>
     <div><dt>Jev rubric</dt><dd>{{ preparation.snapshot.rubric_version or 'Version not recorded' }}</dd></div>
     <div><dt>Snapshot hash</dt><dd><code>{{ preparation.snapshot_sha256 }}</code></dd></div>
     <div><dt>Requested</dt><dd>{{ preparation.created_at[:16].replace('T', ' ') }} UTC</dd></div>
   </dl>
-  <p class="panel-muted">This request stores the exact job and read-only Jev values from the selected completed search. It does not change your Jev score or mark the job as applied.</p>
+  {% if preparation.snapshot.filter_status == 'review' %}
+    <div class="alert alert-warning" role="note"><b>Jev did not confirm a match.</b> This packet was prepared only because you chose this individual listing. Review these unresolved checks against the employer's current posting before relying on the materials:
+      {% if filter_review_items %}<ul>{% for item in filter_review_items %}<li>{{ item.label }}</li>{% endfor %}</ul>{% else %}The saved Jev result needs manual review.{% endif %}
+    </div>
+  {% endif %}
+  <p class="panel-muted">This request stores the exact job and read-only Jev values from the selected completed search. It does not change your Jev decision or mark the job as applied.</p>
+  {% if preparation.snapshot.inputs.additional_source_url %}<p class="panel-muted">Additional employer source: <a href="{{ preparation.snapshot.inputs.additional_source_url }}" target="_blank" rel="noopener noreferrer">Open the saved public job page <span aria-hidden="true">↗</span></a></p>{% endif %}
   {% if preparation.snapshot.canonical_url %}<p><a class="text-link" href="{{ preparation.snapshot.canonical_url }}" target="_blank" rel="noopener noreferrer">Open the saved listing <span aria-hidden="true">↗</span></a></p>{% endif %}
 </section>
 <section id="preparation-progress" class="panel preparation-snapshot-panel application-section">
