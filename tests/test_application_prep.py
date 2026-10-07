@@ -208,7 +208,7 @@ def test_new_generation_policy_gets_a_new_manual_request_for_same_listing(settin
         "model": "gpt-6-luna",
         "reasoning_effort": "high",
         "prompt_version": "synthetic-prompt-next",
-        "output_schema_version": "application-output-v3",
+        "output_schema_version": "application-output-v4",
         "output_token_limits": {
             "diagnoser": 2_800,
             "hiring_manager": 2_400,

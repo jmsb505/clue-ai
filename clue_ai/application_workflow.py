@@ -31,6 +31,7 @@ from clue_ai.application_prompts import (
     OUTPUT_SCHEMAS,
     PROMPT_VERSION,
     ROLE_PROMPTS,
+    SCHEMA_FORMAT_VERSIONS,
 )
 from clue_ai.claim_support import ClaimSupportError, check_generated_claim_support
 from clue_ai.config import Settings
@@ -57,6 +58,14 @@ MAX_RESEARCH_API_CALLS = 5
 MAX_PACKET_BUNDLE_FILES = 10
 MAX_PACKET_BUNDLE_BYTES = 20 * 1024 * 1024
 _EMAIL = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])", re.IGNORECASE)
+_RECRUITMENT_CONTEXT = re.compile(
+    r"\b(?:recruit(?:ment|ing)?|recruiter|careers?|hiring|applications?|applicants?|"
+    r"candidates?|cv|resume|position|opportunity)\b",
+    re.IGNORECASE,
+)
+_RECRUITMENT_ACTION = re.compile(
+    r"\b(?:send|submit|email|contact|write|apply|forward)\b", re.IGNORECASE
+)
 
 
 class AttachmentBundleError(ValueError):
@@ -225,6 +234,8 @@ def run_preparation(
             )
         )
         grounding = _apply_grounding_results(rewrite, grounding, grounding_assertions)
+        rewrite["cover_letter_title"] = _cover_letter_title(_job_context(snapshot))
+        rewrite["change_summary"] = _rewrite_change_summary(rewrite)
         if not application_questions and not rewrite.get("application_answers"):
             rewrite["unresolved_questions"].append(
                 "Application form questions were not supplied, so no form answers were generated."
@@ -393,7 +404,7 @@ def _payload(stage: str, context: dict[str, Any], conversation: list[dict[str, A
         "text": {
             "format": {
                 "type": "json_schema",
-                "name": f"clue_{stage}_v3",
+                "name": f"clue_{stage}_v{SCHEMA_FORMAT_VERSIONS[stage]}",
                 "strict": True,
                 "schema": OUTPUT_SCHEMAS[stage],
             }
@@ -515,24 +526,45 @@ def _validate_research(value: dict[str, Any], pages: dict[str, dict[str, Any]]) 
         if not page or not _quote_supported(item.get("quote", ""), page["text"]):
             continue
         page_text = page["text"].casefold()
-        if (
+        email = str(item.get("public_email") or "").strip()
+        if item.get("contact_type") == "general_recruitment_inbox":
+            quote = str(item.get("quote") or "")
+            quote_without_email = _EMAIL.sub(" ", quote)
+            if (
+                not item.get("organization")
+                or item["organization"].casefold() not in page_text
+                or not email
+                or email.casefold() not in page_text
+                or email.casefold() not in quote.casefold()
+                or not _EMAIL.fullmatch(email)
+                or not _RECRUITMENT_CONTEXT.search(quote_without_email)
+                or not _RECRUITMENT_ACTION.search(quote_without_email)
+            ):
+                continue
+            # This is an organization contact channel, not a person. Normalize labels
+            # so model output cannot invent an individual or misstate its role.
+            item["name"] = "Recruitment team"
+            item["role"] = "General recruitment inbox"
+            item["confidence"] = "high"
+            item["function_match"] = "high"
+        elif (
             not item.get("name")
             or item["name"].casefold() not in page_text
             or not item.get("role")
             or item["role"].casefold() not in page_text
             or not item.get("organization")
             or item["organization"].casefold() not in page_text
+            or email and (email.casefold() not in page_text or not _EMAIL.fullmatch(email))
         ):
-            continue
-        email = str(item.get("public_email") or "").strip()
-        if email and (email.casefold() not in page_text or not _EMAIL.fullmatch(email)):
             continue
         item["observed_at"] = page["observed_at"]
         contacts.append(item)
     value["findings"] = findings
     value["contacts"] = contacts
     value["company_summary"] = ""
-    if not contacts and not value.get("no_contact_found_reason"):
+    if contacts:
+        value["no_contact_found_reason"] = ""
+    elif not value.get("no_contact_found_reason"):
         value["no_contact_found_reason"] = "No public professional contact met the source and confidence checks."
     return value
 
@@ -565,12 +597,29 @@ def _validate_rewrite(
     elif len(line_order) != len(source_order) or set(line_order) != set(source_order):
         raise OpenAIProviderError("Rewriter must preserve every original CV line exactly once.")
     valid_claim_ids = claim_ids | (permitted_profile_claim_ids or set())
+    removed_unbound_blocks = 0
+    for field in (
+        "resume_bullet_edits",
+        "cover_letter_paragraphs",
+        "application_answers",
+        "outreach_drafts",
+    ):
+        retained = []
+        for item in rewrite.get(field, []):
+            if any(value not in valid_claim_ids for value in item.get("claim_ids", [])):
+                removed_unbound_blocks += 1
+            else:
+                retained.append(item)
+        rewrite[field] = retained
+    if removed_unbound_blocks:
+        rewrite.setdefault("unresolved_questions", []).append(
+            f"Clue removed {removed_unbound_blocks} generated block(s) that cited evidence outside this request's approved set."
+        )
     for item in rewrite.get("resume_bullet_edits", []):
         if (
             item.get("line_id") not in line_map
             or item.get("original_text") != line_map.get(item.get("line_id"))
             or not item.get("claim_ids")
-            or any(value not in valid_claim_ids for value in item.get("claim_ids", []))
         ):
             raise OpenAIProviderError("A resume edit did not match its source line and approved evidence.")
     findings_by_id = {
@@ -583,8 +632,6 @@ def _validate_rewrite(
         verified_fact_sources.add(job_source_url)
     permitted_preference_source_ids = permitted_preference_source_ids or set()
     for item in rewrite.get("cover_letter_paragraphs", []):
-        if any(value not in valid_claim_ids for value in item.get("claim_ids", [])):
-            raise OpenAIProviderError("A cover-letter paragraph refers to an unapproved claim.")
         finding_ids = item.setdefault("research_finding_ids", [])
         if (
             not isinstance(finding_ids, list)
@@ -620,8 +667,6 @@ def _validate_rewrite(
     for answer in rewrite.get("application_answers", []):
         if answer.get("question") not in application_questions:
             raise OpenAIProviderError("An application answer does not match a question supplied by the owner.")
-        if any(value not in valid_claim_ids for value in answer.get("claim_ids", [])):
-            raise OpenAIProviderError("An application answer refers to an unapproved claim.")
         if not answer.get("needs_owner_input") and not answer.get("claim_ids"):
             raise OpenAIProviderError("An application answer has no approved candidate evidence.")
     known_contacts = {
@@ -631,7 +676,7 @@ def _validate_rewrite(
     for item in rewrite.get("outreach_drafts", []):
         if item.get("contact_source_url") not in known_contacts:
             raise OpenAIProviderError("An outreach draft refers to a contact without verified public provenance.")
-        if not item.get("claim_ids") or any(value not in valid_claim_ids for value in item.get("claim_ids", [])):
+        if not item.get("claim_ids"):
             raise OpenAIProviderError("An outreach draft is missing approved candidate evidence.")
         if any(url not in known_sources | known_contacts for url in item.get("source_urls", [])):
             raise OpenAIProviderError("An outreach draft refers to an unverified research source.")
@@ -951,6 +996,24 @@ def _tailored_resume_text(lines: list[dict[str, str]], rewrite: dict[str, Any]) 
     return "\n".join(
         str(edits.get(line_id, lines_by_id[line_id]))
         for line_id in rewrite.get("resume_line_order", [])
+    )
+
+
+def _cover_letter_title(job: dict[str, Any]) -> str:
+    title = " ".join(str(job.get("title") or "").split()).replace("\ufffd", "").strip()
+    company = " ".join(str(job.get("company") or "").split()).replace("\ufffd", "").strip()
+    if not title:
+        return "Cover letter"
+    return f"Application for {title} at {company}" if company else f"Application for {title}"
+
+
+def _rewrite_change_summary(rewrite: dict[str, Any]) -> str:
+    return (
+        "Jev-supported draft content: "
+        f"{len(rewrite.get('resume_bullet_edits', []))} resume bullet edit(s); "
+        f"{len(rewrite.get('cover_letter_paragraphs', []))} cover-letter paragraph(s); "
+        f"{len(rewrite.get('application_answers', []))} application answer(s); "
+        f"{len(rewrite.get('outreach_drafts', []))} outreach draft(s)."
     )
 
 

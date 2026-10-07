@@ -41,6 +41,7 @@ from clue_ai.application_workflow import (
     _api_call,
     _assert_packet_quality_gates,
     _cover_letter_quality,
+    _cover_letter_title,
     _filter_diagnoser_references,
     _get_bound_inputs,
     _grounding_assertions,
@@ -49,6 +50,7 @@ from clue_ai.application_workflow import (
     _parse_stage_result,
     _payload,
     _research_context,
+    _rewrite_change_summary,
     _validate_research,
     _validate_rewrite,
     create_practice_session,
@@ -316,7 +318,7 @@ class FakePreparationClient:
         assert payload["model"] == MODEL_ID
         assert payload["reasoning"]["effort"] == REASONING_EFFORT
         assert payload["store"] is False
-        stage = payload["text"]["format"]["name"].removeprefix("clue_").removesuffix("_v3")
+        stage = payload["text"]["format"]["name"].removeprefix("clue_").rsplit("_v", 1)[0]
         prompt_input = payload["input"]
         if stage == "researcher" and payload.get("tools"):
             assert payload["tools"] == [CRAWL_TOOL]
@@ -585,7 +587,7 @@ def test_owner_trigger_routes_full_descriptive_context_and_approved_claims_to_re
     stage_inputs = {}
     profile_prompt_contexts = {}
     for payload in calls:
-        stage = payload["text"]["format"]["name"].removeprefix("clue_").removesuffix("_v3")
+        stage = payload["text"]["format"]["name"].removeprefix("clue_").rsplit("_v", 1)[0]
         stage_inputs.setdefault(stage, []).append(json.dumps(payload["input"], ensure_ascii=False))
         if stage in {"recruiter", "rewriter"}:
             profile_prompt_contexts[stage] = json.loads(payload["input"][0]["content"])[
@@ -677,18 +679,29 @@ def test_unreviewed_profile_excerpt_can_be_used_only_with_jev_source_evidence():
             **rewrite["resume_bullet_edits"][0],
             "claim_ids": ["not-bound-to-this-profile"],
         }],
+        "cover_letter_paragraphs": [{
+            "text": "This paragraph cites an unapproved claim.",
+            "claim_ids": ["not-bound-to-this-profile"],
+            "source_urls": [],
+            "research_finding_ids": [],
+            "preference_source_ids": [],
+        }],
     }
-    with pytest.raises(OpenAIProviderError, match="approved evidence"):
-        _validate_rewrite(
-            unsupported,
-            "cv-synthetic",
-            {"L0001": "Project experience"},
-            set(),
-            {"findings": [], "contacts": []},
-            [],
-            "preserve",
-            permitted_profile_claim_ids={evidence_id},
-        )
+    _validate_rewrite(
+        unsupported,
+        "cv-synthetic",
+        {"L0001": "Project experience"},
+        set(),
+        {"findings": [], "contacts": []},
+        [],
+        "preserve",
+        permitted_profile_claim_ids={evidence_id},
+    )
+    assert unsupported["resume_bullet_edits"] == []
+    assert unsupported["cover_letter_paragraphs"] == []
+    assert unsupported["unresolved_questions"] == [
+        "Clue removed 2 generated block(s) that cited evidence outside this request's approved set."
+    ]
 
 
 def test_long_selected_profiles_are_passed_in_full_when_the_model_context_fits(settings, database):
@@ -788,7 +801,7 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     )
     cover_letter_doc = Document(cover_letter_artifact["file_path"])
     cover_letter_paragraphs = [paragraph.text for paragraph in cover_letter_doc.paragraphs]
-    assert cover_letter_paragraphs[0] == "Application for Software Engineer"
+    assert cover_letter_paragraphs[0] == "Application for Software Engineer at Example Labs"
     cover_letter_title_style = cover_letter_doc.styles["Clue Cover Letter Title"]
     assert cover_letter_doc.paragraphs[0].style.name == "Clue Cover Letter Title"
     assert cover_letter_title_style.base_style.name == "Normal"
@@ -1253,7 +1266,7 @@ def test_rewriter_preserve_mode_omits_redundant_line_order_and_bounds_edits():
     paragraph_schema = OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["items"]
     assert "research_finding_ids" in paragraph_schema["required"]
     assert paragraph_schema["properties"]["research_finding_ids"]["maxItems"] == 2
-    assert PROMPT_VERSION == "2026-10-07.12"
+    assert PROMPT_VERSION == "2026-10-07.16"
     assert "Do not narrate the letter's selection process" in prompt
     assert "Avoid phrases such as" in prompt
 
@@ -1374,6 +1387,10 @@ def test_researcher_prompt_requires_useful_facts_even_without_public_contacts():
     assert "return concise atomic findings with an exact supporting quote" in prompt
     assert "A lack of contact details does not make useful company or role facts irrelevant" in prompt
     assert "Never guess a contact, email address, or relationship" in prompt
+    assert "organization-published general recruitment inbox" in prompt
+    assert "do not imply that it belongs to a named person" in prompt
+    contact_types = OUTPUT_SCHEMAS["researcher"]["properties"]["contacts"]["items"]["properties"]["contact_type"]["enum"]
+    assert "general_recruitment_inbox" in contact_types
 
 
 def test_rewriter_cover_letter_prompt_requires_supported_specific_paragraphs():
@@ -1390,6 +1407,11 @@ def test_rewriter_cover_letter_prompt_requires_supported_specific_paragraphs():
     assert "Connect a preference to a concrete sourced responsibility" in normalized_prompt
     assert "use distinct projects instead of repeating the same project" in normalized_prompt
     assert "Name each project exactly as its source states" in normalized_prompt
+    assert "address the generic Recruitment team" in normalized_prompt
+    assert "first name one project and state a factual action or result" in normalized_prompt
+    assert "one narrow tool or activity that both that evidence and the saved listing explicitly share" in normalized_prompt
+    assert "Do not broaden a shared tool or topic into a claim" in normalized_prompt
+    assert "Avoid repeating the same transition phrase" in normalized_prompt
 
 
 def test_diagnoser_prompt_requires_verbatim_source_and_line_ids():
@@ -1883,6 +1905,81 @@ def test_crawler_rejects_private_dns_and_research_requires_source_supported_cont
     writer_context = _research_context(checked)
     assert "public_email" not in json.dumps(writer_context)
     assert "alex@example.org" not in json.dumps(writer_context)
+
+
+def test_research_accepts_only_explicit_general_recruitment_inboxes():
+    page = {
+        "url": JOB_URL,
+        "text": (
+            "Example Labs builds Python services. If you are interested in this position, "
+            "please submit your CV and letter of interest to careers@example.org. "
+            "For general questions, email info@example.org."
+        ),
+        "observed_at": "2026-10-06T10:00:00Z",
+    }
+    research = {
+        "findings": [],
+        "contacts": [
+            {
+                "name": "Invented Person",
+                "role": "Talent Director",
+                "organization": "Example Labs",
+                "contact_type": "general_recruitment_inbox",
+                "source_url": JOB_URL,
+                "quote": (
+                    "please submit your CV and letter of interest to careers@example.org"
+                ),
+                "public_email": "careers@example.org",
+                "confidence": "medium",
+                "function_match": "unknown",
+            },
+            {
+                "name": "Info inbox",
+                "role": "General recruitment inbox",
+                "organization": "Example Labs",
+                "contact_type": "general_recruitment_inbox",
+                "source_url": JOB_URL,
+                "quote": "For general questions, email info@example.org.",
+                "public_email": "info@example.org",
+                "confidence": "high",
+                "function_match": "high",
+            },
+        ],
+        "no_contact_found_reason": "No contact was found.",
+    }
+
+    checked = _validate_research(research, {JOB_URL: page})
+
+    assert len(checked["contacts"]) == 1
+    contact = checked["contacts"][0]
+    assert contact["name"] == "Recruitment team"
+    assert contact["role"] == "General recruitment inbox"
+    assert contact["contact_type"] == "general_recruitment_inbox"
+    assert contact["confidence"] == "high"
+    assert checked["no_contact_found_reason"] == ""
+    writer_context = _research_context(checked)
+    assert "careers@example.org" not in json.dumps(writer_context)
+    assert "Invented Person" not in json.dumps(writer_context)
+
+
+def test_document_metadata_uses_saved_listing_and_final_grounded_counts():
+    assert _cover_letter_title({"title": "AI Engineer", "company": "IFOM"}) == (
+        "Application for AI Engineer at IFOM"
+    )
+    assert _cover_letter_title({"title": "Broken\ufffd Role", "company": "IFOM"}) == (
+        "Application for Broken Role at IFOM"
+    )
+    rewrite = {
+        "resume_bullet_edits": [],
+        "cover_letter_paragraphs": [{"text": "supported"}, {"text": "supported"}],
+        "application_answers": [],
+        "outreach_drafts": [],
+        "change_summary": "The model can claim anything here.",
+    }
+    assert _rewrite_change_summary(rewrite) == (
+        "Jev-supported draft content: 0 resume bullet edit(s); 2 cover-letter paragraph(s); "
+        "0 application answer(s); 0 outreach draft(s)."
+    )
 
 
 def test_openai_reservation_is_separate_and_requires_fresh_consent(settings, database):
@@ -2452,7 +2549,7 @@ def test_payloads_fix_model_storage_and_limit_crawler_to_researcher():
     assert plain["reasoning"] == researcher["reasoning"] == {"effort": "high"}
     assert plain["store"] is researcher["store"] is False
     assert plain["text"]["format"]["name"] == "clue_rewriter_v3"
-    assert researcher["text"]["format"]["name"] == "clue_researcher_v3"
+    assert researcher["text"]["format"]["name"] == "clue_researcher_v4"
     assert "tools" not in plain
     assert researcher["tools"] == [CRAWL_TOOL]
     assert researcher["parallel_tool_calls"] is False

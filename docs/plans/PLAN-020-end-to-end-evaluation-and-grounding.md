@@ -1,6 +1,6 @@
 # PLAN-020 — End-to-end quality evaluation and evidence grounding
 
-Status: M1–M4 implementation and evaluation gates completed for the bounded pilot. The latest manually triggered request on one Jev-review listing passed Jev claim support, final CV approval, packet quality, usage settlement, and visual document inspection. Personal-fit calibration remains unknown; the packet stays in owner review and has not been approved for external use.
+Status: M1–M4 are complete. M5's three-listing exploratory evaluation and four IFOM retries are recorded. The latest IFOM packet (prompt `.16`) passed Jev claim support for both cover-letter paragraphs, final CV approval, packet quality, and usage settlement; its CV had zero bullet edits and the exact DOCX files have not been visually rendered. The packet remains in owner review. Personal voice acceptance, useful CV tailoring, and hiring outcomes remain unproven.
 Created: 2026-10-06 · Last updated: 2026-10-07
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md), [ADR 0025](../decisions/0025-jev-approval-of-tailored-resume.md)
 
@@ -25,6 +25,7 @@ The current eight-case Jev benchmark has author-assigned synthetic relevance lab
 - Technical-profile routing is now implemented and covered by offline tests: permitted source IDs, hashes, and unreviewed claim excerpts are bound to the opportunity snapshot. Recruiter/Rewriter can use the full profile after the owner trigger; optional Hiring Manager practice receives it only after its separate action. Jev receives only the exact excerpts cited by generated blocks. No personal profile was included in the synthetic live runs.
 - The first rich-portfolio run stopped before Rewriter because Recruiter used exactly its 2,200-token output allowance and returned an incomplete response; four calls settled at `$0.0028728`, with no unresolved usage or packet. A 3,200-token app-local allowance let the next attempt finish. No provider-side settings or caps changed.
 - Earlier live-pilot attempts, 2026-10-07: two manually triggered requests for the same scored Jev `review` listing stopped at measured output limits before Jev grounding or final-resume review. Their settled usage and tuning decisions are retained in the evaluation record and ADRs 0028/0030. These failures were followed by additional policy, budget, and prompt tuning; the final live-pilot completion checkpoint below supersedes them as current status.
+- Owner-requested real-listing evaluation, 2026-10-07: three official Milan postings were manually triggered: IFOM AI Engineer (`review`), Accenture AI LLM Technology Architecture Analyst (`review`), and Bending Spoons Graduate AI Software Engineer (`match`). The original IFOM prompt `.12` produced one mechanically reviewable packet but no CV edits and repetitive relevance transitions; the other two letters failed Jev's two-paragraph evidence gate. Three additional IFOM retries exposed nondeterministic recruitment-inbox discovery and a Rewriter block with an unapproved claim ID. Clue now omits that block before Jev and keeps the minimum-two-supported-paragraph packet gate. The latest `.16` run passed all automated content gates and produced a review packet, still with zero CV edits and no contact. See the sanitized [evaluation report](../evaluations/PLAN-020-evaluation-results.md) and [ADR 0031](../decisions/0031-public-recruitment-inboxes-and-draft-integrity.md).
 - Follow-up on 2026-10-07: PLAN-021/ADR 0024 replace the former 40,000/32,000/4,000 character admission limits and UTF-8-byte reservation with complete selected source text, exact per-request token counting, a documented model-context check, and token-based local reservation. The earlier M1 snapshot passed 272 tests; the final integration suite after rubric/prompt updates passed 287 tests with Ruff, byte-compilation, and `git diff --check`.
 
 ## Desired state
@@ -35,7 +36,7 @@ The current eight-case Jev benchmark has author-assigned synthetic relevance lab
 - Unsupported or contradictory assertions are removed or block the packet from being approved as ready; unresolved assertions remain clearly flagged for owner input. Profile entailment does not independently verify the source's truth, so the owner still reviews all generated materials.
 - Synthetic model labels, synthetic Jev judgments, and owner judgments are reported separately. No personal relevance tuning is claimed until the owner labels a suitable set of real opportunities.
 - Profile use is stage-scoped and bound to a manual listing trigger. The Researcher gets no candidate profile; the Diagnoser gets the selected CV plus job/Jev context; Recruiter/Rewriter receive full permitted technical profiles and their exact source-bound evidence IDs; optional Hiring Manager practice receives technical context after its own action. The Rewriter may also receive full selected descriptive profiles and writing references. The request is admitted using the exact input-token count and configured output allowance. Unreviewed technical excerpts may be cited without pre-approving each suggestion, but generated facts must pass Jev support and the complete packet remains subject to owner review. Descriptive material with unknown or AI-assisted authorship is style-only and cannot become factual career claims or unconfirmed first-person motivation.
-- The current writing-quality fixtures cover two synthetic role families and a 12-project synthetic portfolio. They exercise project selection and evidence levels, but do not reproduce any real candidate portfolio. The final real-data pilot passed its automated gates on one selected listing; the generated CV had no bullet edits, and the exact packet remains in owner review before any external use. Personal-fit calibration remains unknown.
+- The current writing-quality fixtures cover two synthetic role families and a 12-project synthetic portfolio. They exercise project selection and evidence levels, but do not reproduce any real candidate portfolio. The latest real-data IFOM packet passed automated content gates; the generated CV had no bullet edits, and the exact packet remains in owner review before any external use. The three-listing sample is too small to establish repeatable drafting, contact discovery, useful CV tailoring, personal-fit calibration, or hiring benefit.
 - Live evaluations are individually triggered, privacy-bounded, and protected by small app-side caps. No application submission or outreach send is performed.
 
 ## Scope
@@ -94,7 +95,7 @@ The current eight-case Jev benchmark has author-assigned synthetic relevance lab
 - GPT-6 Luna may produce inconsistent output across live runs. Capture model ID, prompt/schema versions, token usage, request status, and rubric scores, but keep personal response bodies local.
 - The reconstructed DOCX workflow does not promise pixel-perfect fidelity to complex source layouts. Evaluate text/order integrity and inspect rendered output; document unsupported layout cases.
 - Confidence calibration cannot be inferred from assistant-authored labels; no owner-labeled relevance set exists.
-- The canonical documents renderer and Poppler are available. The exact current synthetic packet was rendered and visually inspected: each file fits one page without clipping or overflow, and the corrected cover-letter heading has no unwanted rule. Both files are sparse because the synthetic inputs intentionally contain few sections and claims; complete real-CV layout remains untested.
+- The synthetic `SYN-02` packet was rendered and visually inspected. A Windows DOCX renderer is not available in the current host, so the latest real IFOM resume and cover letter were reopened structurally with `python-docx` but not visually inspected. Complete real-CV layout remains unverified.
 
 ## Milestones
 
@@ -229,7 +230,7 @@ Subtasks:
 
 - [x] Verify separate synthetic API consent and app-side usage controls in the disposable test database.
 - [x] Select one scored Jev `review` listing with verified eligible location and no explicit conflict; use only its individual trigger, preserving the saved Jev result exactly. All pilot requests used that same listing; no second listing was triggered.
-- [x] Apply Jev evidence-support checks, inspect the generated artifacts, and report unsupported, unresolved, and unchanged content. The final packet had 2/2 supported letter paragraphs, no unsupported assertions, an explicitly approved CV, and zero bullet edits.
+- [x] Apply Jev evidence-support checks, structurally reopen the generated DOCX artifacts, and report unsupported, unresolved, and unchanged content. The final packet had 2/2 supported letter paragraphs, no unsupported assertions, an explicitly approved CV, and zero bullet edits. Visual rendering was not available on the Windows host.
 - [x] Leave Gmail disconnected; perform no send, external write, or application submission.
 - [x] Keep personal-fit calibration marked unknown. An owner-label worksheet is deferred until the owner chooses to calibrate personal ranking preferences; no calibration claim is made.
 
@@ -248,7 +249,8 @@ Acceptance criteria:
 Validation:
 
 - [x] Confirm the selected Jev snapshot and its status are unchanged after generation and grounding checks.
-- [x] Inspect generated DOCX outputs in Microsoft Word PDF export and Poppler; Jev supported both letter paragraphs and approved the final CV.
+- [x] Reopen both generated DOCX files structurally; Jev supported both letter paragraphs and approved the final CV.
+- [ ] Visually render and inspect the exact real-data DOCX files; the current Windows host has no supported renderer. Synthetic `SYN-02` visual inspection passed separately.
 - [x] Verify every OpenAI and Jev usage receipt settled and record remaining Clue-local cap after the pilot.
 
 Documentation updates:
@@ -259,13 +261,46 @@ Applicable specialized skills: `documents`, `pdf`, `anti-slop`.
 
 Expected Git checkpoint: Push only code, generic tests, public docs, and sanitized metrics on the milestone branch; merge through a reviewed PR after required checks pass. Never push the owner's packet or labels.
 
+### M5 — Three-listing exploratory evaluation and evidence-led tuning
+
+Goal: Exercise the full manually triggered flow on three live employer postings, assess the generated content and Jev decisions, then make narrow changes supported by the failures.
+
+Subtasks:
+
+- [x] Manually trigger three official Milan listings: [IFOM AI Engineer](https://ifom.eu/en/job-opportunities/open-positions/open-position.php?docuID=12430), [Accenture AI LLM Technology Architecture Analyst](https://www.accenture.com/it-it/careers/jobdetails?id=R00344204_it), and [Bending Spoons Graduate AI Software Engineer](https://jobs.bendingspoons.com/positions/695a6f1127aeb1bf21a1b44d?gh_jid=3280615&id=3280615). Preserve their original Jev results (`review`, `review`, and `match` respectively).
+- [x] Evaluate discovery filtering, Jev match decisions, GPT-6 Luna output, source IDs, Jev claim support, final-resume decisions, local document generation, and usage settlement. The initial IFOM packet passed automated gates but had zero CV edits and repetitive letter transitions; Accenture and Bending Spoons failed the required two-supported-paragraph letter gate.
+- [x] Retest IFOM under prompts `.14`–`.16`. These runs identified an organization-published recruitment inbox, a Jev-supported outreach draft on one attempt, nondeterministic contact discovery, an unapproved Rewriter evidence ID, and a cover-letter paragraph Jev could not support.
+- [x] Omit only generated blocks that cite evidence outside the request's approved ID set, record the omission for review, and allow Jev to assess remaining blocks. Keep the two-supported-paragraph requirement and final-resume approval gate unchanged.
+- [x] Correct the deterministic AI-focus false negative for an AI-implementation role with an `Analyst` title. Add positive and negative regression coverage.
+- [x] Keep all generated material local. No outreach was sent, no application was submitted, and no provider-account cap or setting was changed.
+
+Acceptance criteria:
+
+- [x] All three listings have recorded, unchanged Jev match and eligibility results; GPT use is separate from matching authority.
+- [x] Unapproved evidence IDs cannot enter Jev evidence checks or generated artifacts; remaining claims require Jev support and explicit final-CV approval.
+- [x] The latest IFOM `.16` run produced a review packet with 2/2 supported letter paragraphs, explicit final-CV approval, complete local usage settlement, and zero CV edits. The exact DOCX files were structurally reopened; visual rendering is unavailable on this host.
+- [x] The two other initial listings failed closed and produced no artifacts. Their unresolved outputs are not counted as successful drafting.
+- [ ] Owner review confirms that the actual IFOM letter follows the writing guidelines and that the unchanged CV is useful for this application. Personal-fit calibration, representative portfolio coverage, contact-discovery reliability, visual rendering, and hiring outcomes remain unknown.
+
+Validation:
+
+- [x] Focused workflow, public recruitment-inbox, prompt, and AI-title filter regressions pass.
+- [x] Full repository suite, Ruff, byte-compilation, JavaScript syntax, and `git diff --check` after this M5 change pass; details are in Final integration validation below.
+- [x] All known OpenAI and Jev usage rows for the live evaluations are settled; the evaluation report records the sanitized totals and Clue-local controls.
+
+Documentation updates:
+
+- [x] Update this plan, [PLAN-019](PLAN-019-application-preparation-framework.md), [ADR 0031](../decisions/0031-public-recruitment-inboxes-and-draft-integrity.md), the roadmap, product definition, and sanitized evaluation report. Exclude profile text, response bodies, request IDs, and generated DOCX files.
+
+Expected Git checkpoint: Validate and push the code, tests, decision record, plan, and sanitized measurements on the milestone branch; merge only through a passing reviewed PR. Never commit `.data`, `.env`, profiles, or generated packet artifacts.
+
 ## Final integration validation
 
-- [x] Final full suite after live-pilot tuning: 302 passed in 65.67 seconds in a disposable dependency-complete environment with its temporary root under Windows Temp; Ruff, `compileall`, `node --check clue_ai/static/app.js`, and `git diff --check` passed. One upstream Starlette/AnyIO deprecation warning remains.
+- [x] Final full suite after M5: 306 passed in 62.69 seconds in the dependency-complete Python environment with pytest temporary files under Windows Temp; Ruff, `compileall`, `node --check clue_ai/static/app.js`, and `git diff --check` passed. One upstream Starlette/AnyIO deprecation warning remains.
 - [x] Writing quality and portfolio representativeness limits are recorded. The live packet is specific and Jev-grounded but includes repeated relevance bridges; one attempt to replace them with transfer claims was rolled back after Jev returned unresolved. Broader voice acceptance still requires owner review.
 - [ ] The owner reviews the exact generated packet against the writing rubric before approving it for external use. This review remains separate from the synthetic sample feedback.
 - [x] Synthetic live Jev reports distinguish model behavior from assistant-authored labels. The current provider/document run passed its mechanical checks and settled its local usage ledger.
-- [x] The same one real listing completed Jev claim support, final-resume approval, packet-quality checks, and artifact rendering after measured output-limit and local-budget tuning. Earlier failed attempts and the `.13` Jev rejection are retained in the evaluation record; no additional listing was used.
+- [x] The original single-listing pilot completed Jev claim support, final-resume approval, and packet-quality checks after output-limit and local-budget tuning. Its DOCX artifacts were reopened structurally; visual rendering was not available. Later M5 tested two additional postings and four IFOM retries.
 - [x] Source-of-truth docs, ADR, and roadmap agree with current synthetic evidence and the remaining acceptance gates; no changelog exists.
 
 ## Rollback / recovery
@@ -284,7 +319,7 @@ Expected Git checkpoint: Push only code, generic tests, public docs, and sanitiz
 - [x] M2 Jev evidence-support gate implemented and covered by offline and synthetic live checks.
 - [x] M3 synthetic provider and document pilot: GPT `high` generation, Jev claim support, final tailored-resume approval, substantive packet quality, DOCX reopen, and usage settlement passed. One unsupported block was omitted.
 - [x] M3 synthetic visual inspection passed for the latest `SYN-02` DOCX artifacts using Microsoft Word PDF export and PDFium; portfolio representativeness and exact-packet owner review remain open.
-- [x] M4 bounded live pilot and calibration handoff: one listing was triggered manually; the latest packet passed Jev support, CV approval, quality, usage, and rendering checks. Calibration remains unknown and owner-labeled calibration is deferred.
+- [x] M4 bounded live pilot and calibration handoff: one listing was triggered manually; the packet passed Jev support, CV approval, quality, and usage checks. Its DOCX files were structurally reopened, but visual rendering is unverified. Calibration remains unknown and owner-labeled calibration is deferred.
 
 ## 2026-10-07 synthetic evidence checkpoint
 
@@ -303,7 +338,7 @@ This entry supersedes earlier M4 status notes. The bounded pilot used one scored
 
 - The final run completed four Researcher calls, Diagnoser, Recruiter, and Rewriter. All seven OpenAI usage rows settled: 87,870 input tokens, 11,570 output tokens, `$0.0145720` Clue-local estimate. Jev completed separate claim-support and final-resume checks (7,821 input tokens total; `$0.000328482` local estimate). No reservation or unknown usage remained.
 - Jev supported both cover-letter paragraphs, with zero contradicted or unresolved claims, and explicitly approved the final CV (`no_material_issue`). The separate saved Jev match remained `review`, its unresolved checks and evidence were unchanged, and it was not converted to `match`.
-- Packet quality passed. The cover letter rendered to one page; the CV rendered to two pages with no split bullet or orphaned project heading. The cover-letter title uses a custom Normal-based style to avoid Word's inherited title rule. Artifacts remain in local packet status `review` for owner review.
+- Packet quality passed. Both DOCX files reopened structurally; exact page count, clipping, and visual layout were not verified because no supported renderer is available on this Windows host. The cover-letter title uses a custom Normal-based style to avoid Word's inherited title rule. Artifacts remain in local packet status `review` for owner review.
 - The CV contained zero bullet edits; its source order and file hash were unchanged. Recruiter reported six requirements as partial and one as absent from the CV. This is an evidence-preserving no-change result, not proof that the CV is a strong match. Research returned seven findings, no verified contact, and three unresolved questions; no outreach draft, Gmail draft, email, or application was produced.
 - Eight of eleven same-listing requests failed safely during tuning: output-token incompletions, one legacy SQLite retry-constraint issue fixed under ADR 0029, a Clue-local per-opportunity reservation block, and one prompt experiment whose two letter paragraphs Jev marked unresolved. That prompt experiment was rejected and the last Jev-supported prompt `.12` retained. Every known usage receipt settled; the current Clue-local monthly and per-opportunity caps are `$0.15`, with `$0.1306722` used and `$0` reserved/unknown. No OpenAI or Jev account cap or setting was changed.
 - The `.13` writing refinement tried more explicit task-level transfer language. Jev did not support either resulting paragraph, so the change was rolled back. The successful `.12` output is specific and evidence-backed, but its repeated relevance-bridge wording remains a writing-quality limitation for owner review; no broad personal-voice acceptance is claimed.
@@ -322,4 +357,4 @@ This entry supersedes earlier M4 status notes. The bounded pilot used one scored
 
 ## Completion evidence
 
-See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). Synthetic `SYN-02` passed its Jev, generation, artifact, usage, and visual gates. The bounded live pilot also completed on one manually selected listing: 2/2 cover-letter paragraphs were Jev-supported, Jev explicitly approved the CV, packet quality passed, both DOCX files rendered cleanly, and all usage settled. The saved Jev job result remains `review`; the CV had no bullet edits, no contact was verified, and the packet remains in owner review. Personal-fit calibration, hiring outcomes, and broad personal-voice acceptance remain unknown. Final repository validation and Git progression are recorded with the milestone commit and PR.
+See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md). Synthetic `SYN-02` passed its Jev, generation, artifact, usage, and visual gates. The owner-requested three-listing exploration kept all original Jev decisions unchanged; prompt `.16` produced the latest IFOM packet with 2/2 Jev-supported letter paragraphs, explicit final-CV approval, packet quality, and settled usage. The CV had zero bullet edits. Both DOCX files reopened structurally but have not been visually rendered; the packet remains in owner review. Personal-fit calibration, useful CV tailoring, repeatable contact research, hiring outcomes, and broad personal-voice acceptance remain unknown. Final repository validation and Git progression will be recorded after the M5 checks.
