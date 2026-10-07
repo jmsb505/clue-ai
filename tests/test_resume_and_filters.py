@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import io
+import struct
+import zipfile
+import zlib
 from datetime import datetime, timezone
+from xml.etree import ElementTree
 
 import pytest
 from docx import Document
@@ -24,9 +28,26 @@ def make_docx(text: str) -> bytes:
     document = Document()
     for line in text.splitlines():
         document.add_paragraph(line)
+    return save_docx(document)
+
+
+def save_docx(document: Document) -> bytes:
     output = io.BytesIO()
     document.save(output)
     return output.getvalue()
+
+
+def make_png() -> bytes:
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        body = kind + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">2I5B", 1, 1, 8, 6, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(b"\x00\x00\x00\x00\x00"))
+        + chunk(b"IEND", b"")
+    )
 
 
 def make_pdf(text: str, page_count: int = 1) -> bytes:
@@ -65,6 +86,102 @@ def test_docx_text_is_extracted_for_review_and_section_suggestions(settings):
 
     assert "Product engineer" in text
     assert suggest_profile_sections(text)["skills"] == "Python, SQL, APIs, and accessibility."
+
+
+def test_docx_extracts_headers_footers_tables_and_document_order(settings):
+    document = Document()
+    document.sections[0].header.paragraphs[0].text = "Alex Rivera | alex@example.test"
+    document.add_paragraph("SUMMARY\nProduct engineer focused on accessible software systems.")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "COLUMN ONE PROJECT"
+    table.cell(0, 1).text = "COLUMN TWO PROJECT"
+    table.cell(1, 0).text = "Built a service with careful evaluation."
+    table.cell(1, 1).text = "Added a typed local API."
+    document.add_paragraph("EDUCATION\nSynthetic computer science coursework.")
+    document.sections[0].footer.paragraphs[0].text = "Portfolio: https://example.test/alex"
+
+    text = extract_resume_text("resume.docx", save_docx(document), settings)
+
+    expected_order = [
+        "Alex Rivera",
+        "Product engineer",
+        "COLUMN ONE PROJECT",
+        "COLUMN TWO PROJECT",
+        "Synthetic computer science coursework.",
+        "Portfolio: https://example.test/alex",
+    ]
+    positions = [text.index(part) for part in expected_order]
+    assert positions == sorted(positions)
+
+
+def test_docx_extracts_text_boxes_and_warns_when_images_are_not_ocrd(settings):
+    document = Document()
+    document.add_paragraph("SUMMARY\nSynthetic engineer with enough selectable text for review.")
+    document.add_paragraph().add_run().add_picture(io.BytesIO(make_png()))
+    content = save_docx(document)
+    rewritten_parts: list[tuple[str, bytes]] = []
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        for item in archive.infolist():
+            data = archive.read(item.filename)
+            if item.filename == "word/document.xml":
+                root = ElementTree.fromstring(data)
+                body = root.find(".//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}body")
+                textbox_paragraph = ElementTree.Element(
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"
+                )
+                run_with_shape = ElementTree.SubElement(
+                    textbox_paragraph,
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r",
+                )
+                drawing = ElementTree.SubElement(
+                    run_with_shape,
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing",
+                )
+                text_box = ElementTree.SubElement(
+                    drawing,
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}txbxContent",
+                )
+                paragraph = ElementTree.SubElement(
+                    text_box,
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p",
+                )
+                run = ElementTree.SubElement(
+                    paragraph,
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}r",
+                )
+                box_text = ElementTree.SubElement(
+                    run,
+                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t",
+                )
+                box_text.text = "Selected callout text from a Word text box."
+                body.insert(len(body) - 1, textbox_paragraph)
+                data = ElementTree.tostring(root, encoding="utf-8", xml_declaration=True)
+            rewritten_parts.append((item.filename, data))
+
+    rewritten = io.BytesIO()
+    with zipfile.ZipFile(rewritten, "w", zipfile.ZIP_DEFLATED) as archive:
+        for filename, data in rewritten_parts:
+            archive.writestr(filename, data)
+
+    text = extract_resume_text("resume.docx", rewritten.getvalue(), settings)
+
+    assert "Selected callout text from a Word text box." in text
+    assert "Text box content (visual reading order may differ)" in text
+    assert "Embedded image present" in text
+    assert "OCR is not performed" in text
+
+
+def test_resume_extraction_rejects_silent_truncation(settings):
+    limited = settings.__class__(
+        data_dir=settings.data_dir,
+        api_key="",
+        model=settings.model,
+        monthly_jev_budget_usd=4.0,
+        max_extracted_chars=60,
+    )
+
+    with pytest.raises(ResumeError, match="extracted text exceeds the 60-character local limit"):
+        extract_resume_text("resume.docx", make_docx("A" * 100), limited)
 
 
 def test_candidate_profile_parser_derives_editable_english_role_and_sections():
@@ -136,6 +253,11 @@ def test_pdf_text_is_extracted_locally_and_page_limit_is_enforced(settings):
     )
     with pytest.raises(ResumeError, match="up to 1 pages"):
         extract_resume_text("many-pages.pdf", make_pdf(text, page_count=2), page_limited)
+
+
+def test_scanned_pdf_with_no_selectable_text_is_rejected_locally(settings):
+    with pytest.raises(ResumeError, match="no usable selectable text"):
+        extract_resume_text("scanned-resume.pdf", make_pdf(""), settings)
 
 
 def test_resume_rejects_wrong_extension_invalid_file_and_oversize(settings):

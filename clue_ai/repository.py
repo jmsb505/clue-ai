@@ -440,6 +440,34 @@ def get_latest_run(database_path: Path) -> dict[str, Any] | None:
     return get_run(database_path, row["id"]) if row else None
 
 
+def list_search_runs(database_path: Path) -> list[dict[str, Any]]:
+    """Return saved searches with their persisted result, score, and hidden counts."""
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT run.*,
+                      COUNT(result.job_id) AS result_count,
+                      COALESCE(SUM(CASE WHEN result.combined_score IS NOT NULL THEN 1 ELSE 0 END), 0)
+                          AS scored_result_count,
+                      COALESCE(SUM(CASE WHEN user_state.hidden = 1 THEN 1 ELSE 0 END), 0)
+                          AS hidden_result_count
+               FROM search_runs run
+               LEFT JOIN search_results result ON result.run_id = run.id
+               LEFT JOIN job_user_state user_state ON user_state.job_id = result.job_id
+               GROUP BY run.id
+               ORDER BY run.created_at DESC, run.id DESC"""
+        ).fetchall()
+    runs = []
+    for row in rows:
+        run = dict(row)
+        for field in ("criteria_json", "checked_sources_json"):
+            try:
+                run[field.removesuffix("_json")] = json.loads(run[field])
+            except (TypeError, json.JSONDecodeError):
+                run[field.removesuffix("_json")] = {}
+        runs.append(run)
+    return runs
+
+
 def has_active_runs(database_path: Path) -> bool:
     with connect(database_path) as db:
         row = db.execute(
@@ -1010,7 +1038,7 @@ def prune_expired_data(database_path: Path) -> int:
 
 def reserve_jev_budget(
     database_path: Path,
-    run_id: str,
+    run_id: str | None,
     model: str,
     reserved_tokens: int,
     price_per_million: float,

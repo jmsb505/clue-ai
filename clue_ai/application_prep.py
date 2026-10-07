@@ -262,6 +262,19 @@ def selected_writing_sources(database_path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def selected_technical_profile_sources(database_path: Path) -> list[dict[str, Any]]:
+    """Return permitted technical profiles; preparation binds and uses them only after a job trigger."""
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT id, filename, source_type, file_path, content_sha256, authorship_label,
+                      extracted_text
+               FROM preparation_sources
+               WHERE permitted = 1 AND source_type = 'technical_profile'
+               ORDER BY created_at DESC, id"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def contact_suppression_key(name: str, source_url: str, public_email: str = "") -> str:
     email = str(public_email or "").strip().casefold()
     host = (urlsplit(source_url).hostname or "").casefold()
@@ -411,9 +424,17 @@ def request_preparation(
                ORDER BY claim.category, claim.id""",
             (selected_cv["id"],),
         ).fetchall()
-        if not approved:
+        technical_profiles = db.execute(
+            """SELECT id, filename, source_type, content_sha256, authorship_label
+               FROM preparation_sources
+               WHERE permitted = 1 AND source_type = 'technical_profile'
+               ORDER BY created_at DESC, id"""
+        ).fetchall()
+        if not approved and not technical_profiles:
             db.execute("ROLLBACK")
-            raise ValueError("Approve at least one supported claim from a selected evidence source first.")
+            raise ValueError(
+                "Permit a technical profile or approve at least one supported claim before preparing this listing."
+            )
         preferences = db.execute(
             "SELECT content, revision FROM writing_preferences WHERE id = 1"
         ).fetchone()
@@ -437,6 +458,36 @@ def request_preparation(
         writing_sources_digest = hashlib.sha256(
             json.dumps(writing_sources, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
+        technical_profile_sources = [dict(item) for item in technical_profiles]
+        technical_profile_sources_digest = hashlib.sha256(
+            json.dumps(
+                technical_profile_sources,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        technical_profile_evidence = [
+            {
+                key: item[key]
+                for key in ("id", "source_id", "claim_text", "evidence_excerpt", "status")
+            }
+            for item in db.execute(
+                """SELECT claim.id, claim.source_id, claim.claim_text, claim.evidence_excerpt,
+                          claim.status
+                   FROM candidate_claims claim
+                   JOIN preparation_sources source ON source.id = claim.source_id
+                   WHERE source.permitted = 1 AND source.source_type = 'technical_profile'
+                     AND claim.status = 'unreviewed'
+                   ORDER BY claim.id"""
+            ).fetchall()
+        ]
+        technical_profile_evidence_digest = hashlib.sha256(
+            json.dumps(
+                technical_profile_evidence,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
         snapshot["inputs"] = {
             "selected_cv_id": selected_cv["id"],
             "selected_cv_filename": selected_cv["filename"],
@@ -446,6 +497,9 @@ def request_preparation(
             "approved_claim_ids": [item["id"] for item in approved],
             "writing_sources": writing_sources,
             "writing_sources_sha256": writing_sources_digest,
+            "technical_profile_sources": technical_profile_sources,
+            "technical_profile_sources_sha256": technical_profile_sources_digest,
+            "technical_profile_evidence_sha256": technical_profile_evidence_digest,
             "writing_preferences_revision": preference_revision,
             "writing_preferences_sha256": hashlib.sha256(
                 preference_content.encode("utf-8")

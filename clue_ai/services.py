@@ -16,6 +16,7 @@ from clue_ai.repository import (
     get_run,
     get_run_result_counts,
     get_run_results,
+    list_sources,
     mark_researched_run_results,
     partition_researched_jobs,
     prune_expired_data,
@@ -50,8 +51,17 @@ def run_search(
         stage="sources",
         message="Checking approved sources that are due for refresh.",
     )
+    all_sources = list_sources(database_path)
     due_sources = sources_due(database_path)
-    checked_notes: list[str] = []
+    due_ids = {source["id"] for source in due_sources}
+    checked_notes = [
+        f"{source['name']}: refresh interval has not elapsed; active indexed listings remain eligible."
+        for source in all_sources
+        if source["state"] == "approved"
+        and source["enabled"]
+        and source["kind"] not in {"manual_x", "manual_board"}
+        and source["id"] not in due_ids
+    ]
     found_count = 0
     ingestion_excluded: Counter[str] = Counter()
 

@@ -19,7 +19,7 @@
     {% if profile.cv_filename %}<span class="file-state"><span aria-hidden="true">✓</span> {{ profile.cv_filename }}</span>{% endif %}
   </div>
   {% if not pending_id %}
-    <p class="panel-muted">Text extraction happens locally. Scanned PDFs need OCR; Clue does not upload them to an OCR service.</p>
+    <p class="panel-muted">Text extraction happens locally. Clue reads selectable PDF/DOCX text, including DOCX tables, headers, and footers. Word text-box order can differ from the visual layout; embedded images are flagged but not OCR'd. Scanned or image-only files need selectable text; Clue does not upload them to an OCR service.</p>
     <form class="upload-form" action="/profile/extract" method="post" enctype="multipart/form-data">
       <label class="file-picker" for="cv-file">
         <span class="file-picker-icon" aria-hidden="true">↥</span>
