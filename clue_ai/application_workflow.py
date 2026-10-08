@@ -9,6 +9,8 @@ import re
 import uuid
 import zipfile
 from collections.abc import Callable
+from copy import deepcopy
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -57,6 +59,8 @@ from clue_ai.scrapling_research import RESEARCH_CHAR_LIMIT, BoundedResearchCrawl
 MAX_RESEARCH_API_CALLS = 5
 MAX_PACKET_BUNDLE_FILES = 10
 MAX_PACKET_BUNDLE_BYTES = 20 * 1024 * 1024
+MAX_COVER_LETTER_BODY_WORDS = 100
+MAX_COVER_LETTER_PARAGRAPH_SENTENCES = 2
 _EMAIL = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}(?![\w-])", re.IGNORECASE)
 _RECRUITMENT_CONTEXT = re.compile(
     r"\b(?:recruit(?:ment|ing)?|recruiter|careers?|hiring|applications?|applicants?|"
@@ -74,6 +78,41 @@ class AttachmentBundleError(ValueError):
     def __init__(self, status_code: int, detail: str):
         super().__init__(detail)
         self.status_code = status_code
+
+
+def _bind_recruiter_requirements(
+    requirements: list[dict[str, Any]],
+    *,
+    valid_cv_line_ids: set[str],
+    valid_claim_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Bind recruiter references to this packet and downgrade uncited CV coverage."""
+    bound = []
+    for index, criterion in enumerate(requirements, start=1):
+        if not isinstance(criterion, dict):
+            raise OpenAIProviderError("Recruiter returned an invalid requirement record.")
+        criterion["requirement_id"] = f"REQ-{index:02d}"
+        criterion["claim_ids"] = [
+            value for value in criterion.get("claim_ids", []) if value in valid_claim_ids
+        ]
+        criterion["cv_line_ids"] = [
+            value for value in criterion.get("cv_line_ids", []) if value in valid_cv_line_ids
+        ]
+        coverage = criterion.get("document_coverage")
+        if coverage in {"covered", "partial"} and not criterion["cv_line_ids"]:
+            criterion["document_coverage"] = "uncertain"
+            criterion["notes"] = (
+                "Recruiter did not map an exact selected-CV line, so this CV coverage label "
+                "could not be verified."
+            )
+        elif coverage == "not_in_cv" and criterion["cv_line_ids"]:
+            criterion["document_coverage"] = "uncertain"
+            criterion["notes"] = (
+                "Recruiter marked this absent from the CV while citing a CV line; the "
+                "coverage label is inconsistent and needs review."
+            )
+        bound.append(criterion)
+    return bound
 
 
 def run_preparation(
@@ -168,12 +207,27 @@ def run_preparation(
             for profile in technical_profiles
             for claim in profile.get("evidence", [])
         }
-        for criterion in recruiter.get("requirements", []):
-            criterion["claim_ids"] = [
-                value for value in criterion.get("claim_ids", [])
-                if value in claim_ids | profile_claim_ids
-            ]
-            criterion["cv_line_ids"] = [value for value in criterion.get("cv_line_ids", []) if value in line_map]
+        recruiter["requirements"] = _bind_recruiter_requirements(
+            recruiter.get("requirements", []),
+            valid_cv_line_ids=set(line_map),
+            valid_claim_ids=claim_ids | profile_claim_ids,
+        )
+
+        mapped_profile_claim_ids = {
+            value
+            for criterion in recruiter["requirements"]
+            for value in criterion.get("claim_ids", [])
+            if value in profile_claim_ids
+        }
+        relevant_technical_profiles = _select_technical_profile_evidence(
+            technical_profiles,
+            mapped_profile_claim_ids,
+            recruiter_requirements=recruiter["requirements"],
+            cv_lines=line_map,
+        )
+        preferred_profile_claim_ids = _preferred_cover_letter_profile_claim_ids(
+            relevant_technical_profiles
+        )
 
         _assert_snapshot_current(database_path, request, settings)
         rewrite = _call_stage(
@@ -187,7 +241,8 @@ def run_preparation(
                 "jev_read_only": jev_snapshot,
                 "cv": cv_context,
                 "approved_claims": claims,
-                "technical_profile_sources": _technical_profile_prompt_context(technical_profiles),
+                "technical_profile_sources": _technical_profile_prompt_context(relevant_technical_profiles),
+                "preferred_technical_profile_claim_ids": preferred_profile_claim_ids,
                 "writing_preferences": preferences,
                 "owner_writing_context": writing_sources,
                 "research": _research_context(research),
@@ -208,6 +263,7 @@ def run_preparation(
             source["structure_policy"],
             job_source_url=str(snapshot.get("canonical_url") or ""),
             permitted_profile_claim_ids=profile_claim_ids,
+            recruiter_requirements=recruiter["requirements"],
             permitted_preference_source_ids={
                 str(item["source_id"])
                 for item in writing_sources
@@ -221,8 +277,11 @@ def run_preparation(
             research,
             job_context=_job_context(snapshot),
             descriptive_profiles=writing_sources,
-            technical_profile_sources=technical_profiles,
+            technical_profile_sources=relevant_technical_profiles,
+            cv_lines=line_map,
+            cv_source_id=source["id"],
         )
+        original_letter_paragraphs = deepcopy(rewrite.get("cover_letter_paragraphs", []))
         grounding = (
             claim_support_checker(database_path, settings, request_id, grounding_assertions)
             if claim_support_checker
@@ -234,10 +293,42 @@ def run_preparation(
             )
         )
         grounding = _apply_grounding_results(rewrite, grounding, grounding_assertions)
+        rewrite, grounding, letter_repair = _repair_cover_letter(
+            database_path=database_path,
+            settings=settings,
+            request=request,
+            rewrite=rewrite,
+            original_paragraphs=original_letter_paragraphs,
+            grounding=grounding,
+            job=_job_context(snapshot),
+            claims=claims,
+            technical_profile_sources=relevant_technical_profiles,
+            preferred_profile_claim_ids=preferred_profile_claim_ids,
+            writing_preferences=preferences,
+            owner_writing_context=writing_sources,
+            research=research,
+            recruiter_requirements=recruiter["requirements"],
+            selected_cv_id=source["id"],
+            line_map=line_map,
+            valid_claim_ids=claim_ids | profile_claim_ids,
+            profile_claim_ids=profile_claim_ids,
+            structure_policy=source["structure_policy"],
+            permitted_preference_source_ids={
+                str(item["source_id"])
+                for item in writing_sources
+                if item.get("source_type") == "descriptive_profile"
+                and item.get("authorship_label") == "owner_written"
+            },
+            claim_support_checker=claim_support_checker,
+            client=client,
+            usage_ids=usage_ids,
+            cv_lines=line_map,
+            cv_source_id=source["id"],
+        )
         rewrite["cover_letter_title"] = _cover_letter_title(_job_context(snapshot))
         rewrite["change_summary"] = _rewrite_change_summary(rewrite)
         if not application_questions and not rewrite.get("application_answers"):
-            rewrite["unresolved_questions"].append(
+            rewrite.setdefault("unresolved_questions", []).append(
                 "Application form questions were not supplied, so no form answers were generated."
             )
         grounding_by_id = {item["id"]: item for item in grounding.get("results", [])}
@@ -262,7 +353,21 @@ def run_preparation(
             structure_policy=str(source["structure_policy"]),
             recruiter_requirements=recruiter.get("requirements", []),
         )
-        quality = _cover_letter_quality(rewrite, grounding)
+        quality = _cover_letter_quality(
+            rewrite,
+            grounding,
+            recruiter_requirements=recruiter["requirements"],
+            preferred_profile_claim_ids=preferred_profile_claim_ids,
+            preferred_profile_claim_evidence=_preferred_profile_claim_evidence(
+                relevant_technical_profiles,
+                preferred_profile_claim_ids,
+            ),
+        )
+        quality["revision"] = letter_repair
+        if letter_repair["status"] == "failed":
+            quality["issues"].append(
+                "One targeted Jev-guided letter revision could not be completed; no documents were created."
+            )
         if resume_review.get("status") != "approved":
             reason = str(resume_review.get("reason") or "Jev did not approve the tailored resume.")
             _save_packet(
@@ -278,7 +383,7 @@ def run_preparation(
                 database_path, request, research, diag, recruiter, rewrite, grounding, [],
                 status="obsolete",
                 jev_tailored_resume_review=resume_review,
-                quality_check={"status": "failed", "issues": quality["issues"]},
+                quality_check=quality,
             )
             _set_request_state(database_path, request_id, "failed", quality["issues"][0])
             return
@@ -581,6 +686,7 @@ def _validate_rewrite(
     job_source_url: str = "",
     permitted_preference_source_ids: set[str] | None = None,
     permitted_profile_claim_ids: set[str] | None = None,
+    recruiter_requirements: list[dict[str, Any]] | None = None,
 ) -> None:
     research = _identify_research_findings(research)
     if rewrite.get("selected_cv_id") != selected_cv_id:
@@ -597,6 +703,7 @@ def _validate_rewrite(
     elif len(line_order) != len(source_order) or set(line_order) != set(source_order):
         raise OpenAIProviderError("Rewriter must preserve every original CV line exactly once.")
     valid_claim_ids = claim_ids | (permitted_profile_claim_ids or set())
+    valid_cv_line_ids = set(line_map)
     removed_unbound_blocks = 0
     for field in (
         "resume_bullet_edits",
@@ -606,9 +713,18 @@ def _validate_rewrite(
     ):
         retained = []
         for item in rewrite.get(field, []):
-            if any(value not in valid_claim_ids for value in item.get("claim_ids", [])):
+            candidate_claim_ids = item.get("claim_ids", [])
+            candidate_cv_line_ids = item.setdefault("cv_line_ids", [])
+            if (
+                not isinstance(candidate_claim_ids, list)
+                or any(not isinstance(value, str) or value not in valid_claim_ids for value in candidate_claim_ids)
+                or not isinstance(candidate_cv_line_ids, list)
+                or any(not isinstance(value, str) or value not in valid_cv_line_ids for value in candidate_cv_line_ids)
+            ):
                 removed_unbound_blocks += 1
             else:
+                item["claim_ids"] = list(dict.fromkeys(candidate_claim_ids))
+                item["cv_line_ids"] = list(dict.fromkeys(candidate_cv_line_ids))
                 retained.append(item)
         rewrite[field] = retained
     if removed_unbound_blocks:
@@ -619,9 +735,9 @@ def _validate_rewrite(
         if (
             item.get("line_id") not in line_map
             or item.get("original_text") != line_map.get(item.get("line_id"))
-            or not item.get("claim_ids")
+            or item.get("line_id") not in item.get("cv_line_ids", [])
         ):
-            raise OpenAIProviderError("A resume edit did not match its source line and approved evidence.")
+            raise OpenAIProviderError("A resume edit did not cite its exact selected CV source line.")
     findings_by_id = {
         str(finding["id"]): finding
         for finding in research.get("findings", [])
@@ -664,22 +780,48 @@ def _validate_rewrite(
             for source_id in item.get("preference_source_ids", [])
         ):
             raise OpenAIProviderError("A cover-letter paragraph refers to an unapproved writing preference source.")
-    for answer in rewrite.get("application_answers", []):
+    if recruiter_requirements is not None:
+        relevance = _letter_requirement_link_report(
+            rewrite.get("cover_letter_paragraphs", []), recruiter_requirements
+        )
+        if relevance["issues"]:
+            raise OpenAIProviderError(relevance["issues"][0])
+    valid_answers = []
+    for index, answer in enumerate(rewrite.get("application_answers", []), start=1):
+        reason = ""
         if answer.get("question") not in application_questions:
-            raise OpenAIProviderError("An application answer does not match a question supplied by the owner.")
-        if not answer.get("needs_owner_input") and not answer.get("claim_ids"):
-            raise OpenAIProviderError("An application answer has no approved candidate evidence.")
+            reason = "it does not match a question supplied by the owner"
+        elif not answer.get("needs_owner_input") and not (
+            answer.get("claim_ids") or answer.get("cv_line_ids")
+        ):
+            reason = "it has no approved candidate evidence"
+        if reason:
+            rewrite.setdefault("unresolved_questions", []).append(
+                f"Clue omitted application answer {index} because {reason}."
+            )
+        else:
+            valid_answers.append(answer)
+    rewrite["application_answers"] = valid_answers
     known_contacts = {
         item["source_url"] for item in research.get("contacts", []) if not item.get("suppressed")
     }
     known_sources = set(verified_fact_sources)
-    for item in rewrite.get("outreach_drafts", []):
+    valid_outreach = []
+    for index, item in enumerate(rewrite.get("outreach_drafts", []), start=1):
+        reason = ""
         if item.get("contact_source_url") not in known_contacts:
-            raise OpenAIProviderError("An outreach draft refers to a contact without verified public provenance.")
-        if not item.get("claim_ids"):
-            raise OpenAIProviderError("An outreach draft is missing approved candidate evidence.")
-        if any(url not in known_sources | known_contacts for url in item.get("source_urls", [])):
-            raise OpenAIProviderError("An outreach draft refers to an unverified research source.")
+            reason = "the contact has no verified public provenance"
+        elif not (item.get("claim_ids") or item.get("cv_line_ids")):
+            reason = "it has no approved candidate evidence"
+        elif any(url not in known_sources | known_contacts for url in item.get("source_urls", [])):
+            reason = "it cites an unverified research source"
+        if reason:
+            rewrite.setdefault("unresolved_questions", []).append(
+                f"Clue omitted outreach draft {index} because {reason}."
+            )
+        else:
+            valid_outreach.append(item)
+    rewrite["outreach_drafts"] = valid_outreach
 
 
 def _grounding_assertions(
@@ -690,9 +832,12 @@ def _grounding_assertions(
     job_context: dict[str, Any] | None = None,
     descriptive_profiles: list[dict[str, Any]] | None = None,
     technical_profile_sources: list[dict[str, Any]] | None = None,
+    cv_lines: dict[str, str] | None = None,
+    cv_source_id: str = "",
 ) -> list[dict[str, Any]]:
     """Bind each submitted-content block to only its cited owner or public evidence."""
     claim_by_id = {str(item["id"]): item for item in claims}
+    cv_lines = cv_lines or {}
     public_by_url: dict[str, list[dict[str, str]]] = {}
     public_by_finding_id: dict[str, dict[str, str]] = {}
     identified_findings = _identify_research_findings(research)["findings"]
@@ -770,11 +915,22 @@ def _grounding_assertions(
         output_type: str,
         text: str,
         claim_ids: list[str],
+        cv_line_ids: list[str],
         source_urls: list[str],
         preference_source_ids: list[str] | None = None,
         public_evidence_override: list[dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         evidence = []
+        for line_id in cv_line_ids:
+            source_text = cv_lines.get(str(line_id))
+            if source_text:
+                evidence.append(
+                    {
+                        "source_type": "owner_provided_resume",
+                        "source_id": cv_source_id or "selected_cv",
+                        "text": f"Selected CV line {line_id}: {source_text}",
+                    }
+                )
         for claim_id in claim_ids:
             claim = claim_by_id.get(str(claim_id))
             if claim:
@@ -803,6 +959,29 @@ def _grounding_assertions(
                             ),
                         }
                     )
+                    exact_source_excerpts = [
+                        str(value).strip()
+                        for value in profile_claim.get("source_excerpts", [])
+                        if str(value).strip()
+                    ]
+                    if not exact_source_excerpts:
+                        exact_source_excerpts = _technical_profile_detail_excerpts(
+                            str(profile.get("text") or ""),
+                            profile_claim,
+                            related_text=text,
+                        )
+                    for source_excerpt in exact_source_excerpts:
+                        evidence.append(
+                            {
+                                "source_type": "owner_provided_technical_profile",
+                                "source_id": str(profile.get("source_id") or ""),
+                                "text": (
+                                    f"Exact technical-profile passage for reference {claim_id} "
+                                    f"(review status: {profile_claim.get('review_status', 'unreviewed')}): "
+                                    f"{source_excerpt}"
+                                ),
+                            }
+                        )
         if public_evidence_override is None:
             for url in source_urls:
                 evidence.extend(public_by_url.get(str(url), []))
@@ -835,6 +1014,7 @@ def _grounding_assertions(
                 "resume_bullet_edit",
                 str(item.get("revised_text") or ""),
                 item.get("claim_ids", []),
+                item.get("cv_line_ids", []),
                 [],
             )
         )
@@ -855,6 +1035,7 @@ def _grounding_assertions(
                 "cover_letter_paragraph",
                 str(item.get("text") or ""),
                 item.get("claim_ids", []),
+                item.get("cv_line_ids", []),
                 item.get("source_urls", []),
                 item.get("preference_source_ids", []),
                 paragraph_public_evidence,
@@ -867,6 +1048,7 @@ def _grounding_assertions(
                 "application_answer",
                 str(item.get("answer") or ""),
                 item.get("claim_ids", []),
+                item.get("cv_line_ids", []),
                 item.get("source_urls", []),
             )
         )
@@ -877,6 +1059,7 @@ def _grounding_assertions(
                 "outreach_draft",
                 f"Subject: {item.get('subject', '')}\n{item.get('body', '')}",
                 item.get("claim_ids", []),
+                item.get("cv_line_ids", []),
                 [*item.get("source_urls", []), str(item.get("contact_source_url") or "")],
             )
         )
@@ -936,6 +1119,13 @@ def _apply_grounding_results(
     rewrite: dict[str, Any],
     result: dict[str, Any],
     assertions: list[dict[str, Any]],
+    *,
+    fields: tuple[tuple[str, str], ...] = (
+        ("resume_bullet_edits", "resume_bullet_edit"),
+        ("cover_letter_paragraphs", "cover_letter_paragraph"),
+        ("application_answers", "application_answer"),
+        ("outreach_drafts", "outreach_draft"),
+    ),
 ) -> dict[str, Any]:
     by_id = {str(item.get("id") or ""): item for item in result.get("results", [])}
     checked = []
@@ -960,12 +1150,6 @@ def _apply_grounding_results(
             }
         )
     checked_by_id = {item["id"]: item for item in checked}
-    fields = (
-        ("resume_bullet_edits", "resume_bullet_edit"),
-        ("cover_letter_paragraphs", "cover_letter_paragraph"),
-        ("application_answers", "application_answer"),
-        ("outreach_drafts", "outreach_draft"),
-    )
     omitted = 0
     for field, prefix in fields:
         original = rewrite.get(field, [])
@@ -987,6 +1171,382 @@ def _apply_grounding_results(
         "supported_count": sum(item["status"] == "supported" for item in checked),
         "omitted_count": omitted,
         "results": checked,
+    }
+
+
+def _repair_cover_letter(
+    *,
+    database_path: Path,
+    settings: Settings,
+    request: dict[str, Any],
+    rewrite: dict[str, Any],
+    original_paragraphs: list[dict[str, Any]],
+    grounding: dict[str, Any],
+    job: dict[str, Any],
+    claims: list[dict[str, Any]],
+    technical_profile_sources: list[dict[str, Any]],
+    preferred_profile_claim_ids: list[str],
+    writing_preferences: dict[str, Any],
+    owner_writing_context: list[dict[str, Any]],
+    research: dict[str, Any],
+    recruiter_requirements: list[dict[str, Any]],
+    selected_cv_id: str,
+    line_map: dict[str, str],
+    valid_claim_ids: set[str],
+    profile_claim_ids: set[str],
+    structure_policy: str,
+    permitted_preference_source_ids: set[str],
+    claim_support_checker: Callable[..., dict[str, Any]] | None,
+    client: Any,
+    usage_ids: list[str],
+    cv_lines: dict[str, str],
+    cv_source_id: str,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Give unsupported or repetitive letter blocks one bounded source-aware repair."""
+    statuses = {
+        int(item["id"].rsplit("_", 1)[-1]): item
+        for item in grounding.get("results", [])
+        if item.get("output_type") == "cover_letter_paragraph"
+        and str(item.get("id", "")).startswith("cover_letter_paragraph_")
+        and str(item.get("id", "")).rsplit("_", 1)[-1].isdigit()
+    }
+    jev_failed_indices = [
+        index
+        for index in range(len(original_paragraphs))
+        if statuses.get(index, {}).get("status") != "supported"
+    ]
+    initial_quality = _cover_letter_quality(
+        {**rewrite, "cover_letter_paragraphs": original_paragraphs},
+        grounding,
+        recruiter_requirements=recruiter_requirements,
+        preferred_profile_claim_ids=preferred_profile_claim_ids,
+        preferred_profile_claim_evidence=_preferred_profile_claim_evidence(
+            technical_profile_sources,
+            preferred_profile_claim_ids,
+        ),
+    )
+    quality_revision_indices = set(initial_quality.get("revision_paragraph_indices", []))
+    failed_indices = sorted(set(jev_failed_indices) | quality_revision_indices)
+    initial_supported = sum(value.get("status") == "supported" for value in statuses.values())
+    quality_revision_reasons = {
+        int(index): str(reason)
+        for index, reason in (initial_quality.get("revision_reasons") or {}).items()
+    }
+    repair_reasons = {
+        index: "jev_unsupported" if index in jev_failed_indices
+        else quality_revision_reasons.get(index, "cover_letter_quality")
+        for index in failed_indices
+    }
+    report = {
+        "attempted": False,
+        "status": "not_needed" if not failed_indices else "not_attempted",
+        "attempt_limit": 1,
+        "initial_paragraph_count": len(original_paragraphs),
+        "initial_supported_count": initial_supported,
+        "jev_rejected_paragraph_indices": jev_failed_indices,
+        "initial_jev_rejections": [
+            {
+                "paragraph_index": index,
+                "status": statuses.get(index, {}).get("status", "unresolved"),
+                "reason": statuses.get(index, {}).get("reason", "Jev did not establish support."),
+            }
+            for index in jev_failed_indices
+        ],
+        "initial_quality_issues": initial_quality.get("issues", []),
+        "initial_quality_revision_reasons": initial_quality.get("revision_reasons", {}),
+        "style_revision_paragraph_indices": sorted(quality_revision_indices),
+        "revised_paragraph_count": 0,
+        "final_supported_count": len(rewrite.get("cover_letter_paragraphs", [])),
+    }
+    if not failed_indices:
+        return rewrite, grounding, report
+
+    report["attempted"] = True
+    try:
+        repair = _call_stage(
+            database_path,
+            settings,
+            get_settings(database_path),
+            request,
+            "letter_reviser",
+            _letter_repair_context(
+                job=job,
+                original_paragraphs=original_paragraphs,
+                grounding=grounding,
+                failed_indices=failed_indices,
+                repair_reasons=repair_reasons,
+                approved_claims=claims,
+                technical_profile_sources=technical_profile_sources,
+                preferred_profile_claim_ids=preferred_profile_claim_ids,
+                writing_preferences=writing_preferences,
+                owner_writing_context=owner_writing_context,
+                research=_research_context(research),
+                recruiter_requirements=recruiter_requirements,
+                cv_lines=line_map,
+                quality_issues=initial_quality.get("issues", []),
+            ),
+            client,
+            usage_ids,
+        )
+        revised_paragraphs = _merge_letter_revisions(
+            original_paragraphs,
+            grounding,
+            repair,
+            failed_indices,
+        )
+        report["revised_paragraph_count"] = len(repair.get("revisions", []))
+        if not revised_paragraphs:
+            report["status"] = "no_repair"
+            if repair.get("unresolved_questions"):
+                rewrite.setdefault("unresolved_questions", []).extend(
+                    str(item) for item in repair["unresolved_questions"]
+                )
+            return rewrite, grounding, report
+
+        revised_rewrite = deepcopy(rewrite)
+        revised_rewrite["cover_letter_paragraphs"] = revised_paragraphs
+        if repair.get("unresolved_questions"):
+            revised_rewrite.setdefault("unresolved_questions", []).extend(
+                str(item) for item in repair["unresolved_questions"]
+            )
+        _validate_rewrite(
+            revised_rewrite,
+            selected_cv_id,
+            line_map,
+            valid_claim_ids,
+            research,
+            [],
+            structure_policy,
+            job_source_url=str(job.get("canonical_url") or ""),
+            permitted_profile_claim_ids=profile_claim_ids,
+            recruiter_requirements=recruiter_requirements,
+            permitted_preference_source_ids=permitted_preference_source_ids,
+        )
+        assertions = [
+            item
+            for item in _grounding_assertions(
+                revised_rewrite,
+                claims,
+                research,
+                job_context=job,
+                descriptive_profiles=owner_writing_context,
+                technical_profile_sources=technical_profile_sources,
+                cv_lines=cv_lines,
+                cv_source_id=cv_source_id,
+            )
+            if item.get("output_type") == "cover_letter_paragraph"
+        ]
+        if not assertions:
+            report["status"] = "no_repair"
+            return rewrite, grounding, report
+        revised_grounding = (
+            claim_support_checker(database_path, settings, request["id"], assertions)
+            if claim_support_checker
+            else check_generated_claim_support(
+                database_path,
+                settings,
+                request["id"],
+                assertions,
+            )
+        )
+        applied_letter_grounding = _apply_grounding_results(
+            revised_rewrite,
+            revised_grounding,
+            assertions,
+            fields=(("cover_letter_paragraphs", "cover_letter_paragraph"),),
+        )
+        merged_grounding = _merge_letter_grounding(grounding, applied_letter_grounding)
+        report.update(
+            {
+                "status": "completed",
+                "final_supported_count": sum(
+                    item.get("output_type") == "cover_letter_paragraph"
+                    and item.get("status") == "supported"
+                    for item in merged_grounding.get("results", [])
+                ),
+            }
+        )
+        return revised_rewrite, merged_grounding, report
+    except (ClaimSupportError, OpenAIProviderError, ValueError):
+        # Keep the first Jev report and the supported subset; there is no artifact
+        # unless the final support check passes the complete-document gate.
+        report["status"] = "failed"
+        return rewrite, grounding, report
+
+
+def _letter_repair_context(
+    *,
+    job: dict[str, Any],
+    original_paragraphs: list[dict[str, Any]],
+    grounding: dict[str, Any],
+    failed_indices: list[int],
+    repair_reasons: dict[int, str],
+    approved_claims: list[dict[str, Any]],
+    technical_profile_sources: list[dict[str, Any]],
+    preferred_profile_claim_ids: list[str],
+    writing_preferences: dict[str, Any],
+    owner_writing_context: list[dict[str, Any]],
+    research: dict[str, Any],
+    recruiter_requirements: list[dict[str, Any]],
+    cv_lines: dict[str, str],
+    quality_issues: list[str],
+) -> dict[str, Any]:
+    results = {str(item.get("id") or ""): item for item in grounding.get("results", [])}
+    repair_set = set(failed_indices)
+    expected_sections = ["evidence", "evidence"]
+    target_claim_ids: set[str] = set()
+    target_cv_line_ids: set[str] = set()
+    target_finding_ids: set[str] = set()
+    target_preference_ids: set[str] = set()
+    for index in repair_set:
+        paragraph = original_paragraphs[index] if index < len(original_paragraphs) else {}
+        target_claim_ids.update(str(value) for value in paragraph.get("claim_ids", []) if value)
+        target_cv_line_ids.update(str(value) for value in paragraph.get("cv_line_ids", []) if value)
+        paragraph_requirement_ids = {
+            str(value) for value in paragraph.get("requirement_ids", []) if value
+        }
+        for requirement in recruiter_requirements:
+            if str(requirement.get("requirement_id") or "") in paragraph_requirement_ids:
+                target_cv_line_ids.update(
+                    str(value)
+                    for value in requirement.get("cv_line_ids", [])
+                    if str(value) in cv_lines
+                )
+        target_finding_ids.update(
+            str(value) for value in paragraph.get("research_finding_ids", []) if value
+        )
+        target_preference_ids.update(
+            str(value) for value in paragraph.get("preference_source_ids", []) if value
+        )
+        if repair_reasons.get(index) == "use_technical_profile_evidence" and index < len(
+            preferred_profile_claim_ids
+        ):
+            target_claim_ids.add(preferred_profile_claim_ids[index])
+    repair_profile_sources = []
+    for source in technical_profile_sources:
+        evidence = [
+            item for item in source.get("evidence", [])
+            if str(item.get("id") or "") in target_claim_ids
+        ]
+        if evidence:
+            repair_profile_sources.append({**source, "evidence": evidence})
+    research_findings = [
+        item for item in research.get("findings", [])
+        if str(item.get("id") or "") in target_finding_ids
+    ]
+    repair_research = {
+        "company_summary": "",
+        "findings": research_findings,
+        "contacts": [],
+        "no_contact_found_reason": "",
+        "unresolved_questions": [],
+    }
+    return {
+        "job": {
+            key: job.get(key) for key in ("title", "company", "canonical_url")
+        },
+        "paragraphs_for_repair": [
+            {
+                "paragraph_index": index,
+                "section": expected_sections[index],
+                "text": paragraph.get("text", "") if index < len(original_paragraphs) else "",
+                "claim_ids": paragraph.get("claim_ids", []) if index < len(original_paragraphs) else [],
+                "cv_line_ids": paragraph.get("cv_line_ids", []) if index < len(original_paragraphs) else [],
+                "jev_status": results.get(f"cover_letter_paragraph_{index}", {}).get("status", "unresolved"),
+                "jev_reason": results.get(f"cover_letter_paragraph_{index}", {}).get("reason", "No paragraph was returned for this required section."),
+                "repair_reason": repair_reasons.get(index, "jev_unsupported"),
+                "linked_evidence": results.get(f"cover_letter_paragraph_{index}", {}).get("evidence", []),
+                "requirement_ids": paragraph.get("requirement_ids", []) if index < len(original_paragraphs) else [],
+                "research_finding_ids": paragraph.get("research_finding_ids", []) if index < len(original_paragraphs) else [],
+                "preference_source_ids": paragraph.get("preference_source_ids", []) if index < len(original_paragraphs) else [],
+                "source_urls": paragraph.get("source_urls", []) if index < len(original_paragraphs) else [],
+            }
+            for index in range(2)
+            for paragraph in [original_paragraphs[index] if index < len(original_paragraphs) else {}]
+            if index in repair_set
+        ],
+        "locked_supported_paragraphs": [
+            {
+                "paragraph_index": index,
+                "section": paragraph.get("section", expected_sections[index]) if index < len(expected_sections) else paragraph.get("section", "evidence"),
+                "text": paragraph.get("text", ""),
+                "claim_ids": paragraph.get("claim_ids", []),
+                "cv_line_ids": paragraph.get("cv_line_ids", []),
+                "requirement_ids": paragraph.get("requirement_ids", []),
+            }
+            for index, paragraph in enumerate(original_paragraphs[:2])
+            if index not in repair_set
+        ],
+        "approved_claims": [
+            item for item in approved_claims if str(item.get("id") or "") in target_claim_ids
+        ],
+        "technical_profile_sources": _technical_profile_prompt_context(repair_profile_sources),
+        "preferred_technical_profile_claim_ids": preferred_profile_claim_ids,
+        "cv_lines": {key: cv_lines[key] for key in sorted(target_cv_line_ids) if key in cv_lines},
+        "writing_preferences": writing_preferences,
+        "owner_writing_context": [
+            item for item in owner_writing_context
+            if str(item.get("source_id") or "") in target_preference_ids
+        ],
+        "research": repair_research,
+        "recruiter_evidence_map": recruiter_requirements,
+        "cover_letter_quality_issues": quality_issues,
+    }
+
+
+def _merge_letter_revisions(
+    original_paragraphs: list[dict[str, Any]],
+    grounding: dict[str, Any],
+    repair: dict[str, Any],
+    failed_indices: list[int],
+) -> list[dict[str, Any]]:
+    allowed_indices = set(failed_indices)
+    revisions: dict[int, dict[str, Any]] = {}
+    for item in repair.get("revisions", []):
+        index = item.get("paragraph_index")
+        if (
+            not isinstance(index, int)
+            or isinstance(index, bool)
+            or index not in allowed_indices
+            or index in revisions
+        ):
+            raise OpenAIProviderError("Letter repair returned an invalid paragraph index.")
+        revision = {key: value for key, value in item.items() if key != "paragraph_index"}
+        if not str(revision.get("text") or "").strip():
+            raise OpenAIProviderError("Letter repair returned an empty paragraph.")
+        revisions[index] = revision
+
+    statuses = {
+        int(item["id"].rsplit("_", 1)[-1]): item.get("status")
+        for item in grounding.get("results", [])
+        if item.get("output_type") == "cover_letter_paragraph"
+        and str(item.get("id", "")).startswith("cover_letter_paragraph_")
+        and str(item.get("id", "")).rsplit("_", 1)[-1].isdigit()
+    }
+    output = []
+    for index in range(2):
+        if index in revisions:
+            output.append(revisions[index])
+        elif index < len(original_paragraphs) and statuses.get(index) == "supported":
+            output.append(deepcopy(original_paragraphs[index]))
+    return output
+
+
+def _merge_letter_grounding(
+    initial: dict[str, Any], revised: dict[str, Any]
+) -> dict[str, Any]:
+    non_letter_results = [
+        item for item in initial.get("results", [])
+        if item.get("output_type") != "cover_letter_paragraph"
+    ]
+    results = [*non_letter_results, *revised.get("results", [])]
+    return {
+        **initial,
+        **revised,
+        "total_assertions": len(results),
+        "supported_count": sum(item.get("status") == "supported" for item in results),
+        "omitted_count": sum(item.get("status") != "supported" for item in results),
+        "results": results,
     }
 
 
@@ -1018,38 +1578,379 @@ def _rewrite_change_summary(rewrite: dict[str, Any]) -> str:
 
 
 def _cover_letter_quality(
-    rewrite: dict[str, Any], grounding: dict[str, Any]
+    rewrite: dict[str, Any],
+    grounding: dict[str, Any],
+    *,
+    recruiter_requirements: list[dict[str, Any]] | None = None,
+    preferred_profile_claim_ids: list[str] | None = None,
+    preferred_profile_claim_evidence: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     paragraphs = [
         item for item in rewrite.get("cover_letter_paragraphs", [])
         if str(item.get("text") or "").strip()
     ]
     issues = []
-    if len(paragraphs) < 2:
+    paragraph_results = [
+        item for item in grounding.get("results", [])
+        if item.get("output_type") == "cover_letter_paragraph"
+    ]
+    results_by_id = {str(item.get("id") or ""): item for item in paragraph_results}
+    rejected = []
+    for item_id, result in results_by_id.items():
+        if result.get("status") != "supported":
+            suffix = item_id.rsplit("_", 1)[-1]
+            rejected.append(
+                {
+                    "paragraph_index": int(suffix) if suffix.isdigit() else None,
+                    "status": result.get("status", "unresolved"),
+                    "reason": result.get("reason", "Jev did not establish support."),
+                }
+            )
+    expected_sections = ["evidence", "evidence"]
+    revision_indices: set[int] = set()
+    revision_reasons: dict[int, str] = {}
+    if len(paragraphs) != 2:
         issues.append(
-            f"Jev supported {len(paragraphs)} cover-letter body paragraph(s); at least two are required for a complete draft."
+            f"Jev supported {len(paragraphs)} cover-letter body paragraph(s); a complete draft requires two evidence paragraphs. The rendered role heading supplies application intent."
         )
-    if not any(item.get("claim_ids") for item in paragraphs):
+    for index, expected_section in enumerate(expected_sections):
+        if index >= len(paragraphs):
+            revision_indices.add(index)
+            revision_reasons[index] = "missing_letter_section"
+            continue
+        if paragraphs[index].get("section") != expected_section:
+            issues.append(
+                f"Cover-letter paragraph {index + 1} must be the {expected_section} section."
+            )
+            revision_indices.add(index)
+            revision_reasons[index] = "incorrect_letter_section"
+    if not any(item.get("claim_ids") or item.get("cv_line_ids") for item in paragraphs):
         issues.append("The cover letter has no body paragraph grounded in candidate experience evidence.")
     if not all(item.get("source_urls") for item in paragraphs):
         issues.append("Every cover-letter paragraph must cite the selected listing or a verified public source.")
-    if not all(item.get("claim_ids") or item.get("preference_source_ids") for item in paragraphs):
+    if not all(
+        item.get("claim_ids") or item.get("cv_line_ids") or item.get("preference_source_ids")
+        for item in paragraphs
+    ):
         issues.append("Every cover-letter paragraph must be grounded in candidate evidence or an explicit owner preference.")
-    supported_count = sum(
-        item.get("output_type") == "cover_letter_paragraph" and item.get("status") == "supported"
-        for item in grounding.get("results", [])
-    )
+    supported_count = sum(item.get("status") == "supported" for item in paragraph_results)
     if supported_count != len(paragraphs):
         issues.append("Every included cover-letter paragraph must have a supported Jev evidence result.")
+    seen_sentences: dict[str, int] = {}
+    repeated_paragraph_indices: set[int] = set()
+    for index, paragraph in enumerate(paragraphs):
+        for sentence in re.split(r"(?<=[.!?])\s+", str(paragraph.get("text") or "")):
+            normalized = re.sub(r"[^a-z0-9]+", " ", sentence.casefold()).strip()
+            if len(normalized.split()) < 5:
+                continue
+            if normalized in seen_sentences:
+                repeated_paragraph_indices.add(index)
+                revision_reasons[index] = "duplicate_sentence"
+            else:
+                seen_sentences[normalized] = index
+    if repeated_paragraph_indices:
+        issues.append("The cover letter repeats a full sentence; revise it for distinct content.")
+        for index in repeated_paragraph_indices:
+            revision_reasons[index] = "duplicate_sentence"
+    overlong_paragraph_indices = set()
+    for index, paragraph in enumerate(paragraphs):
+        sentence_count = len(
+            [
+                sentence
+                for sentence in re.split(
+                    r"(?<=[.!?])\s+", str(paragraph.get("text") or "").strip()
+                )
+                if sentence.strip()
+            ]
+        )
+        if sentence_count > MAX_COVER_LETTER_PARAGRAPH_SENTENCES:
+            overlong_paragraph_indices.add(index)
+            revision_indices.add(index)
+            revision_reasons[index] = "too_many_sentences"
+    if overlong_paragraph_indices:
+        issues.append(
+            "Keep each cover-letter body paragraph to at most two concise sentences."
+        )
+    stacked_detail_indices = {
+        index
+        for index, paragraph in enumerate(paragraphs)
+        if ";" in str(paragraph.get("text") or "")
+    }
+    if stacked_detail_indices:
+        issues.append(
+            "Avoid semicolon-stacked details; choose one strong candidate fact per project paragraph."
+        )
+        for index in stacked_detail_indices:
+            revision_indices.add(index)
+            revision_reasons[index] = "stacked_detail"
+    role_duty_list_indices = {
+        index
+        for index, paragraph in enumerate(paragraphs)
+        if re.search(
+            r"\b(?:[A-Za-z][A-Za-z0-9&-]*['’]s\s+)?(?:role|position|job)\s+includes\b",
+            str(paragraph.get("text") or ""),
+            re.IGNORECASE,
+        )
+    }
+    if role_duty_list_indices:
+        issues.append(
+            "State one concrete responsibility directly; avoid a formulaic 'role includes' technology list."
+        )
+        for index in role_duty_list_indices:
+            revision_indices.add(index)
+            revision_reasons[index] = "role_duty_list"
+    boilerplate_bridge_indices = {
+        index
+        for index, paragraph in enumerate(paragraphs)
+        if re.search(
+            r"\b(?:this|that)\s+(?:example|work|experience)\b.{0,120}\b(?:"
+            r"connect(?:s|ing)?|relat(?:es|ed)|relevant|demonstrat(?:es|ing))\b|"
+            r"\b(?:this|that)\s+(?:match(?:es|ing)?|align(?:s|ed|ing)?(?:\s+with)?|"
+            r"map(?:s|ped|ping)?(?:\s+to)?|connect(?:s|ed|ing)?(?:\s+directly)?\s+to)\b|"
+            r"\b(?:direct\s+)?connection\s+to\b|"
+            r"\bconnect(?:s|ed|ing)?\s+(?:directly\s+)?(?:to|with)\b|"
+            r"\boverlaps?\s+with\b|"
+            r"\b(?:is|are)\s+(?:directly\s+)?relevant\s+to\b|"
+            r"\b(?:work|experience|background|project|skills?|approach)\s+"
+            r"(?:directly\s+)?(?:matches|aligns|connects|overlaps|relates)\b|"
+            r"\bconnect(?:s|ing)?\s+directly\s+to\b|"
+            r"\brelat(?:es|ing)\s+directly\s+to\b",
+            str(paragraph.get("text") or ""),
+            re.IGNORECASE,
+        )
+    }
+    role_link_patterns = (
+        r"\boverlaps?\s+with\b",
+        r"\bmatches?\b",
+        r"\baligns?\s+with\b",
+        r"\bconnects?\s+(?:directly\s+)?to\b",
+        r"\bmaps?\s+to\b",
+        r"\brelates?\s+(?:directly\s+)?to\b",
+    )
+    for pattern in role_link_patterns:
+        repeated_indices = [
+            index
+            for index, paragraph in enumerate(paragraphs)
+            if re.search(pattern, str(paragraph.get("text") or ""), re.IGNORECASE)
+        ]
+        if len(repeated_indices) > 1:
+            boilerplate_bridge_indices.update(repeated_indices)
+    if boilerplate_bridge_indices:
+        issues.append(
+            "Use distinct, direct role-link wording in the two paragraphs; name each shared responsibility instead of repeating a generic bridge."
+        )
+        for index in boilerplate_bridge_indices:
+            revision_indices.add(index)
+            if index not in role_duty_list_indices:
+                revision_reasons[index] = "generic_relevance_bridge"
+    evidence_paragraphs = paragraphs
+    candidate_evidence_refs = [
+        {
+            *(('claim', str(value)) for value in paragraph.get("claim_ids", [])),
+            *(('cv_line', str(value)) for value in paragraph.get("cv_line_ids", [])),
+        }
+        for paragraph in evidence_paragraphs
+    ]
+    if len(candidate_evidence_refs) == 2:
+        first_only = candidate_evidence_refs[0] - candidate_evidence_refs[1]
+        second_only = candidate_evidence_refs[1] - candidate_evidence_refs[0]
+        if not first_only or not second_only:
+            issues.append(
+                "The two evidence paragraphs must use distinct candidate evidence points."
+            )
+            revision_indices.add(1)
+            revision_reasons.setdefault(1, "duplicate_candidate_evidence")
+    preferred_profile_ids = list(
+        dict.fromkeys(
+            str(value) for value in (preferred_profile_claim_ids or []) if value
+        )
+    )[:2]
+    preferred_profile_id_set = set(preferred_profile_ids)
+    paragraph_profile_ids = [
+        {str(value) for value in paragraph.get("claim_ids", [])} & preferred_profile_id_set
+        for paragraph in paragraphs
+    ]
+    profile_assignment_mismatches = [
+        index
+        for index, expected_claim_id in enumerate(preferred_profile_ids[: len(paragraphs)])
+        if paragraph_profile_ids[index] != {expected_claim_id}
+    ]
+    correctly_mapped_profile_claims = sum(
+        paragraph_profile_ids[index] == {expected_claim_id}
+        for index, expected_claim_id in enumerate(preferred_profile_ids[: len(paragraphs)])
+    )
+    owner_action_paragraph_indices: set[int] = set()
+    profile_detail_paragraph_indices: set[int] = set()
+    preferred_evidence = preferred_profile_claim_evidence or {}
+    for index, expected_claim_id in enumerate(preferred_profile_ids[: len(paragraphs)]):
+        if paragraph_profile_ids[index] != {expected_claim_id}:
+            continue
+        paragraph_text = str(paragraphs[index].get("text") or "")
+        first_sentence = re.split(r"(?<=[.!?])\s+", paragraph_text.strip(), maxsplit=1)[0]
+        if not _has_direct_first_person_action(first_sentence):
+            owner_action_paragraph_indices.add(index)
+        required_anchors = _preferred_profile_letter_anchors(
+            preferred_evidence.get(expected_claim_id, {})
+        )
+        if required_anchors and not all(
+            _contains_exact_term(paragraph_text, anchor) for anchor in required_anchors
+        ):
+            profile_detail_paragraph_indices.add(index)
+    if owner_action_paragraph_indices:
+        issues.append(
+            "Start each preferred-profile paragraph with a direct first-person account of the candidate's work; a project description alone is not an application-letter example."
+        )
+        for index in owner_action_paragraph_indices:
+            revision_indices.add(index)
+            revision_reasons.setdefault(index, "direct_candidate_action")
+    if profile_detail_paragraph_indices:
+        issues.append(
+            "Retain the preferred profile example's distinctive named project or method and, when the evidence gives a deployment target, that named hardware detail."
+        )
+        for index in profile_detail_paragraph_indices:
+            revision_indices.add(index)
+            revision_reasons.setdefault(index, "preferred_profile_detail")
+    if len(preferred_profile_ids) == 2 and profile_assignment_mismatches:
+        issues.append(
+            "Use the first preferred role-relevant technical-profile claim in paragraph 1 and the second in paragraph 2; cite exactly the mapped preferred claim in each paragraph."
+        )
+        for index in profile_assignment_mismatches:
+            revision_indices.add(index)
+            revision_reasons.setdefault(index, "use_technical_profile_evidence")
+    revision_indices.update(repeated_paragraph_indices)
+    relevance = _letter_requirement_link_report(paragraphs, recruiter_requirements)
+    issues.extend(relevance["issues"])
+    body_word_count = sum(
+        len(re.findall(r"\b\w+\b", str(item.get("text") or "")))
+        for item in paragraphs
+    )
+    if body_word_count > MAX_COVER_LETTER_BODY_WORDS:
+        issues.append(
+            f"Keep the cover-letter body to {MAX_COVER_LETTER_BODY_WORDS} words or fewer."
+        )
+        if paragraphs:
+            longest_index = max(
+                range(len(paragraphs)),
+                key=lambda index: len(re.findall(r"\b\w+\b", str(paragraphs[index].get("text") or ""))),
+            )
+            revision_indices.add(longest_index)
+            revision_reasons.setdefault(longest_index, "body_word_limit")
+    replacement_character_indices = {
+        index for index, paragraph in enumerate(paragraphs)
+        if "\ufffd" in str(paragraph.get("text") or "")
+    }
+    if replacement_character_indices:
+        issues.append("Remove malformed replacement characters from cover-letter text.")
+        for index in replacement_character_indices:
+            revision_indices.add(index)
+            revision_reasons.setdefault(index, "encoding_garble")
     return {
         "status": "failed" if issues else "passed",
-        "rubric_version": "cover-letter-source-quality-v1",
+        "rubric_version": "cover-letter-application-argument-v13",
         "body_paragraph_count": len(paragraphs),
+        "body_word_count": body_word_count,
+        "required_sections": expected_sections,
+        "sections": [item.get("section") for item in paragraphs],
+        "role_requirement_ids": relevance["requirement_ids"],
+        "distinct_role_requirement_count": len(relevance["requirement_ids"]),
+        "distinct_candidate_evidence_count": len(
+            set().union(*candidate_evidence_refs) if candidate_evidence_refs else set()
+        ),
+        "candidate_evidence_and_role_requirements_cited": relevance["all_paragraphs_linked"],
+        "preferred_profile_claim_count": len(preferred_profile_ids),
+        "preferred_profile_claims_used": correctly_mapped_profile_claims,
+        "profile_claim_count_by_paragraph": [len(ids) for ids in paragraph_profile_ids],
+        "direct_first_person_action_paragraph_indices": sorted(owner_action_paragraph_indices),
+        "missing_preferred_profile_detail_paragraph_indices": sorted(profile_detail_paragraph_indices),
+        "owner_review_required": True,
+        "automated_check_scope": "Jev evidence support, valid candidate-source citations, use and index mapping of the two preferred role-relevant technical-profile claims when available, direct first-person action in each preferred-profile example, retention of a distinctive named project or method and any explicitly named deployment target, valid distinct role-requirement IDs, direct project-to-responsibility wording, concise paragraph and body length, role-source binding, and exact repetition. Recruiter mappings are relevance cues, not source whitelists. The locally rendered role heading communicates application intent. The gate cannot certify persuasive strength or hiring outcomes; owner review remains required.",
+        "owner_review_notes": [],
         "minimum_body_paragraphs": 2,
+        "maximum_body_words": MAX_COVER_LETTER_BODY_WORDS,
+        "maximum_sentences_per_paragraph": MAX_COVER_LETTER_PARAGRAPH_SENTENCES,
+        "replacement_character_paragraph_indices": sorted(replacement_character_indices),
+        "opening_required": False,
+        "application_intent_in_role_heading": True,
+        "role_heading_supplied_by_renderer": True,
+        "distinct_evidence_paragraphs_required": 2,
         "role_sources_required_per_paragraph": True,
         "candidate_experience_evidence_required": True,
+        "salutation_closing_and_signature_included_by_renderer": True,
+        "jev_rejected_paragraphs": rejected,
+        "revision_paragraph_indices": sorted(revision_indices),
+        "revision_reasons": {str(key): value for key, value in sorted(revision_reasons.items())},
+        "exact_repeated_sentence_paragraph_indices": sorted(repeated_paragraph_indices),
+        "overlong_paragraph_indices": sorted(overlong_paragraph_indices),
+        "stacked_detail_paragraph_indices": sorted(stacked_detail_indices),
+        "role_duty_list_paragraph_indices": sorted(role_duty_list_indices),
+        "boilerplate_bridge_paragraph_indices": sorted(boilerplate_bridge_indices),
         "issues": issues,
     }
+
+
+def _letter_requirement_link_report(
+    paragraphs: list[dict[str, Any]],
+    recruiter_requirements: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    has_requirement_map = recruiter_requirements is not None
+    requirements = {
+        str(item.get("requirement_id")): item
+        for item in (recruiter_requirements or [])
+        if item.get("requirement_id")
+    }
+    used_ids: list[str] = []
+    issues: list[str] = []
+    all_paragraphs_linked = bool(paragraphs)
+    for index, paragraph in enumerate(paragraphs):
+        requirement_ids = paragraph.get("requirement_ids", [])
+        if (
+            not isinstance(requirement_ids, list)
+            or not requirement_ids
+            or any(not isinstance(value, str) for value in requirement_ids)
+        ):
+            all_paragraphs_linked = False
+            issues.append(
+                f"Cover-letter paragraph {index + 1} must cite a valid Recruiter-mapped role requirement."
+            )
+            continue
+        if len(requirement_ids) != len(set(requirement_ids)):
+            all_paragraphs_linked = False
+            issues.append(f"Cover-letter paragraph {index + 1} repeats a role requirement ID.")
+            continue
+        if has_requirement_map and any(value not in requirements for value in requirement_ids):
+            all_paragraphs_linked = False
+            issues.append(
+                f"Cover-letter paragraph {index + 1} cites an unknown Recruiter role requirement."
+            )
+            continue
+        if not (paragraph.get("claim_ids") or paragraph.get("cv_line_ids")):
+            all_paragraphs_linked = False
+            issues.append(
+                f"Cover-letter paragraph {index + 1} must cite exact candidate evidence and a role requirement."
+            )
+            continue
+        used_ids.extend(requirement_ids)
+    distinct_ids = list(dict.fromkeys(used_ids))
+    if paragraphs and len(distinct_ids) < 2:
+        all_paragraphs_linked = False
+        issues.append(
+            "The cover letter must address at least two distinct role requirements linked to candidate evidence."
+        )
+    return {
+        "requirement_ids": distinct_ids,
+        "all_paragraphs_linked": all_paragraphs_linked,
+        "issues": issues,
+    }
+
+
+def _packet_review_note(quality_check: dict[str, Any] | None) -> str:
+    notes = [
+        "Reconstructed DOCX preserves extracted line and section order; exact visual fidelity to a PDF or complex source layout is not guaranteed.",
+        "Automated checks verify Jev-supported evidence linked to distinct Recruiter-mapped role criteria, two distinct project examples, and a complete letter scaffold. The rendered role heading supplies application intent. They do not certify persuasive strength or personal voice. Review every file before approval.",
+    ]
+    if quality_check:
+        notes.extend(str(item) for item in quality_check.get("owner_review_notes", []))
+    return " ".join(notes)
 
 
 def _render_artifacts(
@@ -1059,6 +1960,8 @@ def _render_artifacts(
     lines: list[dict[str, str]],
     rewrite: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    from docx.shared import Inches
+
     with connect(settings.database_path) as db:
         current = db.execute(
             "SELECT COALESCE(MAX(revision), 0) AS revision FROM preparation_packets WHERE request_id = ?",
@@ -1089,6 +1992,11 @@ def _render_artifacts(
             paragraph = resume_doc.add_paragraph(
                 re.sub(r"^\s*(?:[-•*▪]+)\s*", "", text), style="List Bullet"
             )
+            # The built-in List Bullet numbering leaves wrapped lines at the
+            # page margin in Word's DOCX-to-PDF export. Set a stable hanging
+            # indent so continuation lines align with the bullet text.
+            paragraph.paragraph_format.left_indent = Inches(0.28)
+            paragraph.paragraph_format.first_line_indent = Inches(-0.18)
         else:
             paragraph = resume_doc.add_paragraph(text)
         paragraph.paragraph_format.keep_together = True
@@ -1103,17 +2011,54 @@ def _render_artifacts(
         if str(paragraph.get("text") or "").strip()
     ]
     if cover_letter_paragraphs:
+        from docx.shared import Pt
+
         letter = Document()
         _configure_application_document(letter, resume=False)
+        candidate_name = _resume_signature_name(lines)
+        contact_lines = _resume_contact_lines(lines)
+        if candidate_name:
+            name_paragraph = letter.add_paragraph(candidate_name)
+            name_paragraph.runs[0].bold = True
+            name_paragraph.runs[0].font.size = Pt(15)
+            name_paragraph.paragraph_format.space_after = Pt(2)
+        for contact_line in contact_lines:
+            contact_paragraph = letter.add_paragraph(contact_line)
+            contact_paragraph.paragraph_format.space_after = Pt(1)
+        today = datetime.now().astimezone().date()
+        month_names = (
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
+        )
+        date_text = f"{today.day} {month_names[today.month - 1]} {today.year}"
+        letter.add_paragraph(date_text)
         letter.add_paragraph(
             rewrite.get("cover_letter_title") or "Cover letter draft",
             style="Clue Cover Letter Title",
         )
+        letter.add_paragraph("Dear Hiring Team,")
         for paragraph in cover_letter_paragraphs:
             letter.add_paragraph(paragraph["text"])
+        closing_text = "I would welcome a conversation about the role."
+        letter.add_paragraph(closing_text)
+        letter.add_paragraph("Kind regards,")
+        if candidate_name:
+            letter.add_paragraph(candidate_name)
         letter_io = io.BytesIO()
         letter.save(letter_io)
-        letter_text = "\n\n".join(paragraph["text"] for paragraph in cover_letter_paragraphs)
+        letter_text = "\n\n".join(
+            [
+                *([candidate_name] if candidate_name else []),
+                *contact_lines,
+                date_text,
+                rewrite.get("cover_letter_title") or "Cover letter draft",
+                "Dear Hiring Team,",
+                *(paragraph["text"] for paragraph in cover_letter_paragraphs),
+                closing_text,
+                "Kind regards,",
+                *([candidate_name] if candidate_name else []),
+            ]
+        )
         artifacts.append(
             _artifact(
                 root,
@@ -1133,6 +2078,57 @@ def _render_artifacts(
         text = "\n\n---\n\n".join(outreach)
         artifacts.append(_artifact(root, "outreach_draft", f"outreach-draft-v{revision}.txt", text.encode("utf-8"), text))
     return artifacts
+
+
+def _resume_signature_name(lines: list[dict[str, str]]) -> str:
+    """Use only an unambiguous, source-written name from the CV header."""
+    name_pattern = re.compile(
+        r"[^\W\d_]+(?:[’'-][^\W\d_]+)*(?:\s+[^\W\d_]+(?:[’'-][^\W\d_]+)*){1,4}",
+        re.UNICODE,
+    )
+    for item in lines[:1]:
+        candidate = " ".join(str(item.get("text") or "").split()).strip(" ,;:|")
+        if not candidate or not name_pattern.fullmatch(candidate):
+            continue
+        if candidate.casefold() in {"curriculum vitae", "resume", "résumé", "professional profile"}:
+            continue
+        return candidate
+    return ""
+
+
+def _resume_contact_lines(lines: list[dict[str, str]]) -> list[str]:
+    """Keep concise, explicit contact lines from the selected CV header only."""
+    contact_lines = []
+    for index, item in enumerate(lines[:12]):
+        text = " ".join(str(item.get("text") or "").split()).strip()
+        if not text or text == _resume_signature_name(lines):
+            continue
+        if index and _looks_like_heading(text):
+            break
+        safe_segments = []
+        for segment in (part.strip() for part in text.split("|")):
+            if not segment:
+                continue
+            has_email = bool(re.search(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", segment))
+            has_url = bool(re.search(r"(?:https?://|www\.|\b(?:github|linkedin|gitlab)\.com/)", segment, re.IGNORECASE))
+            has_phone = bool(re.search(r"(?<!\d)\+?\d[\d ()./-]{6,}\d(?!\d)", segment))
+            is_location = bool(
+                re.fullmatch(
+                    r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'-]{1,35},\s*"
+                    r"[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'-]{1,35}",
+                    segment,
+                )
+            ) and segment.casefold() not in {"spanish, english", "english, spanish"}
+            if (has_email or has_url or has_phone or is_location) and len(segment) <= 120:
+                safe_segments.append(segment)
+        if not safe_segments:
+            continue
+        safe_line = " | ".join(safe_segments)
+        if safe_line not in contact_lines:
+            contact_lines.append(safe_line)
+        if len(contact_lines) == 3:
+            break
+    return contact_lines
 
 
 def _artifact(root: Path, kind: str, filename: str, content: bytes, text: str) -> dict[str, Any]:
@@ -1185,7 +2181,7 @@ def _save_packet(
             "jev_tailored_resume_review": jev_tailored_resume_review,
             "quality_check": quality_check,
             "artifacts": [{key: item[key] for key in ("id", "artifact_type", "filename", "content_sha256")} for item in artifacts],
-            "review_note": "Reconstructed DOCX preserves extracted line and section order; exact visual fidelity to a PDF or complex source layout is not guaranteed.",
+            "review_note": _packet_review_note(quality_check),
         }
         input_revision = hashlib.sha256(
             json.dumps(request["snapshot"].get("inputs", {}), sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -1899,16 +2895,507 @@ def _get_bound_inputs(database_path: Path, settings: Settings | None, request: d
     return source, claims, preferences["content"], writing_context, technical_profile_context
 
 
+_PROFILE_EVIDENCE_STOPWORDS = {
+    "about", "after", "also", "and", "are", "because", "built", "can", "covers",
+    "from", "have", "his", "into", "is", "its", "may", "more", "rather", "that",
+    "the", "their", "these", "they", "this", "through", "while", "which", "with",
+    "work", "works", "using", "owner", "profile", "source", "evidence", "review",
+    "unreviewed", "claim", "claims", "current", "strong", "level", "includes",
+    "including", "project", "projects", "there", "then", "than",
+}
+
+_MAX_REWRITER_PROFILE_EVIDENCE = 6
+
+
+def _profile_evidence_terms(value: str) -> set[str]:
+    output = set()
+    raw_tokens = re.findall(r"[a-z0-9][a-z0-9+#./-]{1,}", str(value or "").casefold())
+    for raw_token in raw_tokens:
+        for token in re.split(r"[-/.]+", raw_token):
+            if len(token) < 3 and token not in {"ai", "ml"}:
+                continue
+            if not token or token in _PROFILE_EVIDENCE_STOPWORDS:
+                continue
+            if token.endswith("ies") and len(token) > 5:
+                token = token[:-3] + "y"
+            elif token.endswith("ment") and len(token) > 7:
+                token = token[:-4]
+            elif token.endswith("ing") and len(token) > 6:
+                token = token[:-3]
+            elif token.endswith("ed") and len(token) > 5:
+                token = token[:-2]
+            elif token.endswith("s") and len(token) > 4:
+                token = token[:-1]
+            if token not in _PROFILE_EVIDENCE_STOPWORDS:
+                output.add(token)
+    return output
+
+
+def _is_profile_positioning_claim(value: str) -> bool:
+    """Exclude portfolio summaries and advice from candidate-fact retrieval."""
+    text = " ".join(str(value or "").casefold().split())
+    if text.startswith(
+        (
+            "this is relevant because ",
+            "this is a strong example ",
+            "this supports positioning ",
+            "the engineering value comes from ",
+            "this project demonstrates ",
+            "this project is especially relevant ",
+            "this is more precise ",
+            "this should be presented ",
+            "this work sits at the intersection ",
+            "his projects increasingly emphasize ",
+            "his strongest technical niche ",
+            "his work spans ",
+            "his computer-vision work includes ",
+            "on the llm side, ",
+            "on the computer-vision side, ",
+            "is listed as a team member/collaborator on this ",
+            "the combination of ",
+        )
+    ):
+        return True
+    if re.match(r"^juan martin\b.{0,120}\b(?:profile|position|strongest niche)\b", text):
+        return True
+    if re.search(r"\b(?:is|was) listed as a team member/collaborator on\b", text):
+        return True
+    if re.match(r"^[a-z][^.!?]{0,80}\s+(?:→|->)\s+", text):
+        return True
+    if re.search(r"\bwork (?:spans|ranges from|covers)\b", text):
+        return True
+    return bool(
+        re.search(
+            r"\bwork includes\b.*\bwhile\b.*\bwork (?:includes|covers)\b",
+            text,
+        )
+    )
+
+
+def _profile_evidence_blocks(text: str) -> list[str]:
+    """Keep source paragraphs, table rows, and adjacent markdown bullets bounded."""
+    blocks: list[str] = []
+    bullets: list[str] = []
+
+    def flush_bullets() -> None:
+        if bullets:
+            blocks.append("\n".join(bullets))
+            bullets.clear()
+
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line or "\ufffd" in line:
+            flush_bullets()
+            continue
+        if line.startswith("|"):
+            flush_bullets()
+            blocks.append(line)
+        elif line.startswith(("- ", "* ", "• ", "▪ ")):
+            bullets.append(line)
+        else:
+            flush_bullets()
+            blocks.append(line)
+    flush_bullets()
+    return blocks
+
+
+def _technical_profile_detail_excerpts(
+    profile_text: str,
+    evidence: dict[str, Any],
+    *,
+    related_text: str = "",
+    limit: int = 3,
+    max_chars: int = 900,
+) -> list[str]:
+    """Select short exact profile passages relevant to a mapped claim and role evidence."""
+    claim_text = str(evidence.get("claim_text") or "")
+    claim_excerpt = str(evidence.get("evidence_excerpt") or "")
+    claim_terms = _profile_evidence_terms(f"{claim_text} {claim_excerpt}")
+    related_terms = _profile_evidence_terms(related_text)
+    if not claim_terms:
+        return []
+
+    def normalized(value: str) -> str:
+        return " ".join(re.sub(r"[`*_~|>]+", " ", value.casefold()).split())
+
+    claim_summaries = {normalized(claim_text), normalized(claim_excerpt)} - {""}
+    scored: list[tuple[float, int, int, str]] = []
+    seen: set[str] = set()
+    blocks = _profile_evidence_blocks(profile_text)
+    for position, block in enumerate(blocks):
+        if normalized(block) in claim_summaries:
+            continue
+        block_terms = _profile_evidence_terms(block)
+        claim_overlap = len(claim_terms & block_terms)
+        related_overlap = len(related_terms & block_terms)
+        if claim_overlap < 2 or (related_terms and related_overlap == 0):
+            continue
+        snippet_blocks = [block.strip()]
+        heading = re.match(r"^(#+)\s+", block.strip())
+        if heading:
+            heading_level = len(heading.group(1))
+            for following in blocks[position + 1 :]:
+                following_heading = re.match(r"^(#+)\s+", following.strip())
+                if following_heading and len(following_heading.group(1)) <= heading_level:
+                    break
+                snippet_blocks.append(following.strip())
+                if len("\n\n".join(snippet_blocks)) >= max_chars:
+                    break
+        snippet = "\n\n".join(snippet_blocks)
+        if len(snippet) > max_chars:
+            snippet = snippet[:max_chars].rsplit(" ", 1)[0].rstrip()
+        key = normalized(snippet)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        heading_bonus = 0.22 if re.match(r"^#+\s+", block.strip()) else 0.0
+        score = (
+            (2 * claim_overlap) + related_overlap + heading_bonus
+            - min(len(snippet), max_chars) / 50_000
+        )
+        overlap = claim_terms & block_terms
+        scored.append((score, len(overlap), position, snippet))
+
+    best = sorted(scored, key=lambda item: (-item[0], -item[1], item[2]))[: max(0, limit)]
+    return [item[3] for item in sorted(best, key=lambda item: item[2])]
+
+
+def _select_technical_profile_evidence(
+    sources: list[dict[str, Any]],
+    evidence_ids: set[str],
+    *,
+    recruiter_requirements: list[dict[str, Any]] | None = None,
+    cv_lines: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Pass mapped claims plus a small role/CV-relevant fallback set with exact source passages."""
+    cv_lines = cv_lines or {}
+    requirements = recruiter_requirements or []
+    related_by_claim: dict[str, list[str]] = {}
+    for requirement in requirements:
+        claim_ids = [str(value) for value in requirement.get("claim_ids", [])]
+        line_ids = [str(value) for value in requirement.get("cv_line_ids", [])]
+        related = [
+            str(value)
+            for key, value in requirement.items()
+            if key not in {"claim_ids", "cv_line_ids", "requirement_id"}
+            and isinstance(value, str)
+            and value.strip()
+        ]
+        related.extend(cv_lines[line_id] for line_id in line_ids if line_id in cv_lines)
+        for claim_id in claim_ids:
+            related_by_claim.setdefault(claim_id, []).extend(related)
+
+    selected_ids: set[str] = set()
+    selected_order: list[str] = []
+    if len(selected_ids) < _MAX_REWRITER_PROFILE_EVIDENCE:
+        requirement_terms = [
+            (
+                requirement,
+                _profile_evidence_terms(
+                    str(requirement.get("requirement") or requirement.get("criterion") or "")
+                ),
+            )
+            for requirement in requirements
+        ]
+        action_pattern = re.compile(
+            r"\b(?:add(?:ed|s)?|analy[sz](?:ed|es)?|automate(?:d|s)?|build(?:s)?|built|"
+            r"create(?:d|s)?|cut|deliver(?:ed|s)?|deploy(?:ed|s)?|design(?:ed|s)?|"
+            r"develop(?:ed|s)?|engineer(?:ed|s)?|evaluate(?:d|s)?|implement(?:ed|s)?|"
+            r"integrate(?:d|s)?|launch(?:ed|es)?|maintain(?:ed|s)?|optimi[sz](?:ed|es)?|"
+            r"operate(?:d|s)?|reduce(?:d|s)?|structure(?:d|s)?|train(?:ed|s)?)\b",
+            re.IGNORECASE,
+        )
+        has_section_headings = any(
+            _looks_like_heading(" ".join(text.split())) for text in cv_lines.values()
+        )
+        project_line_context: dict[str, tuple[set[str], bool]] = {}
+        current_section = ""
+        current_project_title_terms: set[str] = set()
+        for line_id, text in cv_lines.items():
+            normalized_line = " ".join(text.split())
+            if _looks_like_heading(normalized_line) and not _looks_like_subheading(normalized_line):
+                current_section = normalized_line.casefold()
+                current_project_title_terms = set()
+                continue
+            in_relevant_section = (
+                not has_section_headings
+                or "project" in current_section
+                or "experience" in current_section
+            )
+            if not in_relevant_section:
+                continue
+            if _looks_like_subheading(normalized_line):
+                if "project" in current_section:
+                    current_project_title_terms = _profile_evidence_terms(normalized_line) - {
+                        "ai", "code", "independent", "ml", "platform", "project", "projects",
+                        "system", "systems", "2026",
+                    }
+                continue
+            if action_pattern.search(text):
+                project_line_context[line_id] = (
+                    set(current_project_title_terms),
+                    "project" in current_section,
+                )
+        line_terms = {
+            line_id: _profile_evidence_terms(cv_lines[line_id])
+            for line_id in project_line_context
+        }
+        has_project_titles = any(title_terms for title_terms, _is_project in project_line_context.values())
+        ranked_candidates: list[tuple[int, str, str, str]] = []
+        seen_text: set[str] = set()
+        for source in sources:
+            for item in source.get("evidence", []):
+                evidence_id = str(item.get("id") or "")
+                excerpt = str(item.get("evidence_excerpt") or item.get("claim_text") or "")
+                if evidence_id in selected_ids or len(excerpt) < 35:
+                    continue
+                if _is_profile_positioning_claim(
+                    f"{item.get('claim_text') or ''} {excerpt}"
+                ):
+                    continue
+                if excerpt.lstrip().startswith(("#", "**", ">", "|", "http://", "https://")):
+                    continue
+                evidence_terms = _profile_evidence_terms(
+                    f"{item.get('claim_text') or ''} {excerpt}"
+                )
+                if len(evidence_terms) < 4:
+                    continue
+                normalized_excerpt = " ".join(excerpt.casefold().split())
+                if normalized_excerpt in seen_text:
+                    continue
+                seen_text.add(normalized_excerpt)
+                profile_heading_overlap = max(
+                    (
+                        len(
+                            evidence_terms
+                            & _profile_evidence_terms(
+                                re.sub(r"^\s*#{1,6}\s*", "", heading).strip()
+                            )
+                        )
+                        for heading in str(source.get("text") or "").splitlines()
+                        if re.match(r"^\s*#{1,6}\s+", heading)
+                    ),
+                    default=0,
+                )
+                profile_project_scoped = profile_heading_overlap >= 2
+                best: tuple[int, str, str] | None = None
+                for requirement, terms in requirement_terms:
+                    role_overlap = len(evidence_terms & terms)
+                    if not role_overlap:
+                        continue
+                    requirement_text = str(
+                        requirement.get("requirement") or requirement.get("criterion") or ""
+                    )
+                    if profile_project_scoped and role_overlap >= 2:
+                        score = (20 * profile_heading_overlap) + (2 * role_overlap)
+                        if best is None or score > best[0]:
+                            best = (score, requirement_text, "")
+                    elif evidence_id in evidence_ids and role_overlap:
+                        score = 16 + (2 * role_overlap)
+                        if best is None or score > best[0]:
+                            best = (score, requirement_text, "")
+                    for line_id, terms_for_line in line_terms.items():
+                        cv_overlap = len(evidence_terms & terms_for_line)
+                        title_terms, is_project_line = project_line_context[line_id]
+                        project_title_overlap = len(evidence_terms & title_terms)
+                        if has_project_titles and not project_title_overlap and not profile_project_scoped:
+                            continue
+                        score = (
+                            (2 * role_overlap)
+                            + cv_overlap
+                            + (4 if is_project_line else 0)
+                            + (3 * project_title_overlap)
+                        )
+                        if cv_overlap and score >= 4 and (best is None or score > best[0]):
+                            best = (score, requirement_text, cv_lines[line_id])
+                if best is not None:
+                    ranked_candidates.append((best[0], evidence_id, best[1], best[2]))
+        for _score, evidence_id, requirement_text, cv_line in sorted(
+            ranked_candidates, key=lambda value: (-value[0], value[1])
+        ):
+            if len(selected_ids) >= _MAX_REWRITER_PROFILE_EVIDENCE:
+                break
+            selected_ids.add(evidence_id)
+            selected_order.append(evidence_id)
+            related_by_claim.setdefault(evidence_id, []).extend(
+                value for value in (requirement_text, cv_line) if value
+            )
+
+    selected_position = {evidence_id: index for index, evidence_id in enumerate(selected_order)}
+    selected = []
+    for source in sources:
+        evidence = []
+        for item in sorted(
+            source.get("evidence", []),
+            key=lambda value: selected_position.get(str(value.get("id") or ""), len(selected_position)),
+        ):
+            evidence_id = str(item.get("id") or "")
+            if evidence_id not in selected_ids:
+                continue
+            evidence.append(
+                {
+                    **item,
+                    "source_excerpts": _technical_profile_detail_excerpts(
+                        str(source.get("text") or ""),
+                        item,
+                        related_text=" ".join(related_by_claim.get(evidence_id, [])),
+                        limit=2,
+                        max_chars=600,
+                    ),
+                }
+            )
+        if evidence:
+            selected.append({**source, "evidence": evidence})
+    return selected
+
+
+def _preferred_cover_letter_profile_claim_ids(
+    technical_profile_sources: list[dict[str, Any]],
+) -> list[str]:
+    """Return the two highest-ranked role-relevant profile claims for distinct letter examples."""
+    claim_ids = list(
+        dict.fromkeys(
+            str(item.get("id") or "")
+            for source in technical_profile_sources
+            for item in source.get("evidence", [])
+            if item.get("id")
+        )
+    )
+    return claim_ids[:2] if len(claim_ids) >= 2 else []
+
+
+def _preferred_profile_claim_evidence(
+    technical_profile_sources: list[dict[str, Any]],
+    preferred_profile_claim_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    preferred = set(preferred_profile_claim_ids)
+    return {
+        str(item["id"]): {
+            "claim_text": str(item.get("claim_text") or ""),
+            "evidence_excerpt": str(item.get("evidence_excerpt") or ""),
+            "source_excerpts": [
+                str(value) for value in item.get("source_excerpts", []) if value
+            ],
+        }
+        for source in technical_profile_sources
+        for item in source.get("evidence", [])
+        if str(item.get("id") or "") in preferred
+    }
+
+
+def _has_direct_first_person_action(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\bI(?:\s+have|['’]ve)?\s+(?:analy[sz](?:e|ed)|automated|built|created|"
+            r"deployed|designed|developed|evaluated|implemented|integrated|led|maintained|"
+            r"optimized|optimised|reduced|tested|trained|worked|contributed|helped)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _preferred_profile_letter_anchors(evidence: dict[str, Any]) -> list[str]:
+    """Find exact named anchors for the preferred project and concrete deployment details."""
+    text = " ".join(
+        str(value)
+        for value in [
+            evidence.get("claim_text", ""),
+            evidence.get("evidence_excerpt", ""),
+            *evidence.get("source_excerpts", []),
+        ]
+        if value
+    )
+    text = re.sub(r"\b[A-Z][A-Z0-9_]*_MARKER\b", " ", text)
+    deployment = re.search(
+        r"(?P<model>(?:[A-Za-z0-9+#./-]+\s+){1,5})(?:pipeline|model|architecture)"
+        r"\s+(?:was\s+)?deployed\s+on\s+(?:the\s+)?(?P<device>[^.!?;,]+)",
+        text,
+        re.IGNORECASE,
+    )
+    if deployment:
+        model_terms = re.findall(r"[A-Za-z0-9+#./-]+", deployment.group("model"))
+        model_anchor = next(
+            (term for term in reversed(model_terms) if _is_distinctive_profile_term(term)),
+            "",
+        )
+        device_text = re.split(
+            r"\b(?:into|for|while|with)\b",
+            deployment.group("device"),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        device_terms = re.findall(r"[A-Za-z0-9+#./-]+", device_text)
+        device_anchor = next(
+            (term for term in device_terms if any(char.isdigit() for char in term)),
+            "",
+        )
+        if not device_anchor:
+            device_anchor = next(
+                (
+                    term
+                    for term in reversed(device_terms)
+                    if _is_distinctive_profile_term(term)
+                    and term.upper()
+                    not in {"AMD", "NVIDIA", "INTEL", "DPU", "FPGA", "GPU", "CPU", "TPU"}
+                ),
+                "",
+            )
+        anchors = [term for term in (model_anchor, device_anchor) if term]
+        if anchors:
+            return anchors
+
+    primary_text = " ".join(
+        str(value)
+        for value in (evidence.get("claim_text", ""), evidence.get("evidence_excerpt", ""))
+        if value
+    )
+    primary_text = re.sub(r"\b[A-Z][A-Z0-9_]*_MARKER\b", " ", primary_text)
+    for term in re.findall(r"[A-Za-z0-9+#./-]+", primary_text):
+            proper_project_name = (
+                term[:1].isupper()
+                and term[1:].islower()
+                and term.casefold()
+                not in {
+                    "a", "an", "the", "this", "my", "for", "work", "implemented",
+                    "demonstrated", "built", "created", "developed", "designed", "trained",
+                    "deployed", "evaluated", "tested", "used", "added", "automated",
+                    "analyzed", "analysed", "integrated", "led", "managed", "optimized",
+                    "optimised", "reduced", "improved", "launched", "contributed", "helped",
+                }
+            )
+            if (_is_distinctive_profile_term(term) or proper_project_name) and term.casefold() not in {
+                "tensorflow", "pytorch", "fastapi", "langgraph", "langchain", "onnx",
+                "rag", "api", "ai", "ml", "llm", "gpu", "cpu", "dpu", "fpga",
+            }:
+                return [term]
+    return []
+
+
+def _is_distinctive_profile_term(term: str) -> bool:
+    return bool(
+        any(char.isdigit() for char in term)
+        or "/" in term
+        or "+" in term
+        or (term.isupper() and len(term) >= 2)
+        or re.search(r"[a-z][A-Z]", term)
+    )
+
+
+def _contains_exact_term(text: str, term: str) -> bool:
+    return bool(re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, re.IGNORECASE))
+
+
 def _technical_profile_prompt_context(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "source_id": item["source_id"],
             "filename": item["filename"],
-            "text": item["text"],
             "evidence": [
                 {
                     "id": claim["id"],
                     "evidence_excerpt": claim["evidence_excerpt"],
+                    "source_excerpts": claim.get("source_excerpts", []),
                     "review_status": claim["review_status"],
                 }
                 for claim in item["evidence"]

@@ -19,7 +19,7 @@ from clue_ai.application_prep import (
     set_source_options,
     suggest_claims,
 )
-from clue_ai.application_prompts import MAX_OUTPUT_TOKENS
+from clue_ai.application_prompts import MAX_OUTPUT_TOKENS, OUTPUT_SCHEMA_VERSION
 from clue_ai.applications import mark_applied
 from clue_ai.database import connect, initialize, save_search_run
 from clue_ai.domain import SearchCriteria
@@ -208,14 +208,8 @@ def test_new_generation_policy_gets_a_new_manual_request_for_same_listing(settin
         "model": "gpt-6-luna",
         "reasoning_effort": "high",
         "prompt_version": "synthetic-prompt-next",
-        "output_schema_version": "application-output-v4",
-        "output_token_limits": {
-            "diagnoser": 2_800,
-            "hiring_manager": 2_400,
-            "recruiter": 9_100,
-            "researcher": 2_200,
-            "rewriter": 16_000,
-        },
+        "output_schema_version": OUTPUT_SCHEMA_VERSION,
+        "output_token_limits": dict(sorted(MAX_OUTPUT_TOKENS.items())),
     }
 
 
