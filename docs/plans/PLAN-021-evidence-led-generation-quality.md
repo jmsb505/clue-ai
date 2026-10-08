@@ -1,7 +1,7 @@
 # PLAN-021 — Evidence-led generation quality and context budgeting
 
-Status: M1 complete; M2 synthetic pipeline checks pass for two role families, but paired baseline and representative portfolio/owner rubric acceptance remain open; M3 Jev-approved packet gates pass on synthetic fixtures; two live attempts on one listing reached the public Researcher page but failed on measured output limits before grounding or packet creation
-Created: 2026-10-07 · Last updated: 2026-10-07
+Status: Prompt `.38` is live-validated on the individually selected IFOM listing. The v13 writing gate passed; Jev supported both letter paragraphs and separately approved the final CV; all five GPT calls settled; and Word/Poppler inspection found no clipping. The compact letter follows the owner's direct project-example reference. The saved Jev result remained `review`. No CV edits were retained and no outreach draft was generated despite one researched public inbox. Exact-packet owner acceptance, useful CV tailoring, paired writing comparison, representative portfolio coverage, and personal-fit calibration remain open.
+Created: 2026-10-07 · Last updated: 2026-10-08
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [PLAN-020](PLAN-020-end-to-end-evaluation-and-grounding.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md)
 
 ## Objective
@@ -22,6 +22,9 @@ Earlier evidence also showed that the Recruiter hit its 2,200-token output allow
 - Diagnoser receives the selected CV and Jev snapshot. Recruiter and Rewriter receive the full selected technical profiles and source-bound evidence. Rewriter also receives the full selected descriptive profile and permitted writing references. Researcher gets no candidate profile.
 - Jev is authoritative for the saved job fit and eligibility. After generation, a separate Jev decision approves or rejects the final tailored resume against the exact listing without modifying the saved fit result. A third, separate Jev support check validates each generated factual block against only its cited evidence.
 - Generated claim support, line/source bindings, Jev's final tailored-resume decision, packet-quality gates, and DOCX generation have synthetic tests. In the latest synthetic live run, Jev approved the final resume (confidence 0.64, retained as diagnostic only), the packet-quality gate passed, and both DOCX files reopened. Jev supported two of three generated factual blocks; the remaining block was omitted. The broader portfolio benchmark and exact-artifact visual inspection remain open.
+- Live IFOM packet (`2026-10-08.38`): rubric v13 passed at 52 body words; Jev supported 2/2 letter paragraphs and separately approved the final CV. The saved listing remained `review` (fit `0.9873`), and location eligibility remained eligible. The generated letter used two direct first-person project examples and named distinct IFOM responsibilities, following the owner's compact reference. Recruiter mapped 26 criteria (7 covered, 12 partial, 7 not in the selected CV); Rewriter retained zero CV edits. Research captured eight sourced findings and one official general recruitment inbox, but no outreach draft was generated. The exact one-page letter and two-page resume were exported with Word and inspected after Poppler rasterization; neither clipped, and the resume's second page remains sparse.
+- Prompt `.38` added direct first-person actions and retention of distinctive preferred-profile details to the v13 rubric while preserving Jev's separate support and final-CV decisions. Four generation calls in the first `.38` run settled at `$0.0089752` before the Clue-local per-opportunity cap blocked the Rewriter. A separate retry stopped at input-token preflight due to local DNS resolution and created no usage row. The completed retry used five GPT-6 Luna calls at `high`, 54,253 input and 12,083 output tokens, with a Clue-local estimate of `$0.0114668`; all five rows settled. Jev's paragraph support and final-CV decision used 3,163 and 7,988 input tokens respectively and cost `$0.000468342` combined. The saved match was not rerun or changed.
+- The Clue-local OpenAI caps for the successful run were `$0.50` monthly and `$0.30` per opportunity, increased from `$0.47` and `$0.28` to allow the selected listing's remaining stages to run. Provider/account caps and settings were not changed. The monthly ledger currently books `$0.4880113`, including one pre-existing `$0.0017446` unknown reservation; all usage from the completed `.38` request settled.
 - The prior GPT usage ledger estimated input tokens from UTF-8 payload bytes; it now counts the exact request. Use the current configured rate card and token-based reservation.
 - OpenAI's current model page applies 2× input and 1.5× output rates to the full request when input exceeds 272,000 tokens. The prior local ledger used only standard rates; M1 must apply this surcharge for long requests.
 
@@ -31,7 +34,7 @@ Earlier evidence also showed that the Recruiter hit its 2,200-token output allow
 - Requests above 272,000 input tokens reserve at the documented long-context multipliers: 2× input and 1.5× output for the full request.
 - No selected profile is rejected because of an arbitrary character-length cutoff. If a complete request exceeds the model context window, Clue reports the counted size and keeps the request from reaching generation. It does not silently truncate candidate evidence.
 - Per-stage output allowances are based on required schema/content and measured completion rates. An incomplete result never produces a finished packet.
-- A packet is useful only when it contains at least two supported body paragraphs with candidate evidence and verified role-source citations. A title-only or materially incomplete cover letter fails the packet before document rendering.
+- A packet is useful only when Jev supports exactly two distinct project-evidence paragraphs, each linked to mapped role criteria and source URLs. The locally rendered application title states role and application intent; GPT does not generate a separate opening paragraph. Clue renders the contact/date/title/salutation/closing/signature scaffold locally. A title-only or materially incomplete letter fails before document rendering.
 - Packet readiness requires the saved Jev match plus an explicit Jev `approved` decision for the final tailored resume. Jev's reported confidence is recorded for diagnosis only because it is not calibrated; it cannot override the discrete decision. Unsupported or contradicted facts cannot enter a document.
 - A fixed, diverse benchmark reports filtering, Jev fit/eligibility, each generation agent, Jev claim support, document integrity, and rendered document quality separately. Synthetic results are labeled synthetic. Personal-fit calibration is labeled unknown until owner labels real opportunities.
 - Real candidate data is sent only after the owner clicks Prepare application for an individual listing. The owner checks the final materials and performs every application or outreach action.
@@ -258,6 +261,53 @@ Evidence-backed changes retained in this checkpoint:
 - The Jev evidence-support decision now follows the explicit categorical response; uncalibrated confidence no longer overturns `supported`. Unsupported numbers/dates still fail a deterministic check, and missing or invalid model decisions remain unresolved. The synthetic 12-case benchmark matched its fixture labels 12/12.
 - The final resume reviewer receives the selected structure policy and Recruiter requirement map, uses rubric `tailored-resume-fit-v2`, and returns an explanatory reason code alongside the controlling categorical decision. Tests and a live `SYN-02` case cover both approval and the prior safe `revise` behavior.
 - Diagnoser output is filtered through the same exact-reference validator used by the adversarial challenge; fabricated IDs are rejected and measured. Hiring Manager practice now copies questions and answers exactly and returns a scored assessment for each answer.
+
+## M4 — Targeted letter repair and document completion
+
+**Status:** The targeted letter repair is live-validated on Accenture; Bending Spoons completed after a measured Researcher output-limit adjustment. Both packets passed Jev letter support, final-CV approval, and exact Word/Poppler rendering. The documents remain sparse; owner acceptance and useful CV tailoring remain open. Prompt `.19` adds an offline-tested owner-action rule for CV edits and has not been live-tested.
+
+The three-listing evaluation found that failed letter paragraphs paired candidate project descriptions with unsupported first-person actions or inferred job connections. The original prompt encouraged a “connection” to the role; its one-paragraph fallback conflicted with the quality gate's two-paragraph minimum. The latest supported IFOM letter also repeated a generic relevance bridge and the renderer omitted greeting/closing text.
+
+- [x] Keep Jev's match decision immutable and use Jev as the factual-support authority.
+- [x] Rewrite the Rewriter instructions to separate candidate facts from role requirements, preserve exact project names and contribution verbs, and avoid unsupported transfer or fit statements.
+- [x] Add a single targeted repair call for Jev-rejected or mechanically repeated paragraphs; supported paragraphs remain locked, replacements bind to approved evidence, and Jev rechecks the complete final letter.
+- [x] Preserve the two-paragraph/2-of-2 letter gate and explicit final-CV approval. Repair failure or final Jev rejection still blocks documents.
+- [x] Add exact duplicate-sentence detection and a local greeting/closing scaffold with conservative CV-header name detection.
+- [x] Show the owner that a mechanical packet pass is not a persuasive-writing score; flag cover letters under 80 words for review without turning the heuristic into a blocking gate.
+- [x] Raise the Researcher output limit from 2,200 to 4,000 after the first Bending retry stopped at the old limit; constrain it to eight prioritized findings and complete a retest.
+- [x] Require explicit owner attribution in the cited excerpt before a CV edit may use action verbs such as built, designed, trained, or deployed. Jev-rejected edits remain omitted.
+- [x] Add regression coverage for successful repair, failed closed output, full-letter Jev recheck, duplicate detection, and document scaffold.
+- [x] Retest Accenture and Bending Spoons. Both generated packets with 2/2 Jev-supported letter paragraphs and Jev-approved final CVs; saved Jev matching results remained unchanged.
+- [x] Render exact M6 cover letters through Word/Poppler: one page, no clipping/overlap, but substantial unused page area.
+- [ ] Owner rates actual voice and packet usefulness. Both M6 CVs had zero retained edits; do not count Jev approval as proof of useful tailoring.
+
+Five focused tests and 57 workflow tests (seven `TestClient` cases deselected) passed, as did Ruff, Python byte-compilation, and `git diff --check`. A full-suite attempt stalled without a summary and was stopped; no full-suite pass is claimed. See [PLAN-020 evaluation results](../evaluations/PLAN-020-evaluation-results.md) and [ADR 0032](../decisions/0032-jev-guided-cover-letter-repair.md).
 - Exact current `SYN-02` DOCX files were rendered by exporting through Microsoft Word and rasterizing with PDFium. Both were one page and visually clean. The canonical renderer remains unavailable on this Windows host; the verified fallback is documented.
 
 This historical checkpoint completed the available synthetic integration checks for M1–M3. It was followed by the bounded M4 live pilot recorded in PLAN-020, where one individually triggered listing passed Jev grounding, final CV approval, packet quality, usage settlement, and rendered-document checks. Paired baseline scoring, broader career-level generation, representative portfolio coverage, and exact-packet owner voice review remain open. The original Jev result stayed `review`; no email or application action occurred.
+
+## M5 — Complete application-letter argument and quality gate
+
+**Status:** Prompt `.38` passed live validation for the individually selected IFOM listing. Its two preferred-profile examples passed the v13 direct-action and distinct-detail gate, both passed Jev support, and the final CV was separately approved. Word/Poppler inspection found a clean one-page letter and a two-page resume with a sparse second page. Zero CV edits and no outreach draft remain open usefulness issues; exact-packet owner acceptance is not recorded.
+
+- [x] Update the Rewriter contract to produce exactly two separate evidence paragraphs; the local application heading states role and intent. Each paragraph uses exact CV/profile evidence and a distinct mapped role criterion.
+- [x] Add one targeted repair path for missing/wrong paragraphs, repeated content, reused project evidence, and padded relevance bridges; rerun Jev over the complete final letter.
+- [x] Render a full letter with selected-CV contact details when present, date, role heading, salutation, generated body, polite closing, sign-off, and source-derived candidate name.
+- [x] Add offline regressions for the incomplete role-duty pairing, section completeness, distinct project evidence, repair/recheck, and contact details restricted to the CV header.
+- [x] Run the full repository suite outside the restricted socket sandbox: 329 passed in 63.86 seconds. Focused subsets also passed (application-workflow 77 / 7 deselected and application-preparation 15 / 3 deselected); Ruff, `compileall`, and `git diff --check` passed. One upstream Starlette/AnyIO deprecation warning remains.
+- [x] Inspect a manually triggered live IFOM packet at GPT-6 Luna `high` through research, generation, Jev support, final-CV approval, and document rendering. `.32` passed mechanical and Jev gates; it retained zero CV edits and failed the owner's writing standard on formulaic role lists and generic evidence selection.
+- [x] Inspect the exact `.32` cover-letter DOCX: Word export and Poppler rasterization confirmed one page, readable text, and no clipping/overlap; the large unused lower-page area reflects the short 88-word body.
+- [x] Run prompt `.38` on the individually selected IFOM listing. Jev supported both paragraphs, separately approved the final CV, and did not alter the saved `review` match; all generation usage settled and the letter used two distinct direct-action examples.
+- [x] Render and inspect the exact `.38` cover-letter and resume DOCX files through read-only Word export and Poppler rasterization; both were unclipped, and the resume's sparse second page was recorded.
+- [ ] Record owner acceptance of the exact `.38` packet separately from Jev support and the mechanical rubric. Useful CV tailoring and repeatable outreach drafting remain unproven.
+
+Acceptance criteria:
+
+- The local renderer supplies the role-specific application heading. The letter body contains exactly two distinct examples drawn from separate candidate evidence and mapped role criteria, in a direct project-to-responsibility form. It does not require a separate first-person motivation paragraph.
+- Jev supports every generated body paragraph; the final letter is checked after any repair. The final tailored CV still requires separate Jev approval, and the saved Jev match state does not change.
+- The complete DOCX reopens, includes selected-CV contact details only when safely extractable, and visually fits a clean page. Failed structure or Jev checks create no documents.
+- The automated gate has no arbitrary minimum word count and does not claim to certify persuasiveness, voice, ATS success, or hiring results. Owner review remains required.
+
+Documentation updates: PLAN-020/evaluation, product definition, roadmap, architecture overview, [ADR 0035](../decisions/0035-application-heading-and-two-evidence-paragraphs.md), [ADR 0036](../decisions/0036-specific-project-evidence-and-direct-role-links.md), and [ADR 0037](../decisions/0037-first-person-project-evidence-in-cover-letters.md).
+
+Expected Git checkpoint: Update the current PLAN-020 branch only after applicable local validation; do not advance `main` while required CI checks are absent or failing.

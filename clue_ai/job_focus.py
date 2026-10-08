@@ -63,7 +63,7 @@ _UNPAID = re.compile(
 )
 _WORK_START = re.compile(
     r"\b(?:responsibilities|what you(?: will|['’]ll) (?:do|build|own)|what you['’]ll own|"
-    r"your (?:role|impact|mission|tasks)|about (?:the|this) role|the role|"
+    r"your (?:role|impact|mission|tasks)|about (?:the|this) role|the role|the work|"
     r"you (?:will|would|['’]ll) (?:build|develop|implement|integrate|design|deploy|work)|"
     r"what we(?:['’]re| are) looking for|requirements|qualifications)\b",
     re.IGNORECASE,
@@ -123,6 +123,8 @@ def assess_focus(job: Any) -> FocusDecision:
         return FocusDecision(False, "explicit unpaid work")
     if _NON_ENGINEERING.search(title):
         return FocusDecision(False, "non-engineering role")
+    if _DIRECT.search(title) and _IMPLEMENTATION.search(_work_evidence(description)):
+        return FocusDecision(True, "AI title with model implementation evidence")
     if (_DIRECT.search(title) and _TECH_TITLE.search(title)) or re.search(
         r"\bprompt engineer\b", title, re.IGNORECASE
     ):
