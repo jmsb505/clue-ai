@@ -3,23 +3,21 @@
 {% block eyebrow %}APPLICATION WORKSPACE{% endblock %}
 {% block content %}
 {% if notice %}<div class="alert alert-success" role="status">{{ notice }}</div>{% endif %}
+{% if packet %}{% set application_form = packet.output.research.application_form|default({}) %}{% endif %}
 <section class="page-intro">
   <div>
     <span class="kicker kicker-muted">APPLICATION FOLDER · {{ preparation.state|upper }}</span>
     <h1>{{ preparation.snapshot.title }}<br><em>{{ preparation.snapshot.company or 'Company not provided' }}</em></h1>
     <p>{{ preparation.status_message }}{% if preparation.application_stage %} · Application stage: {{ preparation.application_stage|replace('_', ' ')|title }}{% endif %}</p>
   </div>
-  <div class="intro-mark" aria-hidden="true"><span>AP</span><i>✳</i></div>
 </section>
-<nav class="application-section-nav" aria-label="Application folder sections">
-  <a href="#application-summary">Overview</a>
-  <a href="#application-files">Files</a>
-  {% if packet %}<a href="#application-research">Research</a>{% endif %}
-  {% if outreach_options %}<a href="#application-outreach">Outreach</a>{% endif %}
-  <a href="{% if packet and packet.status == 'approved' %}#application-owner-progress{% else %}#preparation-progress{% endif %}">Progress</a>
-</nav>
-<section id="application-summary" class="panel preparation-snapshot-panel application-section">
-  <div class="panel-header"><div><span class="kicker kicker-muted">JOB AND JEV INPUT BINDING</span><h2>What this request refers to</h2></div><span class="tag {% if preparation.snapshot.filter_status == 'review' %}tag-amber{% else %}tag-green{% endif %}">{% if preparation.snapshot.filter_status == 'review' %}Jev review · not a match{% else %}Jev match snapshot{% endif %}</span></div>
+<div class="application-action-bar">
+  <a class="text-link" href="/applications">← All packets</a>
+  {% if packet and application_form.application_pages %}<a class="button button-dark button-small" href="{{ application_form.application_pages[0].url }}" target="_blank" rel="noopener noreferrer">Open application page <span aria-hidden="true">↗</span></a>{% elif preparation.snapshot.canonical_url %}<a class="button button-outline button-small" href="{{ preparation.snapshot.canonical_url }}" target="_blank" rel="noopener noreferrer">Open job posting <span aria-hidden="true">↗</span></a>{% endif %}
+</div>
+<details id="application-summary" class="panel preparation-snapshot-panel application-section application-foldout" {% if preparation.snapshot.filter_status == 'review' %}open{% endif %}>
+  <summary><span><span class="kicker kicker-muted">ROLE DETAILS</span><b>{{ preparation.snapshot.company or 'Company not provided' }} · {{ preparation.snapshot.title }}</b></span><span class="tag {% if preparation.snapshot.filter_status == 'review' %}tag-amber{% else %}tag-green{% endif %}">{% if preparation.snapshot.filter_status == 'review' %}Jev review{% else %}Jev match{% endif %}</span></summary>
+  <div class="application-foldout-body">
   <dl class="preparation-facts">
     <div><dt>Company</dt><dd>{{ preparation.snapshot.company or 'Not provided' }}</dd></div>
     <div><dt>Location</dt><dd>{{ preparation.snapshot.location_raw or 'Not provided' }}</dd></div>
@@ -38,10 +36,11 @@
   {% endif %}
   <p class="panel-muted">This request stores the exact job and read-only Jev values from the selected completed search. It does not change your Jev decision or mark the job as applied.</p>
   {% if preparation.snapshot.inputs.additional_source_url %}<p class="panel-muted">Additional employer source: <a href="{{ preparation.snapshot.inputs.additional_source_url }}" target="_blank" rel="noopener noreferrer">Open the saved public job page <span aria-hidden="true">↗</span></a></p>{% endif %}
-  {% if preparation.snapshot.canonical_url %}<p><a class="text-link" href="{{ preparation.snapshot.canonical_url }}" target="_blank" rel="noopener noreferrer">Open the saved listing <span aria-hidden="true">↗</span></a></p>{% endif %}
-</section>
-<section id="preparation-progress" class="panel preparation-snapshot-panel application-section">
-  <div class="panel-header"><div><span class="kicker kicker-muted">OWNER-TRIGGERED WORKFLOW</span><h2>Preparation stages</h2></div></div>
+  </div>
+</details>
+<details id="preparation-progress" class="panel preparation-snapshot-panel application-section application-foldout" {% if preparation.state in ['blocked', 'failed', 'cancelled'] %}open{% endif %}>
+  <summary><span><span class="kicker kicker-muted">PACKET STATUS</span><b>Preparation progress and retry options</b></span><span class="tag {% if preparation.state in ['blocked', 'failed'] %}tag-amber{% elif preparation.state in ['review', 'completed'] %}tag-green{% else %}tag-muted{% endif %}">{{ preparation.state|title }}</span></summary>
+  <div class="application-foldout-body">
   <ol class="preparation-stage-list">
     <li class="is-complete"><b>Owner selected this listing</b><span>Manual trigger recorded for input revision {{ preparation.snapshot.inputs.selected_cv_sha256[:12] }}</span></li>
     <li class="{% if preparation.state in ['review', 'completed'] %}is-complete{% endif %}"><b>Research and file generation</b><span>{{ preparation.status_message }}</span></li>
@@ -52,7 +51,8 @@
     {% if preparation.state == 'requested' %}<span class="tag tag-muted">Waiting for the local operation slot</span>{% endif %}
     <a class="button button-outline button-small" href="/applications">Back to applications</a>
   </div>
-</section>
+</div>
+</details>
 <section id="application-files" class="panel preparation-snapshot-panel application-file-shelf application-section">
   <div class="panel-header"><div><span class="kicker kicker-muted">LOCAL FILES · {{ packet_history|length }} PACKET VERSION{% if packet_history|length != 1 %}S{% endif %}</span><h2>Files for this application</h2></div></div>
   <p class="panel-muted">Files stay grouped with this role. The current packet is listed first; older versions and submitted receipts remain available below.</p>
@@ -78,9 +78,15 @@
   <div class="panel-header"><div><span class="kicker kicker-muted">VERSION {{ packet.revision }} · {{ packet.status|upper }}</span><h2>Review your application packet</h2></div><span class="tag {% if packet.status == 'approved' %}tag-green{% else %}tag-amber{% endif %}">{% if packet.status == 'approved' %}Owner approved{% else %}Review required{% endif %}</span></div>
   <p class="panel-muted">This draft is based on your selected CV, approved claim IDs, and the read-only Jev result above. Review every file and source. Clue will not submit forms, send messages, or mark the role applied.</p>
   {% if packet.output.review_note %}<p class="alert alert-warning">{{ packet.output.review_note }}</p>{% endif %}
-  <h3>Generated files</h3>
-  <ul class="packet-artifact-list">{% for artifact in packet.artifacts %}<li><span><b>{{ artifact.artifact_type|replace('_', ' ')|title }}</b><small>{{ artifact.filename }} · SHA-256 {{ artifact.content_sha256[:12] }}</small></span><a class="button button-outline button-small" href="/packets/{{ packet.id }}/artifacts/{{ artifact.id }}">Download</a></li>{% endfor %}</ul>
-  {% if packet.output.grounding %}<h3>Jev · generated statement evidence check</h3><p class="panel-muted">This separate support check cannot change the saved job-match score or filters. {{ packet.output.grounding.supported_count }} statement block(s) passed; {{ packet.output.grounding.omitted_count }} contradicted or unresolved block(s) were left out of the files.</p><ul class="evidence-list">{% for item in packet.output.grounding.results %}<li><b>{{ item.status|title }} · {{ item.output_type|replace('_', ' ')|title }}{% if item.included_in_artifact %} · included{% else %} · omitted{% endif %}</b><p>{{ item.text }}</p><small>{{ item.reason }}</small>{% if item.evidence %}<details><summary>Evidence sent to Jev</summary><ul>{% for source in item.evidence %}<li><b>{{ source.source_type|replace('_', ' ')|title }}</b>{% if source.source_url %} · <a href="{{ source.source_url }}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}<blockquote>{{ source.text }}</blockquote></li>{% endfor %}</ul></details>{% else %}<small>No linked evidence was sent; this content was omitted.</small>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if packet.output.grounding %}
+    <p class="packet-check-summary"><b>Jev statement check:</b> {{ packet.output.grounding.supported_count }} supported · {{ packet.output.grounding.omitted_count }} unresolved or contradicted statements omitted. This check does not change the job-match decision.</p>
+    <details class="packet-detail-section"><summary>View statement-level evidence</summary>
+      <ul class="evidence-list">{% for item in packet.output.grounding.results %}<li><b>{{ item.status|title }} · {{ item.output_type|replace('_', ' ')|title }}{% if item.included_in_artifact %} · included{% else %} · omitted{% endif %}</b><p>{{ item.text }}</p><small>{{ item.reason }}</small>{% if item.evidence %}<details><summary>Evidence sent to Jev</summary><ul>{% for source in item.evidence %}<li><b>{{ source.source_type|replace('_', ' ')|title }}</b>{% if source.source_url %} · <a href="{{ source.source_url }}" target="_blank" rel="noopener noreferrer">source</a>{% endif %}<blockquote>{{ source.text }}</blockquote></li>{% endfor %}</ul></details>{% else %}<small>No linked evidence was sent; this content was omitted.</small>{% endif %}</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if packet.output.rewriter.unresolved_questions %}<div class="alert alert-warning"><b>Needs your answer or decision</b><ul>{% for question in packet.output.rewriter.unresolved_questions %}<li>{{ question }}</li>{% endfor %}</ul></div>{% endif %}
+  <details class="packet-detail-section">
+    <summary>Company research and application-form details</summary>
   <h3 id="application-research">Research and source evidence</h3>
   {% if packet.output.research.findings %}<ul class="evidence-list">{% for finding in packet.output.research.findings %}<li><b>{{ finding.topic }}:</b> {{ finding.fact }} <blockquote>{{ finding.quote }}</blockquote><a href="{{ finding.source_url }}" target="_blank" rel="noopener noreferrer">{{ finding.source_url }} <span aria-hidden="true">↗</span></a> · observed {{ finding.observed_at }}</li>{% endfor %}</ul>{% else %}<p>{{ packet.output.research.no_contact_found_reason or 'No sourced company findings were retained.' }}</p>{% endif %}
   {% set application_form = packet.output.research.application_form|default({}) %}
@@ -100,14 +106,20 @@
       <p class="tiny-note">Draft text is for your review and manual entry. The form may ask for additional or changed information.</p>
     {% endif %}
   </section>
+  </details>
+  {% for contact in contacts if contact.suppressed %}<p class="alert alert-warning">Excluded contact: {{ contact.name }}. This contact is disabled for Clue outreach drafts.</p>{% endfor %}
+  <details class="packet-detail-section">
+    <summary>Contact research and CV review checks</summary>
   {% if contacts %}<h4>Public contacts and recruiting inboxes</h4><ul class="evidence-list">{% for contact in contacts %}<li><b>{{ contact.name }}</b> · {{ contact.role }} · {{ contact.contact_type|replace('_', ' ')|title }} · {{ contact.confidence }} confidence{% if contact.public_email %}<br>Public email on source: {{ contact.public_email }}{% endif %}<blockquote>{{ contact.evidence_quote }}</blockquote><a href="{{ contact.source_url }}" target="_blank" rel="noopener noreferrer">Open source</a> · observed {{ contact.created_at }}{% if contact.suppressed %}<p class="tag tag-muted">Excluded from this and future Clue packets</p>{% elif packet.status in ['review', 'approved'] %}<form action="/preparations/{{ preparation.id }}/contacts/{{ contact.id }}/suppress" method="post"><button class="quiet-button" type="submit">Exclude this contact from Clue drafts</button></form>{% endif %}</li>{% endfor %}</ul>{% elif packet.output.research.no_contact_found_reason %}<p>{{ packet.output.research.no_contact_found_reason }}</p>{% endif %}
   <h3>Diagnoser · observable CV parseability</h3>
   {% if packet.output.diagnoser.diagnostics %}<ul class="evidence-list">{% for item in packet.output.diagnoser.diagnostics %}<li><b>{{ item.severity|title }} · {{ item.line_id }}:</b> {{ item.issue }} <span>{{ item.suggested_fix }}</span></li>{% endfor %}</ul>{% else %}<p>{{ packet.output.diagnoser.overall_note or 'No text-extraction risk was reported.' }}</p>{% endif %}
   <h3>Recruiter · document evidence map</h3>
   {% if packet.output.recruiter.requirements %}<ul class="evidence-list">{% for item in packet.output.recruiter.requirements %}<li><b>{{ item.priority|title }} · {{ item.document_coverage|replace('_', ' ')|title }}:</b> {{ item.requirement }}{% if item.claim_ids %}<small>Approved claims: {{ item.claim_ids|join(', ') }}</small>{% endif %}{% if item.notes %}<p>{{ item.notes }}</p>{% endif %}</li>{% endfor %}</ul>{% endif %}
-  {% if packet.output.rewriter.unresolved_questions %}<div class="alert alert-warning"><b>Needs your answer or decision</b><ul>{% for question in packet.output.rewriter.unresolved_questions %}<li>{{ question }}</li>{% endfor %}</ul></div>{% endif %}
+  </details>
   {% if packet.status == 'review' %}<form action="/preparations/{{ preparation.id }}/packets/{{ packet.id }}/approve" method="post" class="packet-approval-form"><label class="check-field"><input type="checkbox" name="confirm_review" value="on" required><span><b>I reviewed this exact version and its sources</b><small>Approval binds to this file set. I will personally submit the application or send any outreach.</small></span></label><button class="button button-dark" type="submit">Approve packet version {{ packet.revision }} <span aria-hidden="true">→</span></button></form>{% elif packet.status == 'approved' %}<p class="tag tag-green">This exact version was approved. Application and outreach actions remain manual.</p>{% else %}<p class="alert alert-warning">This packet was invalidated after a source or contact decision. Retry manually to create a new version.</p>{% endif %}
   {% if packet.status == 'approved' %}
+    <details class="packet-detail-section">
+      <summary>Optional · rate this packet</summary>
     <section class="application-handoff-panel">
       <h3>Review effort and packet usefulness</h3>
       <p>Optional owner estimates for this exact version. They stay local and help you compare preparation effort with packet usefulness; they are not a hiring or Jev score.</p>
@@ -122,9 +134,11 @@
         <button class="button button-outline button-small" type="submit">Save packet review</button>
       </form>
     </section>
+    </details>
   {% endif %}
   {% if outreach_options %}
-    <h3 id="application-outreach">Outreach messages</h3>
+    <details id="application-outreach" class="packet-detail-section">
+      <summary>Outreach drafts · {{ outreach_options|length }}</summary>
     {% for option in outreach_options %}
       <article class="packet-outreach-card">
         {% if option.contact and option.contact.suppressed %}<p class="alert alert-warning">This contact was excluded. Do not use this obsolete outreach draft; retry the preparation to generate a replacement without this contact.</p>{% endif %}
@@ -184,8 +198,11 @@
         {% elif packet.status == 'approved' and not gmail_connected %}<p class="panel-muted">Gmail is optional. The preview and attachment download work without a Google connection.</p>{% endif %}
       </article>
     {% endfor %}
+    </details>
   {% endif %}
   {% if packet.status == 'approved' %}
+    <details class="packet-detail-section">
+      <summary>Follow-up reminder{% if followup %} · {{ followup.due_on }}{% endif %}</summary>
     <section class="application-handoff-panel">
       <h3>Manual follow-up reminder</h3>
       <p>After you send outreach or submit the application yourself, set a reminder here if useful. Clue only shows it in this queue; it never sends a follow-up or reads replies.</p>
@@ -205,9 +222,12 @@
         </form>
       {% endif %}
     </section>
+    </details>
   {% endif %}
   {% if packet.status == 'approved' %}
-    <section id="application-owner-progress" class="application-handoff-panel application-section">
+    <details id="application-owner-progress" class="packet-detail-section">
+      <summary>Application progress{% if applied_recorded %} · submission recorded{% endif %}</summary>
+    <section class="application-handoff-panel application-section">
       <h3>Application progress and handoff</h3>
       <p>Open the saved employer vacancy, use the reviewed files, and submit the application yourself. Clue does not fill or submit the form.</p>
       {% if not applied_recorded %}
@@ -238,12 +258,15 @@
       {% endif %}
       <a class="text-link" href="/outcomes">Review outcomes and interview feedback <span aria-hidden="true">→</span></a>
     </section>
+    </details>
   {% endif %}
 </section>
 {% endif %}
 {% if gmail_drafts %}<section class="panel preparation-snapshot-panel"><h2>Gmail draft status</h2><ul class="packet-artifact-list">{% for item in gmail_drafts %}<li><span><b>{{ item.state|title }}</b><small>{{ item.recipient }} · {{ item.subject }}{% if item.gmail_draft_id %} · Gmail ID {{ item.gmail_draft_id }}{% endif %}{% if item.error_summary %}<br>{{ item.error_summary }}{% endif %}</small></span>{% if item.state == 'unknown' %}<a href="https://mail.google.com/mail/u/0/#drafts" target="_blank" rel="noopener noreferrer" class="button button-outline button-small">Check Gmail Drafts</a>{% endif %}</li>{% if item.state == 'unknown' %}<li><form action="/preparations/{{ preparation.id }}/gmail-drafts/{{ item.id }}/reconcile" method="post" class="gmail-reconcile-form"><label class="field"><span>Draft ID, if you found it</span><input name="gmail_draft_id" maxlength="200"></label><button class="button button-outline button-small" name="outcome" value="found" type="submit">I found this draft</button><label class="check-field"><input type="checkbox" name="checked_gmail" value="on"><span>I checked Gmail Drafts and confirmed it is absent</span></label><button class="quiet-button" name="outcome" value="not_found" type="submit">Confirm absent to allow retry</button></form></li>{% endif %}{% endfor %}</ul><p class="panel-muted">Clue never reads your mailbox and never retries an uncertain Gmail request automatically.</p></section>{% endif %}
-{% if packet %}<section class="panel preparation-snapshot-panel">
-  <div class="panel-header"><div><span class="kicker kicker-muted">OPTIONAL · SEPARATE OWNER TRIGGER</span><h2>Hiring Manager practice</h2></div></div>
+{% if packet %}<details class="application-optional-section">
+  <summary>Optional · interview practice</summary>
+  <section class="preparation-snapshot-panel">
+  <div class="panel-header"><div><span class="kicker kicker-muted">SEPARATE OWNER TRIGGER</span><h2>Hiring Manager practice</h2></div></div>
   <p class="panel-muted">Start a question round only when you choose. Your answers are sent for practice feedback only after you submit them. This is not a prediction, application score, or Jev result.</p>
   <form action="/preparations/{{ preparation.id }}/practice/start" method="post"><button class="button button-outline button-small" type="submit">Start interview practice</button></form>
   {% for practice in practice_sessions %}
@@ -252,5 +275,6 @@
       {% if practice.state == 'complete' %}<h4>Your answer assessments</h4>{% for item in practice.output.answer_assessments %}<div class="practice-assessment"><b>{{ item.question }}</b><p><b>Your answer:</b> {{ item.answer }}</p><p><b>Technical evidence:</b> {{ item.technical_evidence }}</p><p><b>Reasoning:</b> {{ item.reasoning }}</p><p><b>Clarity:</b> {{ item.clarity }}</p><p><b>Practice next:</b> {{ item.suggested_practice }}</p></div>{% endfor %}{% endif %}
     </article>
   {% endfor %}
-</section>{% endif %}
+</section>
+</details>{% endif %}
 {% endblock %}

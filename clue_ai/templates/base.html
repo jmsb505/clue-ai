@@ -16,56 +16,36 @@
         <span class="brand-mark" aria-hidden="true">c</span>
         <span class="brand-name">clue<span>ai</span></span>
       </a>
-      <p class="rail-label">YOUR SEARCH</p>
-      <nav class="main-nav" aria-label="Your search">
+      <nav class="main-nav primary-nav" aria-label="Main navigation">
         <a href="/" class="{% if active_page == 'home' %}is-active{% endif %}" {% if active_page == 'home' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⌂</span><span>Find matches</span>
+          <span class="nav-icon" aria-hidden="true">⌕</span><span>Find jobs</span>
         </a>
-        <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}" {% if active_page == 'profile' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">◎</span><span>CV &amp; profile</span>
-        </a>
-        <a href="/evidence" class="{% if active_page == 'evidence' %}is-active{% endif %}" {% if active_page == 'evidence' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">▤</span><span>Evidence library</span>
-        </a>
-        <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}" {% if active_page == 'search' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⌕</span><span>Search preferences</span>
-        </a>
-        <a href="/searches" class="{% if active_page == 'history' %}is-active{% endif %}" {% if active_page == 'history' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">↕</span><span>Search history</span>
+        <a href="/searches" class="{% if active_page in ['history', 'results'] %}is-active{% endif %}" {% if active_page in ['history', 'results'] %}aria-current="page"{% endif %}>
+          <span class="nav-icon" aria-hidden="true">↕</span><span>History</span>
         </a>
         <a href="/saved" class="{% if active_page == 'saved' %}is-active{% endif %}" {% if active_page == 'saved' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">♡</span><span>Saved roles</span>
-        </a>
-        <a href="/hidden" class="{% if active_page == 'hidden' %}is-active{% endif %}" {% if active_page == 'hidden' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⊘</span><span>Hidden roles</span>
-        </a>
-        <a href="/applied" class="{% if active_page == 'applied' %}is-active{% endif %}" {% if active_page == 'applied' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">✓</span><span>Applied roles</span>
+          <span class="nav-icon" aria-hidden="true">♡</span><span>Saved</span>
         </a>
         <a href="/applications" class="{% if active_page == 'applications' %}is-active{% endif %}" {% if active_page == 'applications' %}aria-current="page"{% endif %}>
           <span class="nav-icon" aria-hidden="true">▣</span><span>Applications</span>
         </a>
-        <a href="/outcomes" class="{% if active_page == 'outcomes' %}is-active{% endif %}" {% if active_page == 'outcomes' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">↗</span><span>Outcomes &amp; interviews</span>
-        </a>
       </nav>
-      <p class="rail-label rail-label-spaced">WORKSPACE</p>
-      <nav class="main-nav" aria-label="Workspace">
-        <a href="/companies" class="{% if active_page == 'companies' %}is-active{% endif %}" {% if active_page == 'companies' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⌂</span><span>Companies</span>
-        </a>
-        <a href="/sources" class="{% if active_page == 'sources' %}is-active{% endif %}" {% if active_page == 'sources' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⌁</span><span>Sources</span>
-        </a>
-        <a href="/settings" class="{% if active_page == 'settings' %}is-active{% endif %}" {% if active_page == 'settings' %}aria-current="page"{% endif %}>
-          <span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span>
-        </a>
-      </nav>
+      <details class="nav-more" {% if active_page in ['search', 'profile', 'evidence', 'hidden', 'applied', 'outcomes', 'companies', 'sources', 'settings', 'privacy'] %}open{% endif %}>
+        <summary aria-label="More pages"><span class="nav-icon" aria-hidden="true">•••</span><span>More</span></summary>
+        <nav class="secondary-nav" aria-label="More pages">
+          <a href="/search" class="{% if active_page == 'search' %}is-active{% endif %}" {% if active_page == 'search' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">⌕</span><span>Search preferences</span></a>
+          <a href="/profile" class="{% if active_page == 'profile' %}is-active{% endif %}" {% if active_page == 'profile' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">◎</span><span>CV &amp; profile</span></a>
+          <a href="/evidence" class="{% if active_page == 'evidence' %}is-active{% endif %}" {% if active_page == 'evidence' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">▤</span><span>Evidence library</span></a>
+          <a href="/hidden" class="{% if active_page == 'hidden' %}is-active{% endif %}" {% if active_page == 'hidden' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">⊘</span><span>Hidden roles</span></a>
+          <a href="/applied" class="{% if active_page == 'applied' %}is-active{% endif %}" {% if active_page == 'applied' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">✓</span><span>Applied roles</span></a>
+          <a href="/outcomes" class="{% if active_page == 'outcomes' %}is-active{% endif %}" {% if active_page == 'outcomes' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">↗</span><span>Outcomes &amp; interviews</span></a>
+          <a href="/companies" class="{% if active_page == 'companies' %}is-active{% endif %}" {% if active_page == 'companies' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">⌂</span><span>Companies</span></a>
+          <a href="/sources" class="{% if active_page == 'sources' %}is-active{% endif %}" {% if active_page == 'sources' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">⌁</span><span>Sources</span></a>
+          <a href="/settings" class="{% if active_page == 'settings' %}is-active{% endif %}" {% if active_page == 'settings' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">⚙</span><span>Settings</span></a>
+          <a href="/privacy" class="{% if active_page == 'privacy' %}is-active{% endif %}" {% if active_page == 'privacy' %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">◌</span><span>Privacy</span></a>
+        </nav>
+      </details>
       <div class="sidebar-spacer"></div>
-      <a class="privacy-link" href="/privacy">
-        <span class="privacy-dot" aria-hidden="true"></span>
-        <span>Private on this device</span>
-      </a>
       <div class="sidebar-foot">
         <span class="version-mark">CLUE / PERSONAL</span>
         <span class="local-mark"><span aria-hidden="true"></span> Local app</span>

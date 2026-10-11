@@ -4,28 +4,25 @@
 {% block content %}
 <section class="page-intro search-intro">
   <div>
-    <span class="kicker kicker-muted">STEP 02 · WHAT DOES A GOOD ROLE LOOK LIKE?</span>
-    <h1>Set the search.<br><em>Keep the choice.</em></h1>
-    <p>Clue screens for AI engineering and related technical work locally, then Jev reviews candidate fit and your requirements.</p>
+    <span class="kicker kicker-muted">SEARCH PREFERENCES</span>
+    <h1>Tell us what fits<br><em>and search.</em></h1>
+    <p>Choose the role and work location. Open advanced filters only if you want to change the other criteria.</p>
   </div>
-  <div class="intro-mark intro-mark-search" aria-hidden="true"><span>02</span><i>⌕</i></div>
 </section>
 
 <form action="/search" method="post" class="search-form">
   <section class="panel search-panel">
     <div class="panel-header">
-      <div><span class="kicker kicker-muted">01 · ROLE & LOCATION</span><h2>Where should we look?</h2></div>
-      <span class="mini-badge">Choose a starting point</span>
+      <div><h2>Role and location</h2></div>
     </div>
     <div class="form-grid">
       <label class="field field-wide">
         <span>Roles you're interested in</span>
-        <small>AI/ML, LLM/agent, computer vision/NLP, ML deployment and technical AI integration roles. Separate titles with commas; related technical work stays eligible.</small>
+        <small>Separate role titles with commas.</small>
         <input name="roles" maxlength="500" value="{{ criteria.roles }}" placeholder="AI Engineer, Machine Learning Engineer, LLM Engineer, MLOps Engineer">
       </label>
       <label class="field">
         <span>Where must the employer allow you to work from?</span>
-        <small>“Remote” alone does not mean the employer can hire in this location.</small>
         <input name="work_from" maxlength="100" value="{{ criteria.work_from }}" placeholder="Italy">
       </label>
       <label class="field">
@@ -36,26 +33,35 @@
           <option value="hybrid" {% if criteria.workplace == 'hybrid' %}selected{% endif %}>Hybrid or remote</option>
           <option value="any" {% if criteria.workplace == 'any' %}selected{% endif %}>Any workplace</option>
         </select>
-        <small>Remote roles must confirm work-from eligibility. Hybrid/on-site and unclear workplace roles must name the city below; other or unverified locations are filtered before Jev.</small>
+        <small>Remote roles still need confirmed eligibility for your location.</small>
       </label>
       <label class="field">
         <span>City for hybrid or on-site roles</span>
         <input name="local_workplace_city" maxlength="100" value="{{ criteria.local_workplace_city }}" placeholder="Milan">
         <small>Remote remains preferred; the local city is an allowed exception.</small>
       </label>
+    </div>
+  </section>
+
+  <details class="search-advanced">
+    <summary><b>Advanced filters</b><span>Requirements, pay, dates and ranking</span></summary>
+    <div class="search-advanced-content">
+  <section class="panel search-panel">
+    <div class="panel-header"><div><h2>Work and posting details</h2></div></div>
+    <div class="form-grid">
       <label class="field">
-        <span>Will you need visa sponsorship?</span>
+        <span>Visa sponsorship</span>
         <select name="requires_sponsorship">
           <option value="unknown" {% if criteria.requires_sponsorship == 'unknown' %}selected{% endif %}>Not sure / include all</option>
           <option value="no" {% if criteria.requires_sponsorship == 'no' %}selected{% endif %}>No</option>
           <option value="yes" {% if criteria.requires_sponsorship == 'yes' %}selected{% endif %}>Yes</option>
         </select>
-        <small>Only explicit “sponsorship unavailable” text excludes a listing. Unknown stays visible.</small>
+        <small>Only explicit “sponsorship unavailable” text excludes a listing.</small>
       </label>
       <label class="field">
         <span>Employment type</span>
         <input name="employment_types" maxlength="200" placeholder="Full-time, contract, internship">
-        <small>Leave blank to include all types. Separate with commas.</small>
+        <small>Leave blank to include all types.</small>
       </label>
       <label class="field">
         <span>Posted within</span>
@@ -66,22 +72,21 @@
       <label class="check-field">
         <input type="checkbox" name="include_unknown_location" value="on" {% if criteria.include_unknown_location %}checked{% endif %}>
         <span class="check-custom" aria-hidden="true"></span>
-        <span><b>Include uncertain location listings</b><small>Applies only to broader workplace modes. Remote preferred requires confirmed Italy, Europe, EU/EEA, or worldwide eligibility, or a clear location in {{ criteria.local_workplace_city }}.</small></span>
+        <span><b>Include uncertain location listings</b><small>Remote-preferred results still need confirmed eligibility for {{ criteria.work_from }} or the listed city.</small></span>
       </label>
       <label class="check-field check-field-secondary">
         <input type="checkbox" name="include_reviewed" value="on" {% if criteria.include_reviewed %}checked{% endif %}>
         <span class="check-custom" aria-hidden="true"></span>
-        <span><b>Include previously reviewed listing links</b><small>Off by default. Unchanged links stay in their original search history; turn this on to assess them again.</small></span>
+        <span><b>Include previously reviewed listing links</b><small>Off by default. Turn this on to assess unchanged links again.</small></span>
       </label>
     </div>
   </section>
 
   <section class="panel search-panel">
     <div class="panel-header">
-      <div><span class="kicker kicker-muted">02 · NON-NEGOTIABLES</span><h2>What should a role include?</h2></div>
-      <span class="mini-badge">AI focus before Jev</span>
+      <div><h2>Requirements and pay</h2></div>
     </div>
-    <div class="alert alert-soft"><b>Your focus:</b> paid junior, graduate, entry-level AI engineering roles or internships. English requirements are fine; explicit Italian-language requirements are excluded, while Italian as a preferred skill is allowed. Local screening removes unrelated work, explicit senior titles, explicit unpaid positions, known language conflicts and unverified or out-of-scope locations before Jev. Missing pay or level stays eligible for Jev to verify. Coverage shows local exclusion counts separately from duplicates.</div>
+    <p class="panel-muted">Local checks apply your paid-entry-level and language rules before Jev evaluates fit.</p>
     <div class="form-grid">
       <label class="field">
         <span>Must-have terms</span>
@@ -123,10 +128,9 @@
 
   <section class="panel search-panel">
     <div class="panel-header">
-      <div><span class="kicker kicker-muted">03 · JEV RANKING</span><h2>Choose what matters most</h2></div>
-      <span class="mini-badge">Relative weights</span>
+      <div><h2>Jev ranking weights</h2></div>
     </div>
-    <p class="panel-muted">These weights rank the AI-focused shortlist after Jev assesses it. Generic analyst, sales, admin and manual AI rating jobs are screened out locally. Adjacent backend, platform and data roles need evidence of actual AI/model implementation.</p>
+    <p class="panel-muted">These weights order candidate fit after Jev assesses the listings. They do not change the matching rules.</p>
     <div class="weight-grid">
       <label class="weight-control"><span>AI / ML relevance</span><input type="number" name="ai_relevance_weight" min="0" max="100" value="{{ criteria.ai_relevance_weight }}"><small>AI/ML is central to the role or stated product</small></label>
       <label class="weight-control"><span>Role alignment</span><input type="number" name="role_weight" min="0" max="100" value="{{ criteria.role_weight }}"><small>Job title and responsibilities</small></label>
@@ -136,10 +140,12 @@
     </div>
     <p class="tiny-note">Defaults: AI/ML 50, role 25, skills 15, experience 5, preferences 5. Set all weights to zero to give each assessed dimension equal weight. Jev scoring is optional and makes a TypeSafe API request.</p>
   </section>
+    </div>
+  </details>
 
   <div class="search-submit-row">
-    <div class="search-source-summary"><span class="privacy-dot"></span><span>Search approved sources on their allowed schedule; reuse the local index between refreshes.</span></div>
-    <button class="button button-dark button-large" type="submit">Find matching roles <span aria-hidden="true">↗</span></button>
+    <span class="search-source-summary">Your search and Jev assessment stay separate from packet generation.</span>
+    <button class="button button-dark button-large" type="submit">Search for jobs <span aria-hidden="true">→</span></button>
   </div>
 </form>
 {% endblock %}

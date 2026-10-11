@@ -4268,7 +4268,7 @@ def test_owner_followup_reminders_are_visible_and_cancel_on_reply_or_outcome(set
     )
     assert scheduled.status_code == 303
     listing = client.get("/preparations")
-    assert "Next actions" in listing.text
+    assert "Follow-up reminders" in listing.text
     assert "Check for a reply" in listing.text
     assert "This is an in-app reminder only" in listing.text
     assert list_followups(database, today=current_day + timedelta(days=1))[0]["due"]
@@ -5551,6 +5551,7 @@ def test_application_workspace_groups_packet_versions_and_submission_receipts(se
     index = client.get("/applications")
     assert index.status_code == 200
     assert "Applications" in index.text
+    assert "Choose a role to generate a packet" in index.text
     assert f"/applications/{record['id']}" in index.text
     assert "Application stage · Submitted" in index.text
 

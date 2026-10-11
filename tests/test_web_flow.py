@@ -112,9 +112,25 @@ def test_primary_navigation_names_groups_and_marks_current_page(settings, route,
     response = client.get(route)
 
     assert response.status_code == 200
-    assert 'aria-label="Your search"' in response.text
-    assert 'aria-label="Workspace"' in response.text
+    assert 'aria-label="Main navigation"' in response.text
+    assert 'aria-label="More pages"' in response.text
+    primary_nav = response.text.split('<nav class="main-nav primary-nav"', 1)[1].split("</nav>", 1)[0]
+    assert primary_nav.count("<a ") == 4
+    assert '<details class="nav-more"' in response.text
     assert f'<a href="{current_href}" class="is-active" aria-current="page">' in response.text
+
+
+def test_search_advanced_filters_start_collapsed_without_dropping_fields(settings):
+    response = TestClient(create_app(settings), base_url="http://127.0.0.1").get("/search")
+
+    assert response.status_code == 200
+    assert '<details class="search-advanced">' in response.text
+    assert 'name="roles"' in response.text
+    assert 'name="work_from"' in response.text
+    assert 'name="requires_sponsorship"' in response.text
+    assert 'name="include_unknown_location"' in response.text
+    assert 'name="ai_relevance_weight"' in response.text
+    assert "Search for jobs" in response.text
 
 
 def test_result_status_poller_only_runs_for_active_searches(settings):
@@ -661,7 +677,13 @@ def test_cv_first_workflow_saves_profile_searches_and_scores_automatically(setti
 
     page = client.get(response.headers["location"])
     assert "1 candidate fit scores" in page.text
+    assert "1 collected listing" in page.text
+    assert "1 collected listings" not in page.text
     assert "Requirement checks" in page.text
+    assert '<details class="coverage-panel">' in page.text
+    assert "Search and Jev details" in page.text
+    assert "Saved results for this search" not in page.text
+    assert "Showing 1 listings in this view" not in page.text
     assert "Score with Jev" not in page.text
 
 

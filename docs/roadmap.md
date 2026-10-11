@@ -1,7 +1,7 @@
 # Roadmap
 
 **Status:** Application preparation and local dossiers are implemented. PLAN-021 M6's researched cover-letter correction is locally validated, including a complete live pilot, Jev factual and CV checks, writing review, and exact rendering. Owner acceptance and broader repeatability remain open. The validated implementation is merged to main through PR #5.
-**Updated:** 2026-10-11
+**Updated:** 2026-10-12
 
 ## Definition gate
 
@@ -76,3 +76,9 @@ Use the `implementation-plan` and `milestone-delivery` workflows for each code m
 Prompt `.72` follows [research across seven primary university career services](evaluations/cover-letter-research-and-validation.md): an application introduction, developed relevant experience, particular role/employer rationale, and professional conclusion. No rigid word, paragraph, or section quotas apply. A title and signature do not replace body substance. Candidate project brands and repository names are replaced with accurate descriptive titles. Factual support remains Jev's responsibility and the saved match remains immutable. Prior short-letter passes are not writing acceptance; live validation is recorded in the report.
 
 Cover-letter pilot acceptance is now recorded in the report: a 260-word complete letter, five Jev-supported paragraphs, each writing dimension 3/4, and clean one-page rendering. An independent editorial source-scope correction was revalidated before saving revision 2. These results establish this pilot, not universal writing reliability or hiring performance. Local spending gates are optional via `CLUE_ENFORCE_LOCAL_SPEND_CAPS`; this installation disables them while retaining usage tracking, per the owner's instruction.
+
+## 12. Lean task-first application interface
+
+Use [PLAN-024](plans/PLAN-024-lean-task-first-ui.md) and [ADR 0041](decisions/0041-lean-task-first-interface.md) to reduce visible navigation and progressively disclose infrequent search and dossier details. Keep **Generate packet** as the explicit manual action for one eligible selected role. This is a presentation simplification only; Jev remains the matching validator, and no application or outreach is submitted automatically.
+
+**Acceptance:** Met locally. Four primary destinations; secondary routes remain available; core search fields stay visible while less-used controls are collapsed; all result views and decision evidence remain available; packet generation is consistently labeled; the current files and owner approval steps lead each dossier. The 371-test suite, Ruff, byte-compilation, whitespace validation, and synthetic responsive/keyboard browser review passed. PR checks and merge remain pending.

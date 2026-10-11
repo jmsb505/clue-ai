@@ -207,10 +207,10 @@ def test_search_history_lists_latest_unique_positions_by_fit_and_keeps_run_link(
 
     response = TestClient(create_app(settings)).get("/searches")
     assert response.status_code == 200
-    assert "RANKED POSITIONS FROM YOUR SEARCHES" in response.text
+    assert "PREVIOUS POSITIONS" in response.text
     assert response.text.index("Senior conflict") < response.text.index("Pending role")
     assert "/searches/ranked" in response.text
-    assert "Open source posting" in response.text
+    assert "Open job posting" in response.text
     assert "Hidden lead" not in response.text
 
 
@@ -254,6 +254,12 @@ def test_results_default_to_opportunities_with_filter_details_and_all_view(setti
     client = TestClient(create_app(settings))
     response = client.get("/searches/ranked")
     assert response.status_code == 200
+    assert '<form class="results-filter-nav"' in response.text
+    assert all(
+        f'value="{view}"' in response.text
+        for view in ("opportunities", "all", "match", "review", "conflict", "unassessed")
+    )
+    assert "results-filter-nav a" not in response.text
     assert "2 potential opportunities" in response.text
     assert response.text.index("Related AI graduate") < response.text.index("Confirmed junior")
     assert "Senior conflict" not in response.text

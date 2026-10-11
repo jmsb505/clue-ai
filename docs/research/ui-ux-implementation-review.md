@@ -87,3 +87,17 @@ Status names and totals must remain available as text, not color alone. Keep foc
 | Parse public form markup with the existing Scrapling response and Python HTML parser | Keeps the current stack, reads static HTML without browser interaction, and can discard input values before persistence. CSS visibility/JavaScript-rendered fields cannot be known without a browser. | **ADAPT.** Extract labels, control types, required flags, and visible options with fixed caps. Hide/password controls are discarded; dynamic or inaccessible forms are labeled unknown. |
 
 **Validation:** Keep visible focus, descriptive button/link labels, native pagination, and a responsive scroll container for the field table. Preserve original source and observation time beside every form observation. Do not turn a form inspection into a fit signal or job-open guarantee. Focused automated tests and browser review are recorded in PLAN-023 when complete.
+
+## Lean task-first interface — 2026-10-12
+
+**Purpose:** Make the route from a ranked role to one owner-reviewed packet easier to see while reducing the number of controls competing for attention.
+
+| Candidate | Product fit, accessibility, and maintenance | Decision |
+|---|---|---|
+| Keep all routes and filters expanded in the persistent navigation and page body | Every option is immediately visible, but the 14-link navigation, multi-panel search form, six result tabs, and long dossier make the main task difficult to scan. | **REJECT.** |
+| Remove secondary tools and evidence | Produces a shorter view but loses needed access to profile evidence, data/settings, outcomes, and source details. | **REJECT.** |
+| Group secondary pages in native disclosures; collapse advanced filters and detailed dossier evidence; standardize one per-listing action | Fits the existing Jinja/CSS stack, preserves browser-native keyboard behavior, and reduces initial content without changing model or crawler behavior. | **ADAPT.** See [PLAN-024](../plans/PLAN-024-lean-task-first-ui.md) and [ADR 0041](../decisions/0041-lean-task-first-interface.md). |
+
+**Design direction:** Keep four primary destinations—Find jobs, Search history, Saved roles, and Applications. Keep existing destinations available in an automatically opened secondary navigation disclosure. Show the role, work-from location, workplace style, and local city first; put other criteria and weights in Advanced filters. Use one result-view selector with counts. Standardize the selected-listing action as **Generate packet** and explain that it researches one role and creates files for owner review. Put current packet files and the next owner action first in each dossier; detailed technical material stays available on demand.
+
+**Validation:** PLAN-024's full test suite passed (371 passed, one upstream Starlette/AnyIO deprecation warning), along with Ruff, Python byte-compilation, and `git diff --check`. A synthetic local browser review confirmed four primary links, a closed-by-default Advanced filters disclosure, the enabled per-job packet action, keyboard access with visible focus, and no horizontal overflow at 1440, 390, or 320 CSS pixels. The packet flow retains CV selection and the manual-action boundary. Preview data and provider keys were synthetic/empty; no external service was called. See [PLAN-024](../plans/PLAN-024-lean-task-first-ui.md) and [ADR 0041](../decisions/0041-lean-task-first-interface.md).
