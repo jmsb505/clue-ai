@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** Application preparation and local dossiers are implemented. PLAN-021 M6's researched cover-letter correction is locally validated, including a complete live pilot, Jev factual and CV checks, writing review, and exact rendering. Owner acceptance and broader repeatability remain open. Git delivery is pending.
+**Status:** Application preparation and local dossiers are implemented. PLAN-021 M6's researched cover-letter correction is locally validated, including a complete live pilot, Jev factual and CV checks, writing review, and exact rendering. Owner acceptance and broader repeatability remain open. The validated implementation is merged to main through PR #5.
 **Updated:** 2026-10-11
 
 ## Owner-set cost ceiling
