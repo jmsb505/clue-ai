@@ -3,7 +3,7 @@
 **Status:** PLAN-001 M1/M2, M3a, and M3b pushed and remote-verified; PLAN-002 M1/M2 and PLAN-003 M1 are pushed. PLAN-004 M1 (CV-first automatic search and Jev review) is pushed and remote-verified at `ea2b73ab53580acee1558b56c2832d50cd4b4e8f`. PLAN-005 M1 (local-origin form fix and Fetch Metadata follow-up) is pushed and remote-verified at `b3b1bc56843866d0cffd8dc834fd93430956b217`. PLAN-008 has one successful live run (718 records fetched; two matches scored); incremental progress display awaits a post-fix run. PLAN-022 M1/M2 are pushed to `main` at `e85eeaa` with focused validation complete.
 **Research snapshot:** 2026-10-02
 
-**Current UI delivery:** PLAN-024 M1–M4 are implemented and locally validated on `codex/lean-task-first-ui`; pull-request checks and merge are pending.
+**Current UI delivery:** PLAN-024 M1–M4 are implemented and locally validated on `codex/lean-task-first-ui`; delivery is tracked in [PR #8](https://github.com/jmsb505/clue-ai/pull/8).
 
 This repository contains the local personal job-search app, its product definition, source research, architecture, and delivery plans. PLAN-002 M1/M2 and PLAN-001 M1/M2/M3a/M3b are pushed to `main`; M3b's verified SHA is recorded above. PLAN-008's first live workflow completed; its sitemap stage took about 97 seconds, and its progress display is being improved. Deliver milestones on a validated branch and merge them through a PR after required checks pass; never bypass repository protection or advance `main` on failed checks. Each external source has its own request limits, attribution, and refresh cadence.
 

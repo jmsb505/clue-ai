@@ -1,6 +1,6 @@
 # PLAN-024 — Lean task-first interface and packet generation
 
-- Status: Complete — implementation and local validation passed; pull-request checks/merge pending
+- Status: Complete — implementation and local validation passed; delivered in PR #8
 - Date: 2026-10-12
 - Related: [PLAN-022](PLAN-022-application-workspaces.md), [PLAN-023](PLAN-023-ranked-search-history-and-form-guidance.md), [ADR 0041](../decisions/0041-lean-task-first-interface.md)
 
@@ -80,4 +80,4 @@ Search discovery and Jev matching retain their current behavior. Saving a role d
 - **M3:** Eligible result, history, and saved-role actions consistently say **Generate packet**. The selected CV and optional employer URL remain available. Applications opens with current files and owner decisions first; supporting evidence remains in disclosures.
 - **Automated validation:** `371 passed, 1 warning` in the full pytest suite; `ruff check clue_ai tests`, `python -m compileall -q clue_ai`, and `git diff --check` passed. The remaining warning is upstream: Starlette's TestClient imports AnyIO's deprecated `BlockingPortal` alias.
 - **Browser validation:** FastAPI pages rendered in headless Chromium from a temporary database containing one synthetic AI Engineer listing, synthetic CV, and synthetic approved claim. Jev/OpenAI keys were empty; no crawler, live profile, or external service was used. At 1440, 390, and 320 CSS pixels, there was no horizontal overflow; the packet button was visible, enabled, and within the viewport. Four primary links appeared, Advanced filters stayed collapsed by default, and the home search action was present. Keyboard traversal reached the skip link and **Generate packet**; the action showed a 3px focus outline.
-- **Delivery:** Changes are on `codex/lean-task-first-ui`. Merge remains pending required pull-request checks.
+- **Delivery:** Changes are on `codex/lean-task-first-ui` in [PR #8](https://github.com/jmsb505/clue-ai/pull/8).

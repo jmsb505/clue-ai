@@ -1,6 +1,6 @@
 # ADR 0041 — Lean task-first interface
 
-- Status: Accepted — implementation and local validation passed; pull-request checks/merge pending
+- Status: Accepted — implementation and local validation passed; delivered in PR #8
 - Date: 2026-10-12
 - Related: [PLAN-024](../plans/PLAN-024-lean-task-first-ui.md), [PLAN-022](../plans/PLAN-022-application-workspaces.md), [PLAN-023](../plans/PLAN-023-ranked-search-history-and-form-guidance.md)
 
@@ -35,4 +35,4 @@ The interface grew to expose search, profile/evidence setup, six result views, s
 
 ## Validation
 
-PLAN-024 M4 passed locally. The full pytest suite passed (371 passed, one upstream Starlette/AnyIO deprecation warning); Ruff, Python byte-compilation, and `git diff --check` passed. A synthetic local Chromium review at 1440, 390, and 320 CSS pixels confirmed four primary destinations, collapsed Advanced filters, a visible and enabled **Generate packet** action, keyboard reachability with a 3px focus outline, and no horizontal overflow. The preview used an isolated temporary database, synthetic role/CV/claim data, and empty provider keys. No live profile, crawler, or external service was used. Pull-request checks and merge remain pending.
+PLAN-024 M4 passed locally. The full pytest suite passed (371 passed, one upstream Starlette/AnyIO deprecation warning); Ruff, Python byte-compilation, and `git diff --check` passed. A synthetic local Chromium review at 1440, 390, and 320 CSS pixels confirmed four primary destinations, collapsed Advanced filters, a visible and enabled **Generate packet** action, keyboard reachability with a 3px focus outline, and no horizontal overflow. The preview used an isolated temporary database, synthetic role/CV/claim data, and empty provider keys. No live profile, crawler, or external service was used. Delivery is tracked in [PR #8](https://github.com/jmsb505/clue-ai/pull/8).
