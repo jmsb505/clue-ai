@@ -4,9 +4,9 @@
 {% block content %}
 <section class="page-intro">
   <div>
-    <span class="kicker kicker-muted">YOUR SEARCH HISTORY · {{ total }} POSITIONS</span>
-    <h1>Keep the strongest<br><em>leads in view.</em></h1>
-    <p>Positions are grouped by job and sorted by their latest saved Jev ranking. Each score links to the search snapshot that produced it; it is a fit signal, not a hiring probability.</p>
+    <span class="kicker kicker-muted">{{ total }} PREVIOUS POSITIONS</span>
+    <h1>Your search<br><em>history.</em></h1>
+    <p>Positions are sorted by their latest Jev fit score. Choose one eligible role and select Generate packet to prepare its files.</p>
   </div>
   <div class="intro-mark" aria-hidden="true"><span>↕</span><i>⌕</i></div>
 </section>
@@ -16,13 +16,13 @@
     <span class="empty-illustration" aria-hidden="true">⌕</span>
     <span class="kicker kicker-muted">NO SEARCHES SAVED YET</span>
     <h2>Your previous positions will collect here.</h2>
-    <p>Start a search to build a ranked history you can revisit. Saving a position only adds it to your local shortlist; it will not start research or document generation.</p>
+    <p>Run a search and its ranked positions will collect here. Saving a position never starts research or document generation.</p>
     <a class="button button-dark" href="/search">Start a search <span aria-hidden="true">→</span></a>
   </section>
 {% else %}
   <div class="history-controls">
-    <div><span class="kicker kicker-muted">LATEST SAVED RANKING PER POSITION</span><h2>{{ total }} previous positions</h2></div>
-    <a class="button button-outline" href="/search">Run another search <span aria-hidden="true">→</span></a>
+    <div><span class="kicker kicker-muted">LATEST JEV RANKING PER POSITION</span><h2>{{ total }} positions</h2></div>
+    <a class="button button-outline" href="/search">Search for jobs <span aria-hidden="true">→</span></a>
   </div>
   {% if not jobs %}
     <section class="empty-state panel"><h2>No visible positions in this history.</h2><p>Hidden or already applied roles are omitted here. Your saved search runs remain available below.</p></section>
@@ -48,8 +48,8 @@
             </div>
           </div>
           <div class="history-job-actions">
-            <a class="button button-outline button-small" href="/searches/{{ job.run_id }}">Open ranked result</a>
-            {% if job.source_url %}<a class="button button-outline button-small" href="{{ job.source_url }}" target="_blank" rel="noopener noreferrer">Open source posting <span aria-hidden="true">↗</span></a>{% endif %}
+            <a class="button button-outline button-small" href="/searches/{{ job.run_id }}">View search result</a>
+            {% if job.source_url %}<a class="button button-outline button-small" href="{{ job.source_url }}" target="_blank" rel="noopener noreferrer">Open job posting <span aria-hidden="true">↗</span></a>{% endif %}
             {% if not job.saved %}
               <form action="/jobs/{{ job.id }}/save" method="post"><input type="hidden" name="return_to" value="/searches?page={{ current_page }}"><button class="quiet-button" type="submit">Save for later</button></form>
             {% else %}<span class="tag tag-green">Saved for later</span>{% endif %}
@@ -57,13 +57,14 @@
               {% if preparation_cvs and preparation_claims_ready %}
                 <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
                   <input type="hidden" name="run_id" value="{{ job.run_id }}">
-                  <label class="sr-only" for="history-cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
-                  <select id="history-cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
-                    {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv or (preparation_cvs|length == 1) %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
-                  </select>
-                  <label class="sr-only" for="history-source-{{ job.id }}">Optional public employer job or application page URL</label>
-                  <input id="history-source-{{ job.id }}" type="url" name="additional_source_url" placeholder="Optional public application-page URL">
-                  <button class="button button-dark button-small" type="submit">{% if job.filter_status == 'review' %}Prepare for review{% else %}Prepare application{% endif %} <span aria-hidden="true">→</span></button>
+                  {% if preparation_cvs|length > 1 %}
+                    <label class="sr-only" for="history-cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
+                    <select id="history-cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
+                      {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
+                    </select>
+                  {% else %}<input type="hidden" name="selected_cv_id" value="{{ preparation_cvs[0].id }}">{% endif %}
+                  <details class="preparation-source-details"><summary>Add official application URL</summary><label class="sr-only" for="history-source-{{ job.id }}">Optional public employer application page URL</label><input id="history-source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123"><small>Optional. Clue reads public page details only after you start this packet.</small></details>
+                  <button class="button button-dark button-small" type="submit">Generate packet <span aria-hidden="true">→</span></button>
                 </form>
               {% else %}<a class="button button-outline button-small" href="/evidence">Set up materials to prepare</a>{% endif %}
             {% elif job.score_state != 'scored' %}<span class="panel-muted">Assess with Jev before preparation</span>

@@ -1990,7 +1990,7 @@ def create_app(
 
     @app.get("/privacy", response_class=HTMLResponse)
     async def privacy_page(request: Request):
-        return render(request, "privacy.html", {"active_page": ""})
+        return render(request, "privacy.html", {"active_page": "privacy"})
 
     @app.get("/health")
     async def health():

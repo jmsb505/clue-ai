@@ -462,7 +462,7 @@ def test_manual_listing_button_creates_only_a_bound_request(settings):
     assert detail.status_code == 200
     assert "Owner selected this listing" in detail.text
     assert "No external action is performed by Clue" in detail.text
-    assert "Prepare application" in client.get("/searches/run-app-prep").text
+    assert "Generate packet" in client.get("/searches/run-app-prep").text
 
 
 def test_review_listing_button_and_dossier_keep_jev_uncertainty_visible(settings):
@@ -491,7 +491,7 @@ def test_review_listing_button_and_dossier_keep_jev_uncertainty_visible(settings
         )
 
     search_page = client.get("/searches/run-app-prep")
-    assert "Prepare for review" in search_page.text
+    assert "Generate packet" in search_page.text
     assert "Jev marked this listing for review, not as a match" in search_page.text
     assert "Paid compensation" in search_page.text
     assert "Language requirements" in search_page.text
@@ -507,7 +507,7 @@ def test_review_listing_button_and_dossier_keep_jev_uncertainty_visible(settings
     request_id = response.headers["location"].split("/preparations/", 1)[1].split("?", 1)[0]
     dossier = client.get(f"/preparations/{request_id}")
     assert response.status_code == 303
-    assert "Jev review · not a match" in dossier.text
+    assert "Jev review" in dossier.text
     assert "Jev did not confirm a match" in dossier.text
     assert "Not stated" in dossier.text
     assert "Paid compensation" in dossier.text

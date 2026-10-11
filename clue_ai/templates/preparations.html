@@ -4,19 +4,17 @@
 {% block content %}
 <section class="page-intro">
   <div>
-    <span class="kicker kicker-muted">YOUR APPLICATION FILES</span>
-    <h1>Applications<br><em>in one place.</em></h1>
-    <p>Each folder belongs to one listing you chose to prepare. Open it to find the packet versions, contact research, outreach draft, and any receipts or updates you saved.</p>
+    <span class="kicker kicker-muted">YOUR GENERATED FILES</span>
+    <h1>Application<br><em>packets.</em></h1>
+    <p>One folder for every role you chose to prepare. Open a folder to review its files and supporting research.</p>
   </div>
-  <div class="intro-mark" aria-hidden="true"><span>AP</span><i>↗</i></div>
+  <a class="button button-dark" href="/searches">Choose a role to generate a packet <span aria-hidden="true">→</span></a>
 </section>
 
-<section class="section-heading">
-  <div><span class="kicker kicker-muted">OWNER-SET REMINDERS</span><h2>Next actions</h2></div>
-  <span class="mini-badge">{{ followups|length }} active</span>
-</section>
 {% if followups %}
-  <div class="preparation-list">
+  <details class="application-optional-section">
+    <summary>Follow-up reminders · {{ followups|length }}</summary>
+    <div class="preparation-list">
     {% for followup in followups %}
       <article class="panel preparation-row">
         <div class="preparation-row-main">
@@ -28,13 +26,14 @@
         <a class="button button-outline button-small" href="/applications/{{ followup.request_id }}">Review next action <span aria-hidden="true">→</span></a>
       </article>
     {% endfor %}
-  </div>
+    </div>
+  </details>
 {% else %}
-  <p class="panel-muted">No owner-set follow-up reminders are active.</p>
+  <details class="application-optional-section"><summary>Follow-up reminders</summary><p class="panel-muted">No owner-set follow-up reminders are active.</p></details>
 {% endif %}
 
 <section class="section-heading">
-  <div><span class="kicker kicker-muted">ONE FOLDER PER SELECTED ROLE</span><h2>Your applications</h2></div>
+  <div><span class="kicker kicker-muted">ONE FOLDER PER SELECTED ROLE</span><h2>Your packets</h2></div>
   <span class="mini-badge">{{ preparations|length }} folders</span>
 </section>
 {% if preparations %}
@@ -48,11 +47,11 @@
           {% if item.application_stage %}<p class="application-list-stage">Application stage · {{ item.application_stage|replace('_', ' ')|title }}</p>{% endif %}
           <small>Last updated · {{ item.updated_at[:16].replace('T', ' ') }} UTC · saved job snapshot {{ item.snapshot_sha256[:12] }}</small>
         </div>
-        <a class="button button-outline button-small" href="/applications/{{ item.id }}">Open application <span aria-hidden="true">→</span></a>
+        <a class="button button-outline button-small" href="/applications/{{ item.id }}">Open packet <span aria-hidden="true">→</span></a>
       </article>
     {% endfor %}
   </div>
 {% else %}
-  <div class="panel empty-state"><h3>No application folders yet</h3><p>Run your normal search and Jev assessment. Choose Prepare application on a specific eligible listing to create its folder and start its research and file packet.</p><a class="button button-dark" href="/searches">Open search history <span aria-hidden="true">→</span></a></div>
+  <div class="panel empty-state"><h3>No packets yet</h3><p>Choose an eligible job and select Generate packet. Clue researches that role and prepares files for your review; nothing is submitted.</p><a class="button button-dark" href="/searches">Choose a role <span aria-hidden="true">→</span></a></div>
 {% endif %}
 {% endblock %}

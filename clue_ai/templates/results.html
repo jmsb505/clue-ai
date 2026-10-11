@@ -13,14 +13,10 @@
   <div class="results-count-card">
     <span class="count-number">{{ result_counts.opportunities }}</span>
     <span>Potential opportunities</span>
-    <small>{{ result_counts.matches }} confirmed filter matches · {{ result_counts.review }} need verification</small>
-    <small>of {{ result_counts.total }} visible listings in this search</small>
+    <small>{{ result_counts.matches }} confirmed filter match{% if result_counts.matches != 1 %}es{% endif %} · {{ result_counts.review }} to verify</small>
+    <small>of {{ result_counts.total }} visible listing{% if result_counts.total != 1 %}s{% endif %} in this search</small>
   </div>
 </section>
-
-{% if notice %}<div class="alert alert-success" role="status">{{ notice }}</div>{% endif %}
-
-<p class="results-snapshot-note">This is the saved result snapshot for this run. New searches check refreshed source indexes for new or changed listing links and skip unchanged links already assessed. Turn on “Include previously reviewed listing links” in search settings to assess them again.</p>
 
 {% if run.status in ['queued', 'running', 'scoring'] %}
   <section class="progress-panel" role="status" aria-live="polite">
@@ -30,12 +26,10 @@
   </section>
 {% endif %}
 
-{% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
-
-<details class="coverage-panel" {% if run.status == 'complete' %}open{% endif %}>
+<details class="coverage-panel">
   <summary>
-    <span><span class="coverage-mark" aria-hidden="true">⌁</span><b>Search coverage</b></span>
-    <span class="coverage-summary">{{ run.checked_sources|length }} coverage details <span aria-hidden="true">⌄</span></span>
+    <span><span class="coverage-mark" aria-hidden="true">⌁</span><b>Search and Jev details</b></span>
+    <span class="coverage-summary">{{ run.checked_sources|length }} source{% if run.checked_sources|length != 1 %}s{% endif %} · {{ result_counts.scored }} Jev score{% if result_counts.scored != 1 %}s{% endif %} <span aria-hidden="true">⌄</span></span>
   </summary>
   <div class="coverage-content">
     {% if run.checked_sources %}
@@ -47,16 +41,19 @@
     {% endif %}
     <p class="tiny-note">Each enabled automatic source is shown as refreshed, skipped by its query refresh interval, or still inside its source refresh interval. For the last group, active listings already in your local index remain eligible for filtering and ranking. Manual-only and disabled sources are excluded. Coverage is not internet-wide; a listing's publisher remains the authority on whether it is open.</p>
     <a class="text-link" href="/sources">Review source status <span aria-hidden="true">→</span></a>
+    {% if result_counts.total %}
+      <div class="scoring-summary"><span aria-hidden="true">✳</span> Jev: {{ result_counts.scored }} candidate fit scores · {{ result_counts.matches }} filter matches · {{ result_counts.review }} to review · {{ result_counts.conflicts }} conflicts · {{ result_counts.unassessed }} awaiting assessment. Fit is not a hiring probability. <small>{{ usage.used_usd|round(4) }} / {{ usage.budget_usd|round(2) }} USD app limit over 30 days</small></div>
+    {% endif %}
   </div>
 </details>
 
 <section class="results-toolbar">
-  <div><span class="kicker kicker-muted">THE FULL CANDIDATE SET</span><h2>
-    {% if active_view == 'opportunities' %}{{ shown_total }} potential opportunities
-    {% elif active_view == 'all' %}{{ result_counts.total }} collected listings
-    {% elif active_view == 'match' %}{{ shown_total }} filter matches
+  <div><span class="kicker kicker-muted">YOUR RESULTS</span><h2>
+    {% if active_view == 'opportunities' %}{{ shown_total }} potential opportunit{% if shown_total == 1 %}y{% else %}ies{% endif %}
+    {% elif active_view == 'all' %}{{ result_counts.total }} collected listing{% if result_counts.total != 1 %}s{% endif %}
+    {% elif active_view == 'match' %}{{ shown_total }} filter match{% if shown_total != 1 %}es{% endif %}
     {% elif active_view == 'review' %}{{ shown_total }} to review
-    {% elif active_view == 'conflict' %}{{ shown_total }} filter conflicts
+    {% elif active_view == 'conflict' %}{{ shown_total }} filter conflict{% if shown_total != 1 %}s{% endif %}
     {% else %}{{ shown_total }} not assessed{% endif %}
   </h2></div>
   <div class="results-actions">
@@ -76,21 +73,23 @@
   </div>
 </section>
 
-<nav class="results-filter-nav" aria-label="Filter listings by Jev assessment">
-  <a class="{% if active_view == 'opportunities' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=opportunities" {% if active_view == 'opportunities' %}aria-current="page"{% endif %}>Opportunities <b>{{ result_counts.opportunities }}</b></a>
-  <a class="{% if active_view == 'all' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=all" {% if active_view == 'all' %}aria-current="page"{% endif %}>All <b>{{ result_counts.total }}</b></a>
-  <a class="{% if active_view == 'match' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=match" {% if active_view == 'match' %}aria-current="page"{% endif %}>Matches <b>{{ result_counts.matches }}</b></a>
-  <a class="{% if active_view == 'review' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=review" {% if active_view == 'review' %}aria-current="page"{% endif %}>Review <b>{{ result_counts.review }}</b></a>
-  <a class="{% if active_view == 'conflict' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=conflict" {% if active_view == 'conflict' %}aria-current="page"{% endif %}>Conflicts <b>{{ result_counts.conflicts }}</b></a>
-  <a class="{% if active_view == 'unassessed' %}is-active{% endif %}" href="/searches/{{ run.id }}?view=unassessed" {% if active_view == 'unassessed' %}aria-current="page"{% endif %}>Not assessed <b>{{ result_counts.unassessed }}</b></a>
-</nav>
+<form class="results-filter-nav" action="/searches/{{ run.id }}" method="get">
+  <label for="results-view">Show</label>
+  <select id="results-view" name="view" aria-label="Show listings by assessment">
+    <option value="opportunities" {% if active_view == 'opportunities' %}selected{% endif %}>Potential opportunities · {{ result_counts.opportunities }}</option>
+    <option value="all" {% if active_view == 'all' %}selected{% endif %}>All listings · {{ result_counts.total }}</option>
+    <option value="match" {% if active_view == 'match' %}selected{% endif %}>Filter matches · {{ result_counts.matches }}</option>
+    <option value="review" {% if active_view == 'review' %}selected{% endif %}>Need review · {{ result_counts.review }}</option>
+    <option value="conflict" {% if active_view == 'conflict' %}selected{% endif %}>Filter conflicts · {{ result_counts.conflicts }}</option>
+    <option value="unassessed" {% if active_view == 'unassessed' %}selected{% endif %}>Not assessed · {{ result_counts.unassessed }}</option>
+  </select>
+  <button class="button button-outline button-small" type="submit">Show</button>
+</form>
+
+<p class="packet-trigger-note">On an eligible role, choose <b>Generate packet</b> to research that job and prepare files for your review. Clue does not submit forms or send messages.</p>
 
 {% if active_view == 'opportunities' %}
   <p class="results-snapshot-note">Ranked by candidate fit, including AI relevance. Jobs needing verification stay in this list; their pay, level or location may still need confirmation. Review does not mean a confirmed paid junior role.</p>
-{% endif %}
-
-{% if result_counts.total %}
-  <div class="scoring-summary"><span aria-hidden="true">✳</span> Assessment status: {{ result_counts.scored }} candidate fit scores · {{ result_counts.matches }} match your filters · {{ result_counts.review }} need review · {{ result_counts.conflicts }} conflict · {{ result_counts.unassessed }} awaiting a filter assessment. Fit scores and filter status are separate; fit scores are not hiring probabilities. <small>{{ usage.used_usd|round(4) }} USD / {{ usage.budget_usd|round(2) }} USD app limit over 30 days</small></div>
 {% endif %}
 
 {% if not jobs and run.status == 'complete' %}
@@ -108,8 +107,6 @@
     {% endif %}
   </section>
 {% endif %}
-
-{% if active_view != 'all' and jobs %}<p class="results-view-note">Showing {{ shown_total }} listings in this view, sorted by Jev fit signal.</p>{% endif %}
 
 <section class="job-list" aria-label="Job listings">
   {% for job in jobs %}
@@ -265,17 +262,19 @@
             {% if preparation_cvs and preparation_claims_ready %}
               <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
                 <input type="hidden" name="run_id" value="{{ run.id }}">
-                <label class="sr-only" for="cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
-                <select id="cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
-                  {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv or (preparation_cvs|length == 1) %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
-                </select>
+                {% if preparation_cvs|length > 1 %}
+                  <label class="sr-only" for="cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
+                  <select id="cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
+                    {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
+                  </select>
+                {% else %}<input type="hidden" name="selected_cv_id" value="{{ preparation_cvs[0].id }}">{% endif %}
                 <details class="preparation-source-details">
                   <summary>Add a public employer application page</summary>
                   <label for="source-{{ job.id }}">Official job or application page URL <span>(optional)</span></label>
                   <input id="source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123" aria-describedby="source-help-{{ job.id }}">
                   <small id="source-help-{{ job.id }}">Clue may inspect the public page and its visible field labels during this selected preparation. It will not sign in, fill fields, or submit anything.</small>
                 </details>
-                <button class="button button-dark button-small" type="submit" aria-label="{% if job.filter_status == 'review' %}Prepare materials for review for{% else %}Prepare application materials for{% endif %} {{ job.title }} at {{ job.company }}">{% if job.filter_status == 'review' %}Prepare for review{% else %}Prepare application{% endif %} <span aria-hidden="true">→</span></button>
+                <button class="button button-dark button-small" type="submit" aria-label="Generate packet for {{ job.title }} at {{ job.company }}">Generate packet <span aria-hidden="true">→</span></button>
               </form>
               {% if job.filter_status == 'review' %}
                 <p class="panel-muted preparation-review-note">Jev marked this listing for review, not as a match. Unresolved checks:
