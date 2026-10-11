@@ -261,9 +261,9 @@ def missing_gate_reasons(settings: Settings, app_settings: dict[str, Any]) -> li
         reasons.append("Add OPENAI_API_KEY to the local .env file.")
     if not app_settings.get("openai_consent_at"):
         reasons.append("Enable the separate OpenAI data-sharing consent in Settings.")
-    if float(app_settings.get("openai_monthly_budget_usd") or 0) <= 0:
+    if settings.enforce_local_spend_caps and float(app_settings.get("openai_monthly_budget_usd") or 0) <= 0:
         reasons.append("Set an OpenAI monthly spending cap in Settings.")
-    if float(app_settings.get("openai_opportunity_budget_usd") or 0) <= 0:
+    if settings.enforce_local_spend_caps and float(app_settings.get("openai_opportunity_budget_usd") or 0) <= 0:
         reasons.append("Set an OpenAI per-opportunity spending cap in Settings.")
     if float(app_settings.get("openai_input_usd_per_million") or 0) <= 0:
         reasons.append("Set the current GPT-6 Luna input rate in Settings.")
@@ -325,10 +325,10 @@ def reserve_usage(
                FROM openai_usage WHERE job_id = ? AND status IN ('reserved', 'unknown', 'settled')""",
             (job_id,),
         ).fetchone()["used"]
-        if float(monthly) + reserved_usd > monthly_cap + 1e-12:
+        if settings.enforce_local_spend_caps and float(monthly) + reserved_usd > monthly_cap + 1e-12:
             db.execute("ROLLBACK")
             raise OpenAIBudgetError("This request would exceed the OpenAI monthly cap.")
-        if float(opportunity) + reserved_usd > opportunity_cap + 1e-12:
+        if settings.enforce_local_spend_caps and float(opportunity) + reserved_usd > opportunity_cap + 1e-12:
             db.execute("ROLLBACK")
             raise OpenAIBudgetError("This request would exceed the OpenAI per-opportunity cap.")
         db.execute(

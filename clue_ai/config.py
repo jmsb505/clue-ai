@@ -67,6 +67,8 @@ class Settings:
     network_timeout_seconds: float = 20.0
     crawler_user_agent: str = "ClueAI/0.1 (+https://github.com/jmsb505/clue-ai) local personal job-search app"
 
+    enforce_local_spend_caps: bool = True
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / "clue.sqlite3"
@@ -87,6 +89,7 @@ class Settings:
             api_key=os.environ.get("TYPESAFE_API_KEY", "").strip(),
             model=os.environ.get("TYPESAFE_MODEL", "jev-1.13.0").strip() or "jev-1.13.0",
             monthly_jev_budget_usd=_money(os.environ.get("JEV_MONTHLY_BUDGET_USD"), 4.00),
+            enforce_local_spend_caps=os.environ.get("CLUE_ENFORCE_LOCAL_SPEND_CAPS", "true").strip().lower() not in {"false", "0", "no"},
             openai_api_key=os.environ.get("OPENAI_API_KEY", "").strip(),
             gmail_oauth_client_id=os.environ.get("GMAIL_OAUTH_CLIENT_ID", "").strip(),
             gmail_oauth_client_secret=os.environ.get("GMAIL_OAUTH_CLIENT_SECRET", "").strip(),

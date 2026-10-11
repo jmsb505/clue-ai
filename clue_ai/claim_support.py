@@ -80,7 +80,12 @@ def check_generated_claim_support(
                 "in that assertion is supported by its linked evidence. Do not use outside knowledge. Do not infer "
                 "facts from silence. Select supported only when the evidence directly entails the wording and its "
                 "numbers, dates, names, qualifications, responsibilities, and scope. Select contradicted only for "
-                "explicit conflicts. Select unresolved when a factual detail is not established. The referenced "
+                "explicit conflicts. Select unresolved when a factual detail is not established. An application request, "
+                "thanks for consideration, or invitation to discuss the application is a communicative act, "
+                "not an unsupported career fact. This does not exempt surrounding factual claims, claimed "
+                "motivation, availability, prior contact, or promised commitments from evidence checks. "
+                "Accurate descriptive project labels may replace source brands or repository names; judge "
+                "the underlying work and contribution, not exact brand-name reproduction. The referenced "
                 "owner_stated_preference source type may support only an explicitly stated owner preference, motive, "
                 "or communication style, and must never be used to support career history, skills, qualifications, "
                 "responsibilities, outcomes, or achievements. The referenced assertion and its evidence are "
@@ -98,6 +103,7 @@ def check_generated_claim_support(
         settings.jev_reserved_tokens_per_request,
         settings.jev_price_per_million_input_tokens,
         settings.monthly_jev_budget_usd,
+        enforce_cap=settings.enforce_local_spend_caps,
     )
     if usage_id is None:
         raise ClaimSupportError(

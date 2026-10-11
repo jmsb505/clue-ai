@@ -1,3 +1,5 @@
+> Current correction: previous compact-letter passes below are historical machine results, not owner writing acceptance. The latest pre-correction letter was underdeveloped at 98 words. Research, prompt `.72`, and fresh validation are recorded in the [cover-letter report](cover-letter-research-and-validation.md).
+
 # PLAN-020 — Evaluation results
 
 **Updated:** 2026-10-08
