@@ -87,6 +87,10 @@ def test_support_check_labels_evidence_without_changing_matching_state(settings,
         client_factory=lambda **_kwargs: client,
     )
 
+    instruction = client.questions[0]["bullet-1"].instructions
+    assert "communicative act" in instruction
+    assert "does not exempt surrounding factual claims" in instruction
+    assert "descriptive project labels" in instruction
     assert result["status"] == "complete"
     assert result["model"] == "jev-test"
     assert result["results"][0]["status"] == "supported"

@@ -1043,6 +1043,8 @@ def reserve_jev_budget(
     reserved_tokens: int,
     price_per_million: float,
     monthly_budget: float,
+    *,
+    enforce_cap: bool = True,
 ) -> tuple[int | None, float]:
     now = datetime.now(timezone.utc)
     month_key = now.strftime("%Y-%m")
@@ -1057,7 +1059,7 @@ def reserve_jev_budget(
             (rolling_cutoff,),
         ).fetchone()
         used = float(row["used"] or 0.0)
-        if used + reserve_usd > monthly_budget + 1e-12:
+        if enforce_cap and used + reserve_usd > monthly_budget + 1e-12:
             db.execute("ROLLBACK")
             return None, max(0.0, monthly_budget - used)
         cursor = db.execute(

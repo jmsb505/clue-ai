@@ -81,3 +81,7 @@ A synthetic backup/restore check confirms that the local profile and CV can be r
 - [UI/UX implementation review](docs/research/ui-ux-implementation-review.md)
 - [CV-first workflow plan](docs/plans/PLAN-004-cv-first-automated-search.md)
 - [CV-first workflow decision](docs/decisions/0008-cv-first-automatic-search.md)
+
+### Optional local spending gates
+
+Set `CLUE_ENFORCE_LOCAL_SPEND_CAPS=false` in the ignored local `.env` file and restart the app to disable Clue's local OpenAI monthly/per-listing and Jev reservation ceilings. Usage reservation and settlement tracking continue. API keys, data-sharing consent, and factual/content checks remain required. The default is `true` for existing installations; saved local ceiling values remain inactive while the switch is false. This setting does not change provider account configuration.

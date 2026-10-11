@@ -1851,6 +1851,7 @@ def create_app(
                 "jev_consented": bool(settings_row.get("jev_consent_at")),
                 "usage": usage,
                 "openai_settings": settings_row,
+                "local_spend_caps_enabled": current_settings.enforce_local_spend_caps,
                 "openai_usage": openai_usage,
                 "openai_key_configured": bool(current_settings.openai_api_key),
                 "openai_enabled": bool(settings_row.get("openai_consent_at")),

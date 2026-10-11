@@ -4,6 +4,7 @@ import io
 import json
 import re
 import urllib.error
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from email import policy
@@ -30,6 +31,7 @@ from clue_ai.application_prep import (
 )
 from clue_ai.application_prompts import (
     CRAWL_TOOL,
+    LETTER_REVIEW_DIMENSION_NAMES,
     OUTPUT_SCHEMA_VERSION,
     OUTPUT_SCHEMAS,
     PROMPT_VERSION,
@@ -40,25 +42,34 @@ from clue_ai.application_workflow import (
     OpenAIProviderError,
     StalePreparationError,
     _api_call,
+    _apply_grounding_results,
     _assert_packet_quality_gates,
     _bind_recruiter_requirements,
+    _contains_role_duty_inventory,
     _cover_letter_quality,
     _cover_letter_title,
     _filter_diagnoser_references,
     _get_bound_inputs,
     _grounding_assertions,
+    _letter_repair_context,
     _looks_like_heading,
     _looks_like_subheading,
+    _merge_letter_revisions,
     _packet_review_note,
     _parse_stage_result,
     _payload,
+    _preferred_cover_letter_profile_claim_ids,
+    _preferred_profile_letter_anchors,
     _render_artifacts,
+    _repair_letter_requirement_ids,
     _research_context,
     _resume_contact_lines,
+    _resume_render_blocks,
     _resume_signature_name,
     _rewrite_change_summary,
     _select_technical_profile_evidence,
     _technical_profile_prompt_context,
+    _validate_letter_review,
     _validate_research,
     _validate_rewrite,
     create_practice_session,
@@ -110,6 +121,103 @@ from clue_ai.web import create_app
 ORIGIN = {"Origin": "http://127.0.0.1"}
 JOB_URL = "https://jobs.example.org/openings/software-engineer"
 OFFICIAL_SOURCE_URL = "https://careers.example.org/jobs/software-engineer-intern"
+
+def _opening_text(
+    role_title="AI Engineer",
+    company="Northstar",
+    responsibilities=("model deployment", "agent-assisted workflows"),
+):
+    employer = f" at {company}" if company else ""
+    first, second = list(responsibilities[:2]) if len(responsibilities) >= 2 else (
+        "the advertised technical work", "the team's stated responsibilities"
+    )
+    return (
+        f"I am applying for the {role_title} role{employer}. "
+        f"The posting emphasizes {first} and {second}, core responsibilities in its scientific AI work and collaboration across research teams, with reliable operation across research and internal environments."
+    )
+
+
+def _complete_quality_letter(
+    *,
+    preferred_profile_claim_ids=None,
+    registration_first=False,
+    role_title="AI Engineer",
+    company="Northstar",
+    responsibilities=("model deployment", "agent-assisted workflows"),
+):
+    preferred = list(preferred_profile_claim_ids or [])
+    if registration_first:
+        registration_claim = preferred[0] if preferred else "claim-registration"
+        ayni_claim = preferred[1] if len(preferred) > 1 else "claim-ayni"
+    else:
+        ayni_claim = preferred[0] if preferred else "claim-ayni"
+        registration_claim = preferred[1] if len(preferred) > 1 else "claim-registration"
+    opening = {
+        "section": "opening",
+        "text": _opening_text(role_title, company, responsibilities),
+        "claim_ids": [],
+        "requirement_ids": ["REQ-01"],
+        "source_urls": [JOB_URL],
+    }
+    ayni = {
+        "section": "evidence",
+        "text": (
+            "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows. "
+            "I contributed to workflow design in Python services, including model routing, retrieval, tool execution, structured run validation, "
+            "and interfaces for starting runs and reviewing results. The project also includes evaluation and "
+            "approval workflows with recovery safeguards. Northstar calls for developing agent-assisted workflows in shared services."
+        ),
+        "claim_ids": [ayni_claim],
+        "requirement_ids": ["REQ-02"],
+        "source_urls": [JOB_URL],
+    }
+    registration = {
+        "section": "evidence",
+        "text": (
+            "For Medical Image Registration, I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU. "
+            "The quantized model ran on FPGA hardware, cutting inference and image warping by 66% against "
+            "a CPU baseline while maintaining alignment quality. This keeps runtime "
+            "and registration quality in view during deployment. Northstar names model deployment as an AI Engineer responsibility."
+        ),
+        "claim_ids": [registration_claim],
+        "requirement_ids": ["REQ-01"],
+        "source_urls": [JOB_URL],
+    }
+    evidence = [registration, ayni] if registration_first else [ayni, registration]
+    contribution = {
+        "section": "contribution",
+        "text": (
+            "Together, these projects span agent workflow operation and scientific model deployment, including controls for how runs are executed and quality is measured. "
+            "That evaluation-and-operations focus matters for Northstar's shared AI services, where systems must support research teams and remain maintainable in production."
+        ),
+        "claim_ids": [ayni_claim, registration_claim],
+        "requirement_ids": ["REQ-02"],
+        "source_urls": [JOB_URL],
+    }
+    closing = {
+        "section": "closing",
+        "text": (
+            "Thank you for considering my application. I would welcome a conversation about Northstar's scientific AI work in this position."
+        ),
+        "claim_ids": [],
+        "requirement_ids": ["REQ-01"],
+        "source_urls": [JOB_URL],
+    }
+    return {"cover_letter_paragraphs": [opening, *evidence, contribution, closing]}
+
+
+def _supported_letter_grounding(count=5):
+    return {
+        "results": [
+            {
+                "id": f"cover_letter_paragraph_{index}",
+                "output_type": "cover_letter_paragraph",
+                "status": "supported",
+            }
+            for index in range(count)
+        ]
+    }
+
 
 
 def _approve_synthetic_tailored_resume(*_args, **_kwargs):
@@ -192,6 +300,7 @@ def _create_preparation(
         "Implemented reliable Python services and a typed local workflow.\n"
         "Tested a simulated maintenance workflow with synthetic reports to measure duplicate handling.\n"
     ),
+    technical_authorship="unknown",
     descriptive_text="I prefer direct, modest writing and collaborative technical teams.\n",
     descriptive_authorship="owner_written",
     filter_status="match",
@@ -203,6 +312,7 @@ def _create_preparation(
         "synthetic-technical.md",
         "technical_profile",
         technical_text.encode(),
+        authorship_label=technical_authorship,
     )
     set_source_options(
         database_path,
@@ -316,9 +426,13 @@ def _message_result(value):
 class FakePreparationClient:
     instances: ClassVar[list[FakePreparationClient]] = []
     omit_preferred_profile_claims: ClassVar[bool] = False
+    short_letter_mode: ClassVar[bool] = False
+    force_letter_review: ClassVar[bool] = False
+    force_profile_coverage_gap: ClassVar[bool] = False
 
     def __init__(self, _key):
         self.calls = []
+        self.letter_review_calls = 0
         self.instances.append(self)
 
     def count_input_tokens(self, payload):
@@ -405,26 +519,28 @@ class FakePreparationClient:
                 for evidence in profile.get("evidence", [])
             ]
             mapped_claim_ids = [claim_id, *profile_claim_ids]
+            requirements = [
+                ("Python service experience", "required", "L0003"),
+                ("Reliable local workflow testing", "preferred", "L0004"),
+            ]
+            if self.short_letter_mode:
+                requirements = [
+                    ("Build agent-assisted workflows", "required", "L0003"),
+                    ("Deploy AI models on edge hardware", "preferred", "L0004"),
+                ]
             return _message_result(
                 {
                     "selected_cv_id": context["permitted_cv_id"],
                     "requirements": [
                         {
-                            "requirement": "Python service experience",
-                            "priority": "required",
+                            "requirement": requirement,
+                            "priority": priority,
                             "document_coverage": "covered",
                             "claim_ids": mapped_claim_ids,
-                            "cv_line_ids": ["L0003"],
-                            "notes": "Supported by owner-approved evidence.",
-                        },
-                        {
-                            "requirement": "Reliable local workflow testing",
-                            "priority": "preferred",
-                            "document_coverage": "partial",
-                            "claim_ids": mapped_claim_ids,
-                            "cv_line_ids": ["L0004"],
+                            "cv_line_ids": [line_id],
                             "notes": "Supported by owner-approved evidence.",
                         }
+                        for requirement, priority, line_id in requirements
                     ],
                     "coverage_note": "Document evidence only; Jev remains the match authority.",
                     "owner_questions": [],
@@ -450,13 +566,78 @@ class FakePreparationClient:
             lines = context["cv"]["lines"]
             contact_context = context["research"]["contacts"]
             assert isinstance(contact_context, list)
-            assert "public_email" not in json.dumps(contact_context)
+            assert '"public_email":' not in json.dumps(contact_context)
             assert "alex@example.org" not in json.dumps(contact_context)
             assert context["owner_writing_context"][0]["source_type"] == "descriptive_profile"
             assert "synthetic-writing-sample" not in json.dumps(context)
             order = [line["id"] for line in lines]
             if context["cv"]["structure_policy"] == "allow_improvements":
                 order = ["L0003", "L0004", "L0001", "L0002"]
+            available_profile_ids = [
+                evidence["id"]
+                for profile in context.get("technical_profile_sources", [])
+                for evidence in profile.get("evidence", [])
+            ]
+            mapped_profile_ids = list(dict.fromkeys([
+                *preferred_profile_claim_ids,
+                *available_profile_ids,
+                claim_id,
+                alternate_profile_claim_id,
+            ]))[:2]
+            letter = _complete_quality_letter(
+                preferred_profile_claim_ids=mapped_profile_ids,
+                role_title=context["job"]["title"],
+                company=context["job"]["company"],
+                responsibilities=("Python service work", "reliable local workflow testing"),
+            )["cover_letter_paragraphs"]
+            if self.short_letter_mode:
+                letter = [
+                    {
+                        "section": "evidence",
+                        "text": (
+                            "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows. "
+                            "Agent-assisted workflows are an explicit part of this role."
+                        ),
+                        "claim_ids": [mapped_profile_ids[0]],
+                        "cv_line_ids": [],
+                        "requirement_ids": [requirement_ids[0]],
+                        "research_finding_ids": [],
+                        "source_urls": [JOB_URL],
+                        "preference_source_ids": [],
+                    },
+                    {
+                        "section": "evidence",
+                        "text": (
+                            "For Medical Image Registration, I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU. "
+                            "Model deployment is also an explicit responsibility."
+                        ),
+                        "claim_ids": [mapped_profile_ids[1]],
+                        "cv_line_ids": [],
+                        "requirement_ids": [requirement_ids[1]],
+                        "research_finding_ids": [],
+                        "source_urls": [JOB_URL],
+                        "preference_source_ids": [],
+                    },
+                ]
+            letter[0]["requirement_ids"] = [requirement_ids[0]]
+            for index, paragraph in enumerate(letter):
+                paragraph.update(
+                    {
+                        "research_finding_ids": ["RF01"] if index == 2 else [],
+                        "preference_source_ids": [],
+                    }
+                )
+                if index == 1:
+                    paragraph["cv_line_ids"] = ["L0004"]
+                    paragraph["requirement_ids"] = [requirement_ids[0]]
+                elif index == 2:
+                    paragraph["cv_line_ids"] = []
+                    paragraph["requirement_ids"] = [requirement_ids[1]]
+            if self.short_letter_mode:
+                letter[1]["requirement_ids"] = [requirement_ids[1]]
+            if self.omit_preferred_profile_claims:
+                letter[1]["claim_ids"] = [claim_id]
+                letter[2]["claim_ids"] = [claim_id]
             return _message_result(
                 {
                     "selected_cv_id": context["cv"]["source_id"],
@@ -472,51 +653,20 @@ class FakePreparationClient:
                         }
                     ],
                     "cover_letter_title": "Application for Software Engineer",
-                    "cover_letter_paragraphs": [
-                        {
-                            "section": "evidence",
-                            "text": "I implemented reliable Python services and a typed workflow at Example Labs. Python service development is a responsibility listed in the role.",
-                            "claim_ids": (
-                                []
-                                if self.omit_preferred_profile_claims
-                                else [
-                                    preferred_profile_claim_ids[0]
-                                    if len(preferred_profile_claim_ids) >= 2
-                                    else claim_id
-                                ]
-                            ),
-                            "cv_line_ids": ["L0004"],
-                            "requirement_ids": [requirement_ids[0]],
-                            "research_finding_ids": [],
-                            "source_urls": [JOB_URL],
-                            "preference_source_ids": [],
-                        },
-                        {
-                            "section": "evidence",
-                            "text": "I tested a simulated maintenance workflow with synthetic reports to measure duplicate handling. Workflow testing is a stated part of the role.",
-                            "claim_ids": (
-                                [claim_id]
-                                if self.omit_preferred_profile_claims
-                                else [
-                                    preferred_profile_claim_ids[1]
-                                    if len(preferred_profile_claim_ids) >= 2
-                                    else alternate_profile_claim_id
-                                ]
-                            ),
-                            "cv_line_ids": [],
-                            "requirement_ids": [requirement_ids[1]],
-                            "research_finding_ids": ["RF01"],
-                            "source_urls": [JOB_URL],
-                            "preference_source_ids": [],
-                        }
-                    ],
+                    "cover_letter_paragraphs": letter,
                     "application_answers": [],
                     "outreach_drafts": ([
                         {
                             "contact_source_url": JOB_URL,
                             "recipient_name": "Alex Rivera",
                             "subject": "Question about the Software Engineer role",
-                            "body": "Hello Alex, I am interested in the Python service work and would value one brief pointer to the team.",
+                            "body": (
+                                "Hello Alex, I am interested in the Software Engineer role and the team's work on Python services. "
+                                "My experience includes building a Python service for Example Labs, where I focused on reliable behavior and clear interfaces. "
+                                "I would be grateful for any guidance on the priorities for this opening and how the engineering team approaches service evaluation. "
+                                "I understand you may be busy, so even a brief pointer to the most relevant team information would be helpful. "
+                                "Thank you for your time and consideration."
+                            ),
                             "claim_ids": [claim_id],
                             "cv_line_ids": ["L0004"],
                             "source_urls": [JOB_URL],
@@ -526,64 +676,124 @@ class FakePreparationClient:
                     "change_summary": "Reordered existing sections and clarified one supported bullet.",
                 }
             )
+        if stage == "letter_reviewer":
+            context = json.loads(prompt_input[0]["content"])
+            self.letter_review_calls += 1
+            needs_revision = (
+                (self.short_letter_mode or self.force_letter_review)
+                and self.letter_review_calls == 1
+            )
+            profile_assessment = []
+            missing_profile_claim = None
+            for item in context.get("selected_profile_evidence_for_review", []):
+                paragraph_indices = item.get("body_paragraph_indices", [])
+                if (
+                    self.force_profile_coverage_gap
+                    and self.letter_review_calls == 1
+                    and not paragraph_indices
+                    and missing_profile_claim is None
+                ):
+                    missing_profile_claim = item["claim_id"]
+                    profile_assessment.append({
+                        "claim_id": item["claim_id"],
+                        "status": "material_gap",
+                        "paragraph_index": None,
+                        "rationale": "This separate selected profile claim supports another important role responsibility.",
+                    })
+                else:
+                    profile_assessment.append({
+                        "claim_id": item["claim_id"],
+                        "status": "included" if paragraph_indices else "not_needed",
+                        "paragraph_index": paragraph_indices[0] if paragraph_indices else None,
+                        "rationale": "The claim is included in a developed paragraph." if paragraph_indices else "This claim would not add a distinct role example.",
+                    })
+            return _message_result(
+                {
+                    "decision": "needs_revision" if needs_revision else "ready",
+                    "dimensions": [
+                        {
+                            "name": name,
+                            "score": 2 if needs_revision and name in {
+                                "letter_completeness", "candidate_evidence_development"
+                            } else 4,
+                            "reason": "The synthetic reviewer requests one quality revision." if needs_revision else "The synthetic sample meets this criterion.",
+                        }
+                        for name in LETTER_REVIEW_DIMENSION_NAMES
+                    ],
+                    "issues": ([
+                        {
+                            "issue": "The synthetic sample needs a stronger application argument.",
+                            "paragraph_indices": list(range(len(context["letter_paragraphs"]))),
+                        }
+                    ] if needs_revision else []),
+                    "profile_evidence_assessment": profile_assessment,
+                }
+            )
         if stage == "letter_reviser":
             context = json.loads(prompt_input[0]["content"])
             preferred_profile_claim_ids = context.get(
                 "preferred_technical_profile_claim_ids", []
             )
-            locked_claim_ids = {
-                value
-                for paragraph in context["locked_supported_paragraphs"]
-                for value in paragraph.get("claim_ids", [])
-            }
-            locked_cv_line_ids = {
-                value
-                for paragraph in context["locked_supported_paragraphs"]
-                for value in paragraph.get("cv_line_ids", [])
-            }
+            available_profile_ids = [
+                evidence["id"]
+                for profile in context.get("technical_profile_sources", [])
+                for evidence in profile.get("evidence", [])
+            ]
+            mapped_profile_ids = list(dict.fromkeys([
+                *preferred_profile_claim_ids,
+                *available_profile_ids,
+            ]))[:2]
+            letter = _complete_quality_letter(
+                preferred_profile_claim_ids=mapped_profile_ids,
+                role_title=context["job"]["title"],
+                company=context["job"]["company"],
+                responsibilities=tuple(
+                    item.get("requirement", "")
+                    for item in context["recruiter_evidence_map"][:2]
+                ),
+            )["cover_letter_paragraphs"]
             revisions = []
+            evidence_templates = [item for item in letter if item["section"] == "evidence"]
+            all_paragraphs = [
+                *context["locked_supported_paragraphs"],
+                *context["paragraphs_for_repair"],
+            ]
             for item in context["paragraphs_for_repair"]:
                 assert "claim_ids" in item and "cv_line_ids" in item
-                claim_ids = [
-                    value for value in item.get("claim_ids", [])
-                    if value not in locked_claim_ids
-                ]
-                cv_line_ids = [
-                    value for value in item.get("cv_line_ids", [])
-                    if value not in locked_cv_line_ids
-                ]
-                if item.get("repair_reason") == "use_technical_profile_evidence":
-                    paragraph_index = item["paragraph_index"]
-                    preferred_claim_id = preferred_profile_claim_ids[paragraph_index]
-                    assert preferred_claim_id not in locked_claim_ids
-                    claim_ids = [preferred_claim_id]
-                    cv_line_ids = []
-                elif not claim_ids and not cv_line_ids:
-                    claim_ids = [
-                        evidence["id"]
-                        for profile in context.get("technical_profile_sources", [])
-                        for evidence in profile.get("evidence", [])
-                        if evidence["id"] not in locked_claim_ids
-                    ][:1]
-                revisions.append(
+                paragraph_index = item["paragraph_index"]
+                section = item.get("section", "evidence")
+                if section == "evidence" and evidence_templates:
+                    evidence_position = sum(
+                        1
+                        for prior in all_paragraphs
+                        if prior.get("section", "evidence") == "evidence"
+                        and prior.get("paragraph_index", 0) < paragraph_index
+                    )
+                    paragraph = dict(evidence_templates[min(evidence_position, len(evidence_templates) - 1)])
+                else:
+                    paragraph = dict(next(
+                        (candidate for candidate in letter if candidate["section"] == section),
+                        letter[0],
+                    ))
+                allowed_claims = item.get("allowed_claim_ids", [])
+                claim_ids = [value for value in paragraph.get("claim_ids", []) if value in allowed_claims]
+                if not claim_ids:
+                    claim_ids = [value for value in item.get("claim_ids", []) if value in allowed_claims]
+                allowed_lines = item.get("allowed_cv_line_ids", [])
+                cv_line_ids = [value for value in item.get("cv_line_ids", []) if value in allowed_lines]
+                paragraph.update(
                     {
-                        "paragraph_index": item["paragraph_index"],
-                        "section": item["section"],
-                        "text": (
-                            "I implemented reliable Python services and a typed local workflow. "
-                            "Python service development is a responsibility listed in the role."
-                            if item["paragraph_index"] == 0
-                            else "I tested a simulated maintenance workflow with synthetic reports. "
-                            "Workflow testing is a stated part of the role."
-                        ),
+                        "paragraph_index": paragraph_index,
+                        "section": section,
                         "claim_ids": claim_ids,
                         "cv_line_ids": cv_line_ids,
-                        "requirement_ids": item.get("requirement_ids", []),
+                        "requirement_ids": item.get("requirement_ids") or paragraph.get("requirement_ids", []),
                         "research_finding_ids": [],
                         "source_urls": [JOB_URL],
                         "preference_source_ids": [],
                     }
                 )
+                revisions.append(paragraph)
             return _message_result({"revisions": revisions, "unresolved_questions": []})
         if stage == "hiring_manager":
             questions = context.get("questions") or [
@@ -614,7 +824,7 @@ class FakePreparationClient:
 
 def test_research_and_writing_only_run_after_click_and_bind_all_selected_inputs(settings, database):
     record, cv, _technical, _descriptive, sample, claim_id, _resume_text = _create_preparation(
-        settings, database
+        settings, database, technical_authorship="owner_written"
     )
     source, claims, preferences, writing, technical_profiles = _get_bound_inputs(database, settings, record)
     assert source["id"] == cv["id"]
@@ -625,6 +835,7 @@ def test_research_and_writing_only_run_after_click_and_bind_all_selected_inputs(
     assert writing[0]["filename"] == "synthetic-descriptive.md"
     assert len(technical_profiles) == 1
     assert technical_profiles[0]["source_id"] == _technical["id"]
+    assert technical_profiles[0]["authorship_label"] == "owner_written"
     assert technical_profiles[0]["text"] == _technical["extracted_text"]
     assert sample["permitted"] == 0
 
@@ -710,7 +921,7 @@ def test_owner_trigger_routes_full_descriptive_context_and_approved_claims_to_re
     )
 
     completed = get_preparation(database, record["id"])
-    assert completed["state"] == "review"
+    assert completed["state"] == "review", completed
     calls = FakePreparationClient.instances[-1].calls
     stage_inputs = {}
     profile_prompt_contexts = {}
@@ -747,7 +958,9 @@ def test_owner_trigger_routes_full_descriptive_context_and_approved_claims_to_re
         evidence = [claim for source in sources for claim in source["evidence"]]
         assert evidence
         assert all(
-            set(claim) == {"id", "evidence_excerpt", "source_excerpts", "review_status"}
+            set(claim) == {
+                "id", "evidence_excerpt", "source_excerpts", "related_cv_lines", "review_status"
+            }
             for claim in evidence
         )
         assert any(claim["evidence_excerpt"] == technical_tail for claim in evidence)
@@ -998,7 +1211,7 @@ def test_long_profile_evidence_uses_exact_excerpts_without_duplicate_source_text
     )
     rewriter = next(
         payload for payload in calls
-        if payload["text"]["format"]["name"] == "clue_rewriter_v7"
+        if payload["text"]["format"]["name"] == "clue_rewriter_v14"
     )
     recruiter_context = json.loads(recruiter["input"][0]["content"])
     rewriter_context = json.loads(rewriter["input"][0]["content"])
@@ -1016,7 +1229,7 @@ def test_long_profile_evidence_uses_exact_excerpts_without_duplicate_source_text
     assert technical_text not in json.dumps(rewriter_context, ensure_ascii=False)
     assert rewriter_context["owner_writing_context"][0]["text"] == descriptive_text
     with connect(database) as db:
-        assert db.execute("SELECT COUNT(*) FROM openai_usage WHERE status = 'settled'").fetchone()[0] == 5
+        assert db.execute("SELECT COUNT(*) FROM openai_usage WHERE status = 'settled'").fetchone()[0] == 6
 
 
 def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settings, database):
@@ -1035,13 +1248,13 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     )
 
     completed = get_preparation(database, record["id"])
-    assert completed["state"] == "review"
+    assert completed["state"] == "review", completed.get("status_message")
     with connect(database) as db:
         assert db.execute("SELECT COUNT(*) FROM applications").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM application_events").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM jev_usage").fetchone()[0] == 0
         usages = db.execute("SELECT stage, status FROM openai_usage ORDER BY rowid").fetchall()
-    assert len(usages) == 5  # one crawl request, one research synthesis, then three writer roles
+    assert len(usages) == 6  # two research calls, three writer roles, and the letter-quality review
     assert all(row["status"] == "settled" for row in usages)
     assert [row["stage"] for row in usages].count("researcher") == 2
 
@@ -1053,9 +1266,9 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     packet = get_packet(database, packet_id)
     assert packet["output"]["jev_tailored_resume_review"]["status"] == "approved"
     assert packet["output"]["quality_check"]["status"] == "passed"
-    assert packet["output"]["quality_check"]["body_paragraph_count"] == 2
+    assert packet["output"]["quality_check"]["body_paragraph_count"] == 5
     assert packet["output"]["quality_check"]["owner_review_required"] is True
-    assert "linked to distinct Recruiter-mapped role criteria" in packet["output"]["review_note"]
+    assert "paragraph arrangement are flexible" in packet["output"]["review_note"]
     assert packet["output"]["model"] == MODEL_ID
     assert packet["output"]["reasoning_effort"] == "high"
     assert packet["output"]["prompt_version"] == PROMPT_VERSION
@@ -1068,7 +1281,7 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     assert paragraphs[:2] == ["Experience", "Built reliable Python services for Example Labs."]
     assert paragraphs.index("Education") > paragraphs.index("Experience")
     assert resume_doc.styles["Normal"].font.name == "Arial"
-    assert resume_doc.styles["Normal"].font.size.pt == 10.5
+    assert resume_doc.styles["Normal"].font.size.pt == 9
     experience_heading = next(p for p in resume_doc.paragraphs if p.text == "Experience")
     assert experience_heading.style.name == "Heading 1"
     assert experience_heading.paragraph_format.keep_with_next is True
@@ -1097,15 +1310,16 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     assert b"w:pBdr" not in cover_letter_title_style._element.xml.encode()
     assert cover_letter_title_style.font.color.rgb == (0, 0, 0)
     assert cover_letter_title_style.font.underline is False
-    assert "Python services" in cover_letter_paragraphs[3]
-    assert "duplicate handling" in cover_letter_paragraphs[4]
+    assert "Python service work" in cover_letter_paragraphs[3]
+    assert "Ayni" in cover_letter_paragraphs[4]
+    assert "VoxelMorph" in cover_letter_paragraphs[5]
     assert cover_letter_artifact["content_text"].startswith(cover_letter_paragraphs[0])
     assert cover_letter_artifact["content_text"].endswith("Kind regards,")
     outreach_artifact = next(
         item for item in packet["artifacts"] if item["artifact_type"] == "outreach_draft"
     )
     outreach_text = Path(outreach_artifact["file_path"]).read_text(encoding="utf-8")
-    assert "To: Alex Rivera" in outreach_text
+    assert "To: Alex Rivera <alex@example.org>" in outreach_text
     assert "Subject: Question about the Software Engineer role" in outreach_text
     assert "Source: " + JOB_URL in outreach_text
     assert all(
@@ -1153,9 +1367,9 @@ def test_fake_full_packet_review_gmail_draft_and_no_automatic_application(settin
     )
     assert gmail_id == "synthetic-gmail-draft-id"
     assert calls[0][1:] == (
-        "alex@example.org",
-        "Question about the Software Engineer role",
-        "Hello Alex, I am interested in the Python service work and would value one brief pointer to the team.",
+        packet["output"]["rewriter"]["outreach_drafts"][0]["recipient_email"],
+        packet["output"]["rewriter"]["outreach_drafts"][0]["subject"],
+        packet["output"]["rewriter"]["outreach_drafts"][0]["body"],
     )
     with connect(database) as db:
         draft = db.execute("SELECT state FROM gmail_drafts WHERE id = ?", (row_id,)).fetchone()
@@ -1267,9 +1481,9 @@ def test_unsupported_or_unresolved_blocks_are_omitted_before_documents(settings,
     packet = get_packet(database, packet_id)
     assert packet["status"] == "obsolete"
     grounding = packet["output"]["grounding"]
-    assert grounding["total_assertions"] == 4
+    assert grounding["total_assertions"] == 7
     assert grounding["supported_count"] == 0
-    assert grounding["omitted_count"] == 4
+    assert grounding["omitted_count"] == 7
     assert all(not item["included_in_artifact"] for item in grounding["results"])
     assert packet["output"]["rewriter"]["resume_bullet_edits"] == []
     assert packet["output"]["rewriter"]["cover_letter_paragraphs"] == []
@@ -1277,8 +1491,72 @@ def test_unsupported_or_unresolved_blocks_are_omitted_before_documents(settings,
 
     assert packet["artifacts"] == []
     assert packet["output"]["quality_check"]["status"] == "failed"
-    assert "two evidence paragraphs" in " ".join(packet["output"]["quality_check"]["issues"])
+    assert any("No cover-letter body was generated" in issue for issue in packet["output"]["quality_check"]["issues"])
     assert all(item["artifact_type"] != "outreach_draft" for item in packet["artifacts"])
+
+
+def test_quality_review_triggers_one_letter_repair_and_second_review(settings, database, monkeypatch):
+    record, *_ = _create_preparation(settings, database)
+    enabled = _enable_synthetic_openai(settings, database)
+    monkeypatch.setattr(FakePreparationClient, "short_letter_mode", True)
+    support_calls = []
+
+    def support_all(_database, _settings, _request_id, assertions):
+        support_calls.append(assertions)
+        return {
+            "status": "complete",
+            "model": "jev-test",
+            "actual_cost_usd": 0.0,
+            "results": [
+                {"id": item["id"], "status": "supported", "confidence": 0.9}
+                for item in assertions
+            ],
+        }
+
+    FakePreparationClient.instances.clear()
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+        claim_support_checker=support_all,
+        tailored_resume_reviewer=_approve_synthetic_tailored_resume,
+    )
+
+    completed = get_preparation(database, record["id"])
+    assert completed["state"] == "review", completed["status_message"]
+    with connect(database) as db:
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+        reviewer_usage = db.execute(
+            "SELECT COUNT(*) FROM openai_usage WHERE request_id = ? AND stage = 'letter_reviewer'",
+            (record["id"],),
+        ).fetchone()[0]
+    packet = get_packet(database, packet_id)
+    quality = packet["output"]["quality_check"]
+    review_calls = [
+        call for call in FakePreparationClient.instances[-1].calls
+        if call["text"]["format"]["name"] == "clue_letter_reviewer_v2"
+    ]
+    review_contexts = [json.loads(call["input"][0]["content"]) for call in review_calls]
+
+    assert len(review_calls) == reviewer_usage == 2
+    assert len(review_contexts[0]["letter_paragraphs"]) == 2
+    assert len(review_contexts[1]["letter_paragraphs"]) == 2
+    assert len(review_contexts[0]["selected_profile_evidence_for_review"]) == quality["preferred_profile_claim_count"]
+    assert all("claim_id" in item and "claim_text" in item for item in review_contexts[0]["selected_profile_evidence_for_review"])
+    assert quality["status"] == "passed", quality["issues"]
+    assert quality["writing_review"]["status"] == "ready"
+    assert quality["revision"]["initial_writing_review"]["status"] == "needs_revision"
+    assert quality["revision"]["status"] == "completed"
+    assert len(packet["output"]["rewriter"]["cover_letter_paragraphs"]) == 2
+    assert len(support_calls) == 2
+    assert {item["artifact_type"] for item in packet["artifacts"]} == {
+        "cover_letter", "resume", "outreach_draft"
+    }
 
 
 def test_jev_rejected_letter_paragraph_gets_one_targeted_repair_and_full_recheck(settings, database):
@@ -1308,7 +1586,7 @@ def test_jev_rejected_letter_paragraph_gets_one_targeted_repair_and_full_recheck
                 ],
             }
         assert support_calls == 2
-        assert len(assertions) == 2
+        assert len(assertions) == 5
         assert all(item["output_type"] == "cover_letter_paragraph" for item in assertions)
         return {
             "status": "complete",
@@ -1343,37 +1621,81 @@ def test_jev_rejected_letter_paragraph_gets_one_targeted_repair_and_full_recheck
         ).fetchall()
     packet = get_packet(database, packet_id)
     assert packet["output"]["quality_check"]["status"] == "passed"
-    assert packet["output"]["quality_check"]["revision"] == {
-        "attempted": True,
-        "status": "completed",
-        "attempt_limit": 1,
-        "initial_paragraph_count": 2,
-        "initial_supported_count": 1,
-        "jev_rejected_paragraph_indices": [0],
-        "initial_jev_rejections": [
-            {
-                "paragraph_index": 0,
-                "status": "unresolved",
-                "reason": "Jev assessment did not establish support.",
-            }
-        ],
-        "initial_quality_issues": [
-            "Every included cover-letter paragraph must have a supported Jev evidence result."
-        ],
-        "initial_quality_revision_reasons": {},
-        "style_revision_paragraph_indices": [],
-        "revised_paragraph_count": 1,
-        "final_supported_count": 2,
-    }
+    revision = packet["output"]["quality_check"]["revision"]
+    assert revision["attempted"] is True
+    assert revision["status"] == "completed"
+    assert revision["attempt_limit"] == 2
+    assert revision["initial_paragraph_count"] == 5
+    assert revision["initial_supported_count"] == 4
+    assert revision["jev_rejected_paragraph_indices"] == [0]
+    assert revision["style_revision_paragraph_indices"] == [0]
+    assert revision["revised_paragraph_count"] == 1
+    assert revision["final_supported_count"] == 5
+    assert revision["initial_writing_review"]["status"] == "ready"
+    assert revision["final_writing_review"]["status"] == "ready"
     paragraphs = packet["output"]["rewriter"]["cover_letter_paragraphs"]
-    assert paragraphs[0]["section"] == "evidence"
-    assert paragraphs[0]["text"].startswith("I implemented reliable Python services")
-    assert paragraphs[1]["text"].startswith("I tested a simulated maintenance")
+    assert paragraphs[0]["section"] == "opening"
+    assert paragraphs[0]["text"].startswith("I am applying for the Software Engineer role")
+    assert paragraphs[0]["claim_ids"] == []
+    assert paragraphs[1]["text"].startswith("I worked on Ayni")
+    assert paragraphs[2]["text"].startswith("For Medical Image Registration")
     assert support_calls == 2
     assert sum(row["stage"] == "letter_reviser" for row in usage) == 1
+    assert sum(row["stage"] == "letter_reviewer" for row in usage) == 2
     assert all(row["status"] == "settled" for row in usage)
     assert packet["artifacts"]
     assert not any(item.get("included_in_artifact") and item.get("status") != "supported" for item in packet["output"]["grounding"]["results"])
+
+
+
+def test_letter_fails_closed_when_jev_cannot_support_repaired_project_paragraphs(settings, database):
+    record, *_ = _create_preparation(settings, database)
+    enabled = _enable_synthetic_openai(settings, database)
+    support_calls = 0
+
+    def keep_project_evidence_unresolved(_database, _settings, _request_id, assertions):
+        nonlocal support_calls
+        support_calls += 1
+        return {
+            "status": "complete",
+            "model": "jev-test",
+            "actual_cost_usd": 0.0,
+            "results": [
+                {
+                    "id": item["id"],
+                    "status": "unresolved"
+                    if item["id"] in {"cover_letter_paragraph_1", "cover_letter_paragraph_2"}
+                    else "supported",
+                    "confidence": 0.9,
+                }
+                for item in assertions
+            ],
+        }
+
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+        claim_support_checker=keep_project_evidence_unresolved,
+        tailored_resume_reviewer=_approve_synthetic_tailored_resume,
+    )
+
+    completed = get_preparation(database, record["id"])
+    assert completed["state"] == "failed"
+    with connect(database) as db:
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+    packet = get_packet(database, packet_id)
+    quality = packet["output"]["quality_check"]
+    assert support_calls == 2
+    assert quality["status"] == "failed"
+    assert quality["revision"]["final_supported_count"] == 3
+    assert any("needs at least one concrete example" in issue for issue in quality["issues"])
+    assert packet["artifacts"] == []
 
 
 def test_jev_resume_rejection_persists_report_without_reviewable_artifacts(settings, database):
@@ -1490,6 +1812,64 @@ def test_saved_job_listing_is_grounding_for_role_facts_only(settings):
         )
 
 
+def test_resume_edit_grounding_checks_the_complete_reflowed_bullet():
+    cv_lines = {
+        "L0001": "EXPERIENCE",
+        "L0043": "\ufffd Trained and deployed a quantized medical-image registration model on FPGA hardware. Cut inference and",
+        "L0044": "image-warping time by 66% versus CPU while maintaining image-alignment quality.",
+    }
+    rewrite = {
+        "resume_line_order": ["L0001", "L0043", "L0044"],
+        "resume_bullet_edits": [{
+            "line_id": "L0043",
+            "original_text": cv_lines["L0043"],
+            "revised_text": (
+                "Trained and deployed a quantized VoxelMorph medical-image registration model "
+                "on the AMD Kria KV260 DPU (FPGA). Cut inference and"
+            ),
+            "claim_ids": ["profile-voxel"],
+            "cv_line_ids": ["L0043"],
+        }],
+        "cover_letter_paragraphs": [],
+        "application_answers": [],
+        "outreach_drafts": [],
+    }
+    technical_profiles = [{
+        "source_id": "technical-profile",
+        "evidence": [{
+            "id": "profile-voxel",
+            "claim_text": "Deployed a VoxelMorph registration pipeline on the AMD Kria KV260 DPU.",
+            "evidence_excerpt": "I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU.",
+            "source_excerpts": ["For Medical Image Registration, I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU."],
+            "review_status": "unreviewed",
+        }],
+    }]
+
+    assertions = _grounding_assertions(
+        rewrite,
+        [],
+        {"findings": [], "contacts": []},
+        technical_profile_sources=technical_profiles,
+        cv_lines=cv_lines,
+        cv_source_id="cv-synthetic",
+    )
+    edit_assertion = assertions[0]
+
+    assert edit_assertion["text"] == (
+        "Trained and deployed a quantized VoxelMorph medical-image registration model "
+        "on the AMD Kria KV260 DPU (FPGA). Cut inference and image-warping time by 66% "
+        "versus CPU while maintaining image-alignment quality."
+    )
+    assert [item["text"].split(":", 1)[0] for item in edit_assertion["evidence"][:2]] == [
+        "Selected CV line L0043",
+        "Selected CV line L0044",
+    ]
+    assert any(
+        item["source_type"] == "owner_provided_technical_profile"
+        for item in edit_assertion["evidence"]
+    )
+
+
 def test_cover_letter_grounding_binds_exact_research_findings_not_every_fact_on_page():
     research = {
         "findings": [
@@ -1580,28 +1960,22 @@ def test_cover_letter_grounding_binds_exact_research_findings_not_every_fact_on_
 
 
 def test_rewriter_missing_role_source_is_bound_to_selected_listing():
-    paragraph = {
-        "section": "evidence",
-        "text": "I built a Python retrieval service. Building retrieval services is a listed role responsibility.",
-        "claim_ids": ["claim-1"],
-        "research_finding_ids": [],
-        "source_urls": [],
-        "preference_source_ids": [],
-    }
     rewrite = {
         "selected_cv_id": "cv-synthetic",
         "resume_line_order": ["L0001"],
         "resume_bullet_edits": [],
-        "cover_letter_paragraphs": [paragraph],
+        "cover_letter_paragraphs": _complete_quality_letter()["cover_letter_paragraphs"],
         "application_answers": [],
         "outreach_drafts": [],
     }
+    paragraph = rewrite["cover_letter_paragraphs"][1]
+    paragraph["source_urls"] = []
 
     _validate_rewrite(
         rewrite,
         "cv-synthetic",
         {"L0001": "Experience"},
-        {"claim-1"},
+        {"claim-ayni", "claim-registration"},
         {"findings": [], "contacts": []},
         [],
         "preserve",
@@ -1611,27 +1985,11 @@ def test_rewriter_missing_role_source_is_bound_to_selected_listing():
     assert paragraph["source_urls"] == [JOB_URL]
     assert paragraph["clue_source_url_binding"] == "selected_listing_fallback"
 
-    second_paragraph = {
-        **paragraph,
-        "section": "evidence",
-        "claim_ids": ["claim-2"],
-        "text": "I built a Python service with fixture-based evaluation. The role's evaluation work uses that same method.",
-        "requirement_ids": ["REQ-02"],
-        "source_urls": [JOB_URL],
-        "clue_source_url_binding": None,
-    }
-    paragraph["requirement_ids"] = ["REQ-01"]
-    rewrite["cover_letter_paragraphs"].append(second_paragraph)
     quality = _cover_letter_quality(
         rewrite,
-        {
-            "results": [
-                {"output_type": "cover_letter_paragraph", "status": "supported"},
-                {"output_type": "cover_letter_paragraph", "status": "supported"},
-            ]
-        },
+        _supported_letter_grounding(),
     )
-    assert quality["status"] == "passed"
+    assert quality["status"] == "passed", quality["issues"]
 
 
 def test_cover_letter_accepts_exact_candidate_evidence_when_recruiter_map_is_incomplete():
@@ -1902,8 +2260,8 @@ def test_recruiter_coverage_without_exact_cv_line_is_downgraded_to_uncertain():
 
 def test_cover_letter_uses_exact_cv_lines_for_recruiter_mapping_and_jev_grounding():
     cv_lines = {
-        "L0001": "Built a Python retrieval service with fixture-based evaluation.",
-        "L0002": "Deployed a VoxelMorph medical-image registration model on an edge accelerator.",
+        "L0001": "Built a Python retrieval service with fixture-based evaluation and a local FastAPI endpoint, comparing query results across a repeatable set of local cases.",
+        "L0002": "Deployed a VoxelMorph medical-image registration model on an edge accelerator by preparing it for target hardware, checking registration output, and assessing runtime constraints.",
     }
     requirements = [
         {"requirement_id": "REQ-01", "claim_ids": [], "cv_line_ids": ["L0001"]},
@@ -1913,31 +2271,45 @@ def test_cover_letter_uses_exact_cv_lines_for_recruiter_mapping_and_jev_groundin
         "selected_cv_id": "cv-synthetic",
         "resume_line_order": ["L0001", "L0002"],
         "resume_bullet_edits": [],
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": "I built a Python retrieval service and evaluated it with fixtures. The role asks for Python retrieval work.",
-                "claim_ids": [],
-                "cv_line_ids": ["L0001"],
-                "requirement_ids": ["REQ-01"],
-                "research_finding_ids": [],
-                "source_urls": [JOB_URL],
-                "preference_source_ids": [],
-            },
-            {
-                "section": "evidence",
-                "text": "I deployed a VoxelMorph model on an edge accelerator. Model deployment is also an explicit responsibility in the role.",
-                "claim_ids": [],
-                "cv_line_ids": ["L0002"],
-                "requirement_ids": ["REQ-02"],
-                "research_finding_ids": [],
-                "source_urls": [JOB_URL],
-                "preference_source_ids": [],
-            },
-        ],
+        "cover_letter_paragraphs": _complete_quality_letter(
+            responsibilities=("Python retrieval services", "model deployment")
+        )["cover_letter_paragraphs"],
         "application_answers": [],
         "outreach_drafts": [],
     }
+    rewrite["cover_letter_paragraphs"][1].update(
+        {
+            "text": (
+                "I built a Python retrieval service with fixture-based evaluation and a local FastAPI endpoint. "
+                "I compared query results across a repeatable set of local cases, giving the evaluation a consistent "
+                "basis for reviewing retrieval behavior across runs rather than relying on isolated examples. "
+                "This ties a working service to a repeatable way of examining its outputs. The posting identifies "
+                "Python retrieval services and evaluation as responsibilities."
+            ),
+            "claim_ids": [],
+            "cv_line_ids": ["L0001"],
+            "requirement_ids": ["REQ-01"],
+        }
+    )
+    rewrite["cover_letter_paragraphs"][2].update(
+        {
+            "text": (
+                "I deployed a VoxelMorph medical-image registration model on an edge accelerator. "
+                "I prepared it for target hardware, checked registration output along the deployment path, and assessed "
+                "runtime constraints. Those checks keep the model's behavior visible under the "
+                "conditions of running it on the target device, so the deployment account includes both output review "
+                "and practical limits. Model deployment for scientific applications appears among the listed "
+                "responsibilities."
+            ),
+            "claim_ids": [],
+            "cv_line_ids": ["L0002"],
+            "requirement_ids": ["REQ-02"],
+        }
+    )
+    rewrite["cover_letter_paragraphs"][0]["requirement_ids"] = ["REQ-01"]
+    rewrite["cover_letter_paragraphs"][3].update(
+        {"claim_ids": [], "cv_line_ids": ["L0001", "L0002"]}
+    )
     research = {"findings": [], "contacts": []}
     _validate_rewrite(
         rewrite,
@@ -1959,29 +2331,31 @@ def test_cover_letter_uses_exact_cv_lines_for_recruiter_mapping_and_jev_groundin
         cv_lines=cv_lines,
         cv_source_id="cv-synthetic",
     )
-    assert [item["evidence"][0] for item in assertions] == [
-        {
-            "source_type": "owner_provided_resume",
-            "source_id": "cv-synthetic",
-            "text": "Selected CV line L0001: " + cv_lines["L0001"],
-        },
-        {
-            "source_type": "owner_provided_resume",
-            "source_id": "cv-synthetic",
-            "text": "Selected CV line L0002: " + cv_lines["L0002"],
-        },
-    ]
+    by_id = {item["id"]: item for item in assertions}
+    assert by_id["cover_letter_paragraph_1"]["evidence"][0] == {
+        "source_type": "owner_provided_resume",
+        "source_id": "cv-synthetic",
+        "text": "Selected CV line L0001: " + cv_lines["L0001"],
+    }
+    assert by_id["cover_letter_paragraph_2"]["evidence"][0] == {
+        "source_type": "owner_provided_resume",
+        "source_id": "cv-synthetic",
+        "text": "Selected CV line L0002: " + cv_lines["L0002"],
+    }
     quality = _cover_letter_quality(
         rewrite,
         {
             "results": [
-                {"id": "cover_letter_paragraph_0", "output_type": "cover_letter_paragraph", "status": "supported"},
-                {"id": "cover_letter_paragraph_1", "output_type": "cover_letter_paragraph", "status": "supported"},
+                    {"id": "cover_letter_paragraph_0", "output_type": "cover_letter_paragraph", "status": "supported"},
+                    {"id": "cover_letter_paragraph_1", "output_type": "cover_letter_paragraph", "status": "supported"},
+                    {"id": "cover_letter_paragraph_2", "output_type": "cover_letter_paragraph", "status": "supported"},
+                    {"id": "cover_letter_paragraph_3", "output_type": "cover_letter_paragraph", "status": "supported"},
+                    {"id": "cover_letter_paragraph_4", "output_type": "cover_letter_paragraph", "status": "supported"},
             ]
         },
         recruiter_requirements=requirements,
     )
-    assert quality["status"] == "passed"
+    assert quality["status"] == "passed", quality["issues"]
     assert quality["candidate_evidence_and_role_requirements_cited"] is True
 
 
@@ -2020,197 +2394,444 @@ def test_unbound_cv_line_citation_is_removed_before_jev():
 
 
 def test_cover_letter_quality_flags_exact_repeated_sentences_for_one_revision():
-    repeated_sentence = "Python service work is a responsibility listed in the role."
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {"section": "evidence", "text": f"I built a small Python tool with clear tests. {repeated_sentence}", "claim_ids": ["claim-1"], "requirement_ids": ["REQ-01"], "source_urls": [JOB_URL]},
-            {"section": "evidence", "text": f"I tested a distinct retrieval prototype. {repeated_sentence}", "claim_ids": ["claim-2"], "requirement_ids": ["REQ-02"], "source_urls": [JOB_URL]},
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": "cover_letter_paragraph_0", "output_type": "cover_letter_paragraph", "status": "supported"},
-            {"id": "cover_letter_paragraph_1", "output_type": "cover_letter_paragraph", "status": "supported"},
-        ]
-    }
+    repeated_sentence = "The team values careful Python service work and disciplined operational testing across its production systems."
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        repeated_sentence,
+    )
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "Northstar names model deployment as an AI Engineer responsibility.",
+        repeated_sentence,
+    )
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
 
     assert quality["status"] == "failed"
-    assert quality["revision_paragraph_indices"] == [1]
-    assert quality["body_word_count"] > 23
+    assert quality["revision_paragraph_indices"] == [2]
+    assert quality["body_word_count"] == sum(quality["paragraph_word_counts"])
+    assert quality["sections_are_flexible"] is True
     assert "repeats a full sentence" in " ".join(quality["issues"])
     assert quality["owner_review_required"] is True
     assert quality["owner_review_notes"] == []
-    assert "do not certify persuasive strength or personal voice" in _packet_review_note(quality)
+    assert "not a gate" in _packet_review_note(quality)
 
 
-def test_cover_letter_quality_revises_second_paragraph_when_it_reuses_candidate_evidence():
+def test_cover_letter_quality_revises_repeated_evidence_when_multiple_examples_reuse_it():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][2]["claim_ids"] = ["claim-ayni"]
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["revision_paragraph_indices"] == [2]
+    assert quality["revision_reasons"] == {"2": "duplicate_candidate_evidence"}
+    assert "repeating the same candidate proof point" in " ".join(quality["issues"])
+
+
+def test_cover_letter_quality_revises_concrete_example_and_both_relate_bridges():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "The Ayni work provides a concrete example of Northstar's agent-assisted workflow responsibility.",
+    )
+    rewrite["cover_letter_paragraphs"][3]["text"] = (
+        "Both relate to Northstar's responsibility for operating AI services for research teams. "
+        "Together, the projects show attention to evaluation and operational controls across distinct systems."
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["boilerplate_bridge_paragraph_indices"] == [1, 3]
+    assert quality["revision_reasons"]["1"] == "generic_relevance_bridge"
+    assert quality["revision_reasons"]["3"] == "generic_relevance_bridge"
+
+
+def test_cover_letter_quality_accepts_a_substantive_owner_specific_letter():
+    rewrite = _complete_quality_letter()
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "passed"
+    assert quality["rubric_version"] == "research-informed-cover-letter-argument-v28"
+    assert quality["body_paragraph_count"] == 5
+    assert len(quality["paragraph_word_counts"]) == 5
+    assert sum(quality["paragraph_word_counts"]) == quality["body_word_count"]
+    assert len(quality["paragraph_sentence_counts"]) == 5
+    assert quality["section_labels_used"] == ["opening", "evidence", "evidence", "contribution", "closing"]
+    assert quality["sections_are_flexible"] is True
+    assert quality["one_page_is_practical_guidance_not_a_gate"] is True
+    assert quality["boilerplate_bridge_paragraph_indices"] == []
+    assert quality["role_duty_list_paragraph_indices"] == []
+
+
+def test_cover_letter_quality_revises_paragraphs_that_refer_to_the_cv_as_a_document():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "For Medical Image Registration,",
+        "My CV notes that for Medical Image Registration,",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["cv_reference_paragraph_indices"] == [2]
+    assert quality["revision_paragraph_indices"] == [2]
+    assert quality["revision_reasons"] == {"2": "cv_document_reference"}
+
+
+def test_cover_letter_quality_does_not_use_word_or_paragraph_count_as_a_gate():
     rewrite = {
         "cover_letter_paragraphs": [
             {
                 "section": "evidence",
-                "text": "I built a Python retrieval service with fixture tests.",
-                "claim_ids": ["claim-1"],
-                "cv_line_ids": ["L0001"],
+                "text": (
+                    "For Medical Image Registration, I deployed a TensorFlow VoxelMorph pipeline on an AMD Kria KV260 DPU. "
+                    "Deploying and operating AI services are responsibilities in IFOM's role."
+                ),
+                "claim_ids": ["claim-registration"],
                 "requirement_ids": ["REQ-01"],
                 "source_urls": [JOB_URL],
             },
             {
                 "section": "evidence",
-                "text": "The service also relates to the role's evaluation requirements.",
-                "claim_ids": ["claim-1"],
-                "cv_line_ids": ["L0001"],
+                "text": (
+                    "I built Ayni, a platform for creating and operating specialized AI-agent workflows. "
+                    "Agent-assisted workflows are also an explicit part of IFOM's role."
+                ),
+                "claim_ids": ["claim-ayni"],
                 "requirement_ids": ["REQ-02"],
                 "source_urls": [JOB_URL],
             },
+        ]
+    }
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding(2))
+
+    assert quality["status"] == "passed", quality["issues"]
+    assert quality["body_paragraph_count"] == 2
+    assert quality["body_word_count"] <= 60
+    assert quality["sections_are_flexible"] is True
+    assert quality["one_page_is_practical_guidance_not_a_gate"] is True
+
+    reviewer = _validate_letter_review(
+        {
+            "decision": "needs_revision",
+            "dimensions": [
+                {
+                    "name": name,
+                    "score": 2 if name in {"letter_completeness", "candidate_evidence_development"} else 3,
+                    "reason": "The synthetic sample is too note-like." if name == "letter_completeness" else "Criterion reviewed.",
+                }
+                for name in LETTER_REVIEW_DIMENSION_NAMES
+            ],
+            "issues": [{"issue": "Develop the application case beyond a note.", "paragraph_indices": [0, 1]}],
+        },
+        rewrite["cover_letter_paragraphs"],
+    )
+    assert reviewer["status"] == "needs_revision"
+    assert reviewer["revision_paragraph_indices"] == [0, 1]
+
+
+def test_letter_reviewer_flags_a_distinct_missing_profile_example_without_a_count_rule():
+    paragraphs = [
+        {
+            "section": "evidence",
+            "text": "I built Ayni for agent-assisted workflows.",
+            "claim_ids": ["claim-ayni"],
+            "requirement_ids": ["REQ-02"],
+            "source_urls": [JOB_URL],
+        }
+    ]
+    evidence = {
+        "claim-ayni": {"claim_text": "Worked on Ayni agent workflows."},
+        "claim-registration": {
+            "claim_text": "Deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU.",
+            "related_cv_lines": [{"line_id": "L0004", "text": "Deployed a VoxelMorph pipeline."}],
+        },
+    }
+    review = _validate_letter_review(
+        {
+            "decision": "ready",
+            "dimensions": [
+                {"name": name, "score": 3, "reason": "The body names relevant work."}
+                for name in LETTER_REVIEW_DIMENSION_NAMES
+            ],
+            "issues": [],
+            "profile_evidence_assessment": [
+                {
+                    "claim_id": "claim-ayni",
+                    "status": "included",
+                    "paragraph_index": 0,
+                    "rationale": "The Ayni project is developed in paragraph one.",
+                },
+                {
+                    "claim_id": "claim-registration",
+                    "status": "material_gap",
+                    "paragraph_index": None,
+                    "rationale": "The separate edge deployment proof adds a distinct required model-deployment responsibility.",
+                },
+            ],
+        },
+        paragraphs,
+        preferred_profile_claim_ids=["claim-ayni", "claim-registration"],
+        preferred_profile_claim_evidence=evidence,
+    )
+
+    assert review["status"] == "needs_revision"
+    assert review["revision_paragraph_indices"] == [1]
+    assert review["revision_reasons"] == {"1": "missing_candidate_evidence"}
+    assert [item["score"] for item in review["dimensions"] if item["name"] in {
+        "letter_completeness", "candidate_evidence_development"
+    }] == [2, 2]
+    assert review["profile_evidence_assessment"][1]["status"] == "material_gap"
+
+
+def test_letter_repair_context_can_append_a_missing_material_profile_example():
+    paragraphs = [{
+        "section": "evidence",
+        "text": "I built Ayni for agent-assisted workflows.",
+        "claim_ids": ["claim-ayni"],
+        "cv_line_ids": ["L0001"],
+        "requirement_ids": ["REQ-02"],
+        "source_urls": [JOB_URL],
+    }]
+    technical_profile = [{
+        "source_id": "technical-profile",
+        "filename": "technical.md",
+        "use": "cover_letter",
+        "evidence": [
+            {
+                "id": "claim-ayni",
+                "claim_text": "Worked on Ayni agent workflows.",
+                "evidence_excerpt": "I worked on Ayni agent workflows.",
+                "source_excerpts": ["I worked on Ayni agent workflows."],
+                "related_cv_lines": [{"line_id": "L0001", "text": "Built Ayni."}],
+                "review_status": "unreviewed",
+            },
+            {
+                "id": "claim-registration",
+                "claim_text": "Deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU.",
+                "evidence_excerpt": "I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU.",
+                "source_excerpts": ["I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU."],
+                "related_cv_lines": [{"line_id": "L0002", "text": "Deployed a medical image model."}],
+                "review_status": "unreviewed",
+            },
+        ],
+    }]
+
+    context = _letter_repair_context(
+        job={"title": "AI Engineer", "company": "Northstar", "canonical_url": JOB_URL},
+        original_paragraphs=paragraphs,
+        grounding=_supported_letter_grounding(1),
+        failed_indices=[1],
+        repair_reasons={1: "missing_candidate_evidence"},
+        approved_claims=[],
+        technical_profile_sources=technical_profile,
+        preferred_profile_claim_ids=["claim-ayni", "claim-registration"],
+        writing_preferences={},
+        owner_writing_context=[],
+        research={"findings": []},
+        recruiter_requirements=[
+            {"requirement_id": "REQ-01", "requirement": "Deploy AI models for scientific work."},
+            {"requirement_id": "REQ-02", "requirement": "Build agent-assisted workflows."},
+        ],
+        cv_lines={"L0001": "Built Ayni.", "L0002": "Deployed a medical image model."},
+        quality_issues=["The letter omits distinct model deployment evidence."],
+    )
+
+    append = context["paragraphs_for_repair"]
+    assert len(append) == 1
+    assert append[0]["paragraph_index"] == 1
+    assert append[0]["section"] == "evidence"
+    assert append[0]["repair_reason"] == "missing_candidate_evidence"
+    assert append[0]["allowed_claim_ids"] == ["claim-registration"]
+    assert append[0]["allowed_cv_line_ids"] == ["L0002"]
+    assert context["preferred_technical_profile_claim_ids"] == ["claim-registration"]
+
+
+def test_one_supported_example_and_requirement_can_pass_without_section_labels():
+    rewrite = {
+        "cover_letter_paragraphs": [
+            {
+                "section": None,
+                "text": (
+                    "I deployed a TensorFlow VoxelMorph pipeline on an AMD Kria KV260 DPU, "
+                    "addressing this role's model-deployment responsibility."
+                ),
+                "claim_ids": ["claim-registration"],
+                "requirement_ids": ["REQ-01"],
+                "source_urls": [JOB_URL],
+            }
         ]
     }
     quality = _cover_letter_quality(
         rewrite,
-        {
-            "results": [
-            {"id": "cover_letter_paragraph_0", "output_type": "cover_letter_paragraph", "status": "supported"},
-            {"id": "cover_letter_paragraph_1", "output_type": "cover_letter_paragraph", "status": "supported"},
-            ]
-        },
+        _supported_letter_grounding(1),
+        recruiter_requirements=[
+            {"requirement_id": "REQ-01", "requirement": "Deploy AI models for scientific work."}
+        ],
     )
 
-    assert quality["status"] == "failed"
-    assert quality["revision_paragraph_indices"] == [1]
-    assert quality["revision_reasons"] == {"1": "duplicate_candidate_evidence"}
-    assert "distinct candidate evidence points" in " ".join(quality["issues"])
+    assert quality["status"] == "passed", quality["issues"]
+    assert quality["body_paragraph_count"] == 1
+    assert quality["distinct_role_requirement_count"] == 1
+    assert quality["distinct_candidate_evidence_count"] == 1
+    assert quality["section_labels_used"] == [None]
 
 
-def test_cover_letter_quality_accepts_direct_candidate_fact_and_role_duty_pairing():
+def test_omitted_unresolved_jev_paragraph_does_not_fail_the_final_letter():
     rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows. Agent-assisted workflows are also an explicit part of Northstar's role.",
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": "For Medical Image Registration, I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU. Model deployment is also an explicit responsibility in Northstar's role.",
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
+        "cover_letter_paragraphs": [{
+            "section": None,
+            "text": (
+                "I deployed a TensorFlow VoxelMorph pipeline on an AMD Kria KV260 DPU, "
+                "addressing this role's model-deployment responsibility."
+            ),
+            "claim_ids": ["claim-registration"],
+            "requirement_ids": ["REQ-01"],
+            "source_urls": [JOB_URL],
+        }]
     }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+    grounding = _supported_letter_grounding(1)
+    grounding["results"].append({
+        "id": "cover_letter_paragraph_1",
+        "output_type": "cover_letter_paragraph",
+        "status": "unresolved",
+        "included_in_artifact": False,
+        "reason": "This unsupported block was removed before the final letter.",
+    })
 
     quality = _cover_letter_quality(rewrite, grounding)
 
-    assert quality["status"] == "passed"
-    assert quality["rubric_version"] == "cover-letter-application-argument-v13"
-    assert quality["application_intent_in_role_heading"] is True
-    assert quality["boilerplate_bridge_paragraph_indices"] == []
-    assert quality["role_duty_list_paragraph_indices"] == []
-    assert quality["maximum_sentences_per_paragraph"] == 2
-    assert quality["maximum_body_words"] == 100
+    assert quality["status"] == "passed", quality["issues"]
+    assert quality["jev_rejected_paragraphs"] == []
 
 
-def test_cover_letter_requires_two_preferred_profile_claims_when_available():
+def test_grounding_maps_supported_blocks_to_their_final_artifact_indexes():
+    paragraph = {
+        "section": None,
+        "text": (
+            "I deployed a TensorFlow VoxelMorph pipeline on an AMD Kria KV260 DPU, "
+            "addressing this role's model-deployment responsibility."
+        ),
+        "claim_ids": ["claim-registration"],
+        "requirement_ids": ["REQ-01"],
+        "source_urls": [JOB_URL],
+    }
     rewrite = {
         "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": "I built an agent workflow with model routing. Agent-assisted workflows are part of Northstar's role.",
-                "claim_ids": [],
-                "cv_line_ids": ["L0003"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": "I deployed a registration model on FPGA hardware. Model deployment is also an explicit responsibility in Northstar's role.",
-                "claim_ids": [],
-                "cv_line_ids": ["L0004"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
+            {**paragraph, "text": "An unsupported paragraph that Jev removes."},
+            paragraph,
+        ],
+        "resume_bullet_edits": [
+            {"line_id": "line-1", "revised_text": "Unsupported edit."},
+            {"line_id": "line-2", "revised_text": "Supported edit."},
+        ],
     }
-    grounding = {
+    assertions = [
+        {
+            "id": "cover_letter_paragraph_0",
+            "output_type": "cover_letter_paragraph",
+            "text": rewrite["cover_letter_paragraphs"][0]["text"],
+            "evidence": [{"source_type": "cv", "text": "Candidate evidence."}],
+        },
+        {
+            "id": "cover_letter_paragraph_1",
+            "output_type": "cover_letter_paragraph",
+            "text": paragraph["text"],
+            "evidence": [{"source_type": "cv", "text": "Candidate evidence."}],
+        },
+        {
+            "id": "resume_bullet_edit_0",
+            "output_type": "resume_bullet_edit",
+            "text": "Unsupported edit.",
+            "evidence": [{"source_type": "cv", "text": "Candidate evidence."}],
+        },
+        {
+            "id": "resume_bullet_edit_1",
+            "output_type": "resume_bullet_edit",
+            "text": "Supported edit.",
+            "evidence": [{"source_type": "cv", "text": "Candidate evidence."}],
+        },
+    ]
+    result = {
+        "status": "complete",
         "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
+            {
+                "id": item["id"],
+                "status": "unresolved" if item["id"].endswith("_0") else "supported",
+                "reason": "No support." if item["id"].endswith("_0") else "Supported.",
+            }
+            for item in assertions
+        ],
     }
+
+    grounding = _apply_grounding_results(rewrite, result, assertions)
+
+    assert rewrite["cover_letter_paragraphs"] == [paragraph]
+    assert rewrite["resume_bullet_edits"] == [{"line_id": "line-2", "revised_text": "Supported edit."}]
+    grounding_by_source_id = {item["id"]: item for item in grounding["results"]}
+    assert grounding_by_source_id["cover_letter_paragraph_0"]["final_artifact_id"] is None
+    assert grounding_by_source_id["cover_letter_paragraph_1"]["final_artifact_id"] == "cover_letter_paragraph_0"
+    assert grounding_by_source_id["resume_bullet_edit_1"]["final_artifact_id"] == "resume_bullet_edit_0"
+
+    quality = _cover_letter_quality(
+        rewrite,
+        grounding,
+        recruiter_requirements=[
+            {"requirement_id": "REQ-01", "requirement": "Deploy AI models for scientific work."}
+        ],
+    )
+    assert quality["status"] == "passed", quality["issues"]
+    assert quality["jev_rejected_paragraphs"] == []
+
+
+def test_cover_letter_reports_unused_preferred_profile_claims_without_a_count_gate():
     preferred = ["profile-project-a", "profile-project-b"]
+    rewrite = _complete_quality_letter(preferred_profile_claim_ids=preferred)
+    rewrite["cover_letter_paragraphs"][2]["claim_ids"] = ["claim-registration"]
+    rewrite["cover_letter_paragraphs"][3]["claim_ids"] = ["claim-ayni", "claim-registration"]
+    grounding = _supported_letter_grounding()
 
     missing = _cover_letter_quality(
         rewrite, grounding, preferred_profile_claim_ids=preferred
     )
-    assert missing["status"] == "failed"
+    assert missing["status"] == "passed"
     assert missing["preferred_profile_claim_count"] == 2
-    assert missing["preferred_profile_claims_used"] == 0
-    assert missing["revision_paragraph_indices"] == [0, 1]
-    assert missing["revision_reasons"] == {
-        "0": "use_technical_profile_evidence",
-        "1": "use_technical_profile_evidence",
-    }
+    assert missing["preferred_profile_claims_used"] == 1
+    assert missing["preferred_profile_claim_ids_not_used"] == [preferred[1]]
+    assert missing["revision_paragraph_indices"] == []
 
-    sourced = {
-        **rewrite,
-        "cover_letter_paragraphs": [
-            {**rewrite["cover_letter_paragraphs"][0], "claim_ids": [preferred[0]]},
-            {**rewrite["cover_letter_paragraphs"][1], "claim_ids": [preferred[1]]},
-        ],
-    }
+    sourced = _complete_quality_letter(preferred_profile_claim_ids=preferred)
     passed = _cover_letter_quality(
         sourced, grounding, preferred_profile_claim_ids=preferred
     )
     assert passed["status"] == "passed"
     assert passed["preferred_profile_claims_used"] == 2
-    assert passed["profile_claim_count_by_paragraph"] == [1, 1]
+    assert passed["profile_claim_count_by_paragraph"] == [0, 1, 1, 2, 0]
 
-    duplicated = {
-        **sourced,
-        "cover_letter_paragraphs": [
-            {**sourced["cover_letter_paragraphs"][0]},
-            {**sourced["cover_letter_paragraphs"][1], "claim_ids": [preferred[0]]},
-        ],
-    }
+    duplicated = _complete_quality_letter(preferred_profile_claim_ids=preferred)
+    duplicated["cover_letter_paragraphs"][2]["claim_ids"] = [preferred[0]]
     duplicate_quality = _cover_letter_quality(
         duplicated, grounding, preferred_profile_claim_ids=preferred
     )
     assert duplicate_quality["status"] == "failed"
-    assert duplicate_quality["revision_paragraph_indices"] == [1]
-    assert duplicate_quality["revision_reasons"] == {"1": "use_technical_profile_evidence"}
+    assert duplicate_quality["revision_paragraph_indices"] == [2]
 
-    swapped = {
-        **sourced,
-        "cover_letter_paragraphs": [
-            {**sourced["cover_letter_paragraphs"][0], "claim_ids": [preferred[1]]},
-            {**sourced["cover_letter_paragraphs"][1], "claim_ids": [preferred[0]]},
-        ],
-    }
+    swapped = _complete_quality_letter(preferred_profile_claim_ids=preferred)
+    swapped["cover_letter_paragraphs"][1]["claim_ids"] = [preferred[1]]
+    swapped["cover_letter_paragraphs"][2]["claim_ids"] = [preferred[0]]
     swapped_quality = _cover_letter_quality(
         swapped, grounding, preferred_profile_claim_ids=preferred
     )
-    assert swapped_quality["status"] == "failed"
-    assert swapped_quality["preferred_profile_claims_used"] == 0
-    assert swapped_quality["revision_paragraph_indices"] == [0, 1]
+    assert swapped_quality["status"] == "passed"
+    assert swapped_quality["preferred_profile_claims_used"] == 2
 
 
 def test_preferred_profile_letter_requires_owner_action_and_distinctive_source_detail():
     preferred = ["profile-registration", "profile-ayni"]
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
     evidence = {
         preferred[0]: {
             "claim_text": (
@@ -2227,71 +2848,264 @@ def test_preferred_profile_letter_requires_owner_action_and_distinctive_source_d
             "evidence_excerpt": "Ayni is a platform for creating and operating specialized AI-agent workflows.",
         },
     }
-
-    broad_paraphrase = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "My Medical Image Registration work evolves into a more advanced 2.5D PyTorch/Vitis AI registration pipeline. "
-                    "IFOM's AI Engineer is responsible for deploying AI-enabled services for scientific activity and internal operations."
-                ),
-                "claim_ids": [preferred[0]],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": (
-                    "Ayni is a platform for creating and operating specialized AI-agent workflows. "
-                    "IFOM explicitly lists agent-assisted workflows as a responsibility."
-                ),
-                "claim_ids": [preferred[1]],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    rejected = _cover_letter_quality(
-        broad_paraphrase,
-        grounding,
+    direct_owner_letter = _complete_quality_letter(
+        preferred_profile_claim_ids=preferred, registration_first=True
+    )
+    rejected = deepcopy(direct_owner_letter)
+    rejected["cover_letter_paragraphs"][1]["text"] = rejected["cover_letter_paragraphs"][1]["text"].replace(
+        "For Medical Image Registration, I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU.",
+        "The Medical Image Registration project examined a model on edge hardware in considerable technical detail.",
+    )
+    rejected["cover_letter_paragraphs"][2]["text"] = rejected["cover_letter_paragraphs"][2]["text"].replace(
+        "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows.",
+        "Ayni is a platform for creating and operating specialized AI-agent workflows.",
+    )
+    rejected_quality = _cover_letter_quality(
+        rejected,
+        _supported_letter_grounding(),
         preferred_profile_claim_ids=preferred,
         preferred_profile_claim_evidence=evidence,
     )
-    assert rejected["status"] == "failed"
-    assert rejected["direct_first_person_action_paragraph_indices"] == [0, 1]
-    assert rejected["missing_preferred_profile_detail_paragraph_indices"] == [0]
-    assert rejected["revision_paragraph_indices"] == [0, 1]
+    assert rejected_quality["status"] == "failed"
+    assert rejected_quality["direct_first_person_action_paragraph_indices"] == [1]
+    assert rejected_quality["missing_preferred_profile_detail_paragraph_indices"] == [1]
+    assert rejected_quality["revision_paragraph_indices"] == [1]
 
-    direct_owner_letter = {
-        **broad_paraphrase,
-        "cover_letter_paragraphs": [
-            {
-                **broad_paraphrase["cover_letter_paragraphs"][0],
-                "text": (
-                    "For Medical Image Registration, I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU. "
-                    "Model deployment is an explicit responsibility in IFOM's role."
-                ),
-            },
-            {
-                **broad_paraphrase["cover_letter_paragraphs"][1],
-                "text": (
-                    "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows. "
-                    "Agent-assisted workflows are also an explicit part of IFOM's role."
-                ),
-            },
-        ],
-    }
+    direct_owner_letter["cover_letter_paragraphs"][2]["text"] = direct_owner_letter["cover_letter_paragraphs"][2]["text"].replace(
+        "I worked on Ayni, a platform", "I worked on a platform"
+    )
     accepted = _cover_letter_quality(
         direct_owner_letter,
-        grounding,
+        _supported_letter_grounding(),
         preferred_profile_claim_ids=preferred,
         preferred_profile_claim_evidence=evidence,
     )
     assert accepted["status"] == "passed"
-    assert accepted["rubric_version"] == "cover-letter-application-argument-v13"
+    assert accepted["rubric_version"] == "research-informed-cover-letter-argument-v28"
     assert accepted["direct_first_person_action_paragraph_indices"] == []
     assert accepted["missing_preferred_profile_detail_paragraph_indices"] == []
+
+
+def test_preferred_profile_claim_picker_uses_named_projects_before_generic_stack():
+    sources = [{
+        "evidence": [
+            {
+                "id": "software-stack",
+                "claim_text": (
+                    "He also develops the surrounding software stack: Python/FastAPI/Pydantic "
+                    "services, React/TypeScript applications, persistence, testing, and deployment tooling."
+                ),
+                "evidence_excerpt": "He also develops the surrounding software stack.",
+            },
+            {
+                "id": "registration",
+                "claim_text": (
+                    "The work evolves from a TensorFlow VoxelMorph pipeline deployed on the "
+                    "AMD Kria KV260 DPU into a more advanced 2.5D PyTorch/Vitis AI registration pipeline."
+                ),
+                "evidence_excerpt": (
+                    "The work evolves from a TensorFlow VoxelMorph pipeline deployed on the "
+                    "AMD Kria KV260 DPU into a more advanced 2.5D PyTorch/Vitis AI registration pipeline."
+                ),
+                "source_excerpts": ["FPGA DPU deployment; CPU/GPU/FPGA comparisons; evaluation and benchmarking."],
+            },
+            {
+                "id": "ayni",
+                "claim_text": "Ayni is a platform for creating and operating specialized AI-agent workflows.",
+                "evidence_excerpt": "Ayni is a platform for creating and operating specialized AI-agent workflows.",
+                "source_excerpts": [
+                    "Agent registration, bounded tool invocation, human approval, evaluation, and recovery.",
+                ],
+            },
+        ],
+    }]
+    requirements = [
+        {"requirement": "Design and deploy AI-enabled services for scientific work.", "priority": "required"},
+        {"requirement": "Build LLM applications, RAG systems, and agent-assisted workflows.", "priority": "required"},
+        {"requirement": "Deploy and operate AI services; support evaluation and maintainability.", "priority": "required"},
+    ]
+
+    preferred = _preferred_cover_letter_profile_claim_ids(sources, requirements)
+
+    assert preferred == ["ayni", "registration"]
+
+
+def test_preferred_profile_picker_keeps_one_relevant_project_without_a_two_claim_quota():
+    evidence = [{
+        "id": "ayni",
+        "claim_text": "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows.",
+        "evidence_excerpt": "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows.",
+        "source_excerpts": ["Ayni supports bounded tool execution and workflow evaluation."],
+        "related_cv_lines": [{"line_id": "L0034", "text": "Built a platform for agent workflows."}],
+    }]
+    requirements = [{
+        "requirement": "Build and operate AI-agent workflows.",
+        "priority": "required",
+    }]
+
+    assert _preferred_cover_letter_profile_claim_ids(
+        [{"evidence": evidence}], requirements
+    ) == ["ayni"]
+
+
+def test_owner_written_example_order_wins_over_relevance_rank():
+    evidence = [
+        {
+            "id": "registration",
+            "claim_text": "I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU for medical image registration.",
+            "evidence_excerpt": "I deployed a VoxelMorph pipeline on the AMD Kria KV260 DPU for medical image registration.",
+            "source_id": "owner-examples",
+            "owner_written_source": True,
+            "source_order": 110,
+            "related_cv_lines": [{"line_id": "L0042", "text": "Deployed a VoxelMorph pipeline on AMD Kria KV260 hardware."}],
+        },
+        {
+            "id": "ayni",
+            "claim_text": "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows.",
+            "evidence_excerpt": "I worked on Ayni, a platform for creating and operating specialized AI-agent workflows.",
+            "source_id": "owner-examples",
+            "owner_written_source": True,
+            "source_order": 20,
+            "related_cv_lines": [{"line_id": "L0034", "text": "Built an agent platform with model routing and retrieval memory."}],
+        },
+    ]
+    requirements = [
+        {"requirement": "Deploy AI models and services for medical image registration.", "priority": "required"},
+        {"requirement": "Build agent-assisted workflows and LLM applications.", "priority": "required"},
+    ]
+
+    assert _preferred_cover_letter_profile_claim_ids(
+        [{"evidence": evidence}], requirements
+    ) == ["ayni", "registration"]
+
+
+def test_preferred_letter_projects_must_match_the_selected_cv_when_two_are_available():
+    source = {
+        "source_id": "technical-profile",
+        "filename": "technical-profile.md",
+        "use": "Owner-provided technical source.",
+        "text": (
+            "# Ayni Agentic Systems Platform\n"
+            "Ayni is a platform for creating and operating specialized AI-agent workflows.\n\n"
+            "# Medical Image Registration and FPGA Deployment\n"
+            "The work evolves from a TensorFlow VoxelMorph pipeline deployed on the AMD Kria KV260 DPU.\n\n"
+            "# Project Marx\n"
+            "Project Marx evaluates a separate research problem with machine-learning methods.\n"
+        ),
+        "evidence": [
+            {
+                "id": "ayni",
+                "claim_text": "Ayni is a platform for creating and operating specialized AI-agent workflows.",
+                "evidence_excerpt": "Ayni is a platform for creating and operating specialized AI-agent workflows.",
+                "review_status": "unreviewed",
+            },
+            {
+                "id": "registration",
+                "claim_text": "The work evolves from a TensorFlow VoxelMorph pipeline deployed on the AMD Kria KV260 DPU.",
+                "evidence_excerpt": "The work evolves from a TensorFlow VoxelMorph pipeline deployed on the AMD Kria KV260 DPU.",
+                "review_status": "unreviewed",
+            },
+            {
+                "id": "marx",
+                "claim_text": "Project Marx evaluates a separate research problem with machine-learning methods.",
+                "evidence_excerpt": "Project Marx evaluates a separate research problem with machine-learning methods.",
+                "review_status": "unreviewed",
+            },
+        ],
+    }
+    cv_lines = {
+        "L0032": "Projects",
+        "L0033": "AI Agent Orchestration Platform | Independent project 2026",
+        "L0034": "Built an agent platform with model routing, tool execution, retrieval memory, and CRM API integration.",
+        "L0035": "Added evaluation, approval workflows, and recovery safeguards.",
+        "L0041": "Medical Image Registration | Independent project 2025",
+        "L0042": "Trained and deployed a quantized TensorFlow VoxelMorph pipeline on AMD Kria KV260 FPGA hardware.",
+        "L0043": "Achieved 66% faster inference and warping than CPU while maintaining quality.",
+    }
+    requirements = [
+        {
+            "requirement_id": "REQ-01",
+            "requirement": "Build LLM applications and agent-assisted workflows.",
+            "priority": "required",
+        },
+        {
+            "requirement_id": "REQ-02",
+            "requirement": "Deploy AI models and services for medical image registration.",
+            "priority": "required",
+        },
+        {
+            "requirement_id": "REQ-03",
+            "requirement": "Apply machine-learning methods to scientific research.",
+            "priority": "required",
+        },
+    ]
+
+    selected = _select_technical_profile_evidence(
+        [source],
+        set(),
+        recruiter_requirements=requirements,
+        cv_lines=cv_lines,
+    )
+    evidence = _technical_profile_prompt_context(selected)[0]["evidence"]
+    preferred = _preferred_cover_letter_profile_claim_ids(selected, requirements)
+
+    assert preferred == ["ayni", "registration"]
+    assert all(
+        item["related_cv_lines"]
+        for item in evidence
+        if item["id"] in preferred
+    )
+    assert "marx" not in preferred
+
+
+def test_preferred_profile_anchor_picker_skips_sentence_pronouns_and_keeps_project_names():
+    assert _preferred_profile_letter_anchors({
+        "claim_text": "He also develops the surrounding software stack: Python/FastAPI/Pydantic services."
+    }) == ["Python/FastAPI/Pydantic"]
+    assert _preferred_profile_letter_anchors({
+        "claim_text": "Ayni is a platform for creating and operating specialized AI-agent workflows."
+    }) == ["Ayni"]
+    assert _preferred_profile_letter_anchors({
+        "claim_text": (
+            "The work evolves from a TensorFlow VoxelMorph pipeline deployed on the "
+            "AMD Kria KV260 DPU into a more advanced registration pipeline."
+        )
+    }) == ["VoxelMorph", "KV260"]
+    assert _preferred_profile_letter_anchors({
+        "claim_text": "Separately evaluated a local retrieval workflow using synthetic fixtures."
+    }) == []
+
+
+def test_letter_requirement_ids_are_normalized_or_bound_to_paragraph_content():
+    requirements = [
+        {"requirement_id": "REQ-01", "requirement": "Use Python for API development.", "priority": "required"},
+        {"requirement_id": "REQ-02", "requirement": "Build LLM applications and agent-assisted workflows.", "priority": "required"},
+        {"requirement_id": "REQ-03", "requirement": "Deploy and evaluate VoxelMorph registration models.", "priority": "required"},
+    ]
+    paragraphs = [
+        {
+            "section": "opening",
+            "text": "I am applying for the AI Engineer role, which calls for agent-assisted workflows.",
+            "requirement_ids": ["req-2"],
+        },
+        {
+            "section": "evidence",
+            "text": "I built Ayni for agent-assisted workflows and LLM applications.",
+            "requirement_ids": ["REQ-01"],
+        },
+        {
+            "section": "evidence",
+            "text": "I deployed and evaluated a VoxelMorph registration model on FPGA hardware.",
+            "requirement_ids": ["unmapped-role-reference"],
+        },
+    ]
+
+    repairs = _repair_letter_requirement_ids(paragraphs, requirements)
+
+    assert [paragraph["requirement_ids"] for paragraph in paragraphs] == [
+        ["REQ-02"], ["REQ-02"], ["REQ-03"],
+    ]
+    assert [repair["paragraph_index"] for repair in repairs] == [0, 1, 2]
 
 
 def test_profile_evidence_quality_failure_is_repaired_and_rechecked(
@@ -2310,6 +3124,7 @@ def test_profile_evidence_quality_failure_is_repaired_and_rechecked(
     )
     enabled = _enable_synthetic_openai(settings, database)
     monkeypatch.setattr(FakePreparationClient, "omit_preferred_profile_claims", True)
+    monkeypatch.setattr(FakePreparationClient, "force_letter_review", True)
     FakePreparationClient.instances.clear()
     support_calls = []
 
@@ -2336,7 +3151,7 @@ def test_profile_evidence_quality_failure_is_repaired_and_rechecked(
     )
 
     completed = get_preparation(database, record["id"])
-    assert completed["state"] == "review"
+    assert completed["state"] == "review", completed["status_message"]
     with connect(database) as db:
         packet_id = db.execute(
             "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
@@ -2360,10 +3175,11 @@ def test_profile_evidence_quality_failure_is_repaired_and_rechecked(
         next(
             call["input"][0]["content"]
             for call in fake_calls
-            if call["text"]["format"]["name"] == "clue_letter_reviser_v5"
+            if call["text"]["format"]["name"] == "clue_letter_reviser_v12"
         )
     )
     assert reviser_context["cover_letter_quality_issues"]
+    assert all("text" in item and "paragraph_index" in item for item in reviser_context["paragraphs_for_repair"])
     assert reviser_context["research"]["contacts"] == []
     assert all(
         item["id"] in set(preferred_ids)
@@ -2374,323 +3190,295 @@ def test_profile_evidence_quality_failure_is_repaired_and_rechecked(
     assert output["quality_check"]["status"] == "passed"
     assert output["quality_check"]["revision"]["status"] == "completed"
     assert output["quality_check"]["revision"]["style_revision_paragraph_indices"]
-    assert [item["claim_ids"] for item in paragraphs] == [
-        [preferred_ids[0]],
-        [preferred_ids[1]],
+    assert [item["section"] for item in paragraphs] == [
+        "opening", "evidence", "evidence", "contribution", "closing"
     ]
-    assert output["quality_check"]["preferred_profile_claims_used"] == 2
+    assert any(
+        set(paragraph["claim_ids"]) & set(preferred_ids)
+        for paragraph in paragraphs[1:3]
+    )
+    assert output["quality_check"]["preferred_profile_claims_used"] >= 1
     assert output["jev_tailored_resume_review"]["status"] == "approved"
     assert packet["artifacts"]
 
 
 def test_cover_letter_quality_revises_formulaic_role_includes_lists():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "I worked on Ayni, a platform for specialized AI-agent workflows. "
-                    "IFOM's role includes agent workflows, RAG, and AI applications."
-                ),
-                "claim_ids": ["claim-ayni"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": (
-                    "I deployed VoxelMorph on the AMD Kria KV260 DPU for image registration. "
-                    "The role includes model deployment and infrastructure operations."
-                ),
-                "claim_ids": ["claim-registration"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "Northstar's role includes agent workflows, retrieval features, and technical operations.",
+    )
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "Northstar names model deployment as an AI Engineer responsibility.",
+        "The AI Engineer position includes model deployment, infrastructure operations, and monitoring.",
+    )
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
 
     assert quality["status"] == "failed"
-    assert quality["role_duty_list_paragraph_indices"] == [0, 1]
-    assert quality["revision_paragraph_indices"] == [0, 1]
-    assert quality["revision_reasons"] == {"0": "role_duty_list", "1": "role_duty_list"}
+    assert quality["role_duty_list_paragraph_indices"] == [1, 2]
+    assert quality["revision_paragraph_indices"] == [1, 2]
+    assert quality["revision_reasons"] == {"1": "role_duty_list", "2": "role_duty_list"}
+
+
+def test_cover_letter_quality_allows_one_concrete_role_includes_responsibility():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "Northstar's role includes developing agent-assisted workflows for shared services.",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert _contains_role_duty_inventory("IFOM's role includes deploying AI-enabled services for science.") is False
+    assert _contains_role_duty_inventory("The position includes deploying services and evaluating their performance.") is False
+    assert _contains_role_duty_inventory("The role includes agent workflows, model evaluation, and deployment.") is True
+    assert quality["status"] == "passed"
+    assert quality["role_duty_list_paragraph_indices"] == []
+
+
+def test_cover_letter_quality_flags_repeated_role_duty_sentence_frame():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "Northstar's role includes developing agent-assisted workflows in shared services.",
+    )
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "Northstar names model deployment as an AI Engineer responsibility.",
+        "Northstar's role includes model deployment for AI services.",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["role_duty_list_paragraph_indices"] == []
+    assert quality["repeated_role_duty_frame_paragraph_indices"] == [1, 2]
+    assert quality["revision_reasons"] == {
+        "1": "repeated_role_duty_frame",
+        "2": "repeated_role_duty_frame",
+    }
+
+
+def test_cover_letter_quality_flags_generic_opening_preview_and_example_bridge():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][0]["text"] += (
+        " My relevant project work has covered agent workflows and model deployment."
+    )
+    rewrite["cover_letter_paragraphs"][2]["text"] += (
+        " This project is a concrete example of AI deployment, relevant to Northstar's responsibility."
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["boilerplate_bridge_paragraph_indices"] == [0, 2]
+    assert quality["revision_paragraph_indices"] == [0, 2]
+    assert quality["revision_reasons"] == {
+        "0": "generic_relevance_bridge",
+        "2": "generic_relevance_bridge",
+    }
 
 
 def test_cover_letter_quality_rejects_malformed_replacement_character():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": "I built a Python service for Northstar. Python services are part of its role.",
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": "I evaluated a retrieval feature�. The role evaluates retrieval behavior.",
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "VoxelMorph pipeline", "VoxelMorph� pipeline", 1
+    )
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
 
     assert quality["status"] == "failed"
-    assert quality["replacement_character_paragraph_indices"] == [1]
+    assert quality["replacement_character_paragraph_indices"] == [2]
+    assert quality["revision_paragraph_indices"] == [2]
+    assert quality["revision_reasons"] == {"2": "encoding_garble"}
+
+
+def test_cover_letter_quality_rejects_padded_relevance_bridge_without_length_limit():
+    rewrite = _complete_quality_letter()
+    paragraph = rewrite["cover_letter_paragraphs"][1]
+    paragraph["text"] = paragraph["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "This example connects directly to Northstar's listed evaluation work. "
+        "Northstar's AI Engineer role calls for developing and operating agent-assisted workflows.",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["boilerplate_bridge_paragraph_indices"] == [1]
     assert quality["revision_paragraph_indices"] == [1]
-    assert quality["revision_reasons"] == {"1": "encoding_garble"}
-
-
-def test_cover_letter_quality_rejects_padded_relevance_bridge_and_overlong_paragraphs():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "I evaluated a retrieval prototype with a held-out test set. "
-                    "This example connects directly to Northstar's listed evaluation work. "
-                    "The prototype also used a small Python service with clear tests."
-                ),
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": "I deployed a VoxelMorph model on an FPGA. Model deployment is also an explicit responsibility in Northstar's role.",
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
-
-    quality = _cover_letter_quality(rewrite, grounding)
-
-    assert quality["status"] == "failed"
-    assert quality["overlong_paragraph_indices"] == [0]
-    assert quality["boilerplate_bridge_paragraph_indices"] == [0]
-    assert quality["revision_paragraph_indices"] == [0]
-    assert quality["revision_reasons"] == {"0": "generic_relevance_bridge"}
+    assert quality["revision_reasons"] == {"1": "generic_relevance_bridge"}
 
 
 def test_cover_letter_quality_catches_subjectless_matches_formula():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "I built an agent workflow with approval and retrieval. "
-                    "This matches Northstar's responsibility to build agent-assisted workflows."
-                ),
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": (
-                    "I deployed a registration model on FPGA hardware. "
-                    "This matches Northstar's responsibility to deploy AI services."
-                ),
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+    rewrite = _complete_quality_letter()
+    for index, project_sentence in ((1, "This matches Northstar's responsibility to build agent-assisted workflows."),
+                                    (2, "This matches Northstar's responsibility to deploy AI services.")):
+        text_value = rewrite["cover_letter_paragraphs"][index]["text"]
+        final_sentence = text_value.split(". ")[-1]
+        rewrite["cover_letter_paragraphs"][index]["text"] = text_value.replace(final_sentence, project_sentence)
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
 
     assert quality["status"] == "failed"
-    assert quality["boilerplate_bridge_paragraph_indices"] == [0, 1]
+    assert quality["boilerplate_bridge_paragraph_indices"] == [1, 2]
     assert quality["revision_reasons"] == {
-        "0": "generic_relevance_bridge",
         "1": "generic_relevance_bridge",
+        "2": "generic_relevance_bridge",
     }
 
 
 def test_cover_letter_quality_rejects_repeated_role_link_verb():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "I built an agent workflow with approval and retrieval. "
-                    "Its use of retrieval overlaps with Northstar's RAG responsibility."
-                ),
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": (
-                    "I deployed a registration model on FPGA hardware. "
-                    "Its deployment overlaps with Northstar's service responsibility."
-                ),
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "Its use overlaps with Northstar's agent-assisted workflow responsibility.",
+    )
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "Northstar names model deployment as an AI Engineer responsibility.",
+        "Its deployment overlaps with Northstar's model deployment responsibility.",
+    )
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
 
     assert quality["status"] == "failed"
-    assert quality["boilerplate_bridge_paragraph_indices"] == [0, 1]
+    assert quality["boilerplate_bridge_paragraph_indices"] == [1, 2]
 
 
 def test_cover_letter_quality_rejects_direct_connection_noun_and_verb_bridges():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "I built an agent workflow with approval and retrieval. "
-                    "That work is a direct connection to Northstar's RAG responsibility."
-                ),
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": (
-                    "I deployed a registration model on FPGA hardware. "
-                    "Deploying it connects with Northstar's service responsibility."
-                ),
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "That work is a direct connection to Northstar's agent-workflow responsibility.",
+    )
+    rewrite["cover_letter_paragraphs"][2]["text"] = rewrite["cover_letter_paragraphs"][2]["text"].replace(
+        "Northstar names model deployment as an AI Engineer responsibility.",
+        "Deploying it connects with Northstar's model-service responsibility.",
+    )
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
 
     assert quality["status"] == "failed"
-    assert quality["boilerplate_bridge_paragraph_indices"] == [0, 1]
+    assert quality["boilerplate_bridge_paragraph_indices"] == [1, 2]
 
 
 def test_cover_letter_quality_catches_candidate_work_matches_role_formula():
-    rewrite = {
-        "cover_letter_paragraphs": [
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "Northstar calls for developing agent-assisted workflows in shared services.",
+        "Ayni work matches Northstar's agent-workflow needs in shared services.",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["boilerplate_bridge_paragraph_indices"] == [1]
+    assert quality["revision_reasons"] == {"1": "generic_relevance_bridge"}
+
+
+def test_cover_letter_quality_allows_a_single_semicolon():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "I contributed to workflow design in Python services, including model routing",
+        "I contributed to workflow design in Python services; I also worked on model routing",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "passed"
+    assert quality["stacked_detail_paragraph_indices"] == []
+    assert quality["revision_paragraph_indices"] == []
+
+
+def test_cover_letter_quality_revises_multiple_semicolon_stacked_details():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][1]["text"] = rewrite["cover_letter_paragraphs"][1]["text"].replace(
+        "I contributed to workflow design in Python services, including model routing",
+        "I contributed to workflow design in Python services; I also worked on model routing; "
+        "I tested recovery behavior",
+    )
+
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+
+    assert quality["status"] == "failed"
+    assert quality["stacked_detail_paragraph_indices"] == [1]
+    assert quality["revision_paragraph_indices"] == [1]
+    assert quality["revision_reasons"] == {"1": "stacked_detail"}
+
+
+def test_letter_revision_preserves_original_sources_and_filters_unapproved_ids():
+    paragraphs = _complete_quality_letter()["cover_letter_paragraphs"]
+    original = paragraphs[1]
+    repair = {
+        "revisions": [
             {
-                "section": "evidence",
-                "text": (
-                    "I implemented reliable Python services at Example Labs. "
-                    "The service work matches the role's Python service responsibility."
-                ),
+                **original,
+                "paragraph_index": 1,
+                "text": "I revised the project example while retaining its source evidence.",
+                "claim_ids": ["fabricated-claim"],
                 "cv_line_ids": ["L0001"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
+                "requirement_ids": ["fabricated-requirement"],
+                "research_finding_ids": ["RF99"],
+                "source_urls": ["https://untrusted.example/page"],
+                "preference_source_ids": ["unapproved-style-source"],
+            }
+        ],
+        "unresolved_questions": [],
+    }
+    context = {
+        "preferred_technical_profile_claim_ids": ["claim-ayni", "claim-registration"],
+        "paragraphs_for_repair": [
             {
-                "section": "evidence",
-                "text": (
-                    "I tested a retrieval feature with held-out data. "
-                    "The role evaluates RAG behavior with product engineers."
-                ),
-                "cv_line_ids": ["L0002"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
+                "paragraph_index": 1,
+                "allowed_claim_ids": ["claim-ayni"],
+                "allowed_cv_line_ids": ["L0001"],
+                "allowed_requirement_ids": ["REQ-02"],
+                "allowed_research_finding_ids": [],
+                "allowed_source_urls": [JOB_URL],
+                "allowed_preference_source_ids": [],
+            }
+        ],
     }
 
-    quality = _cover_letter_quality(rewrite, grounding)
+    revised, events = _merge_letter_revisions(
+        paragraphs,
+        _supported_letter_grounding(),
+        repair,
+        [1],
+        repair_context=context,
+        repair_reasons={1: "jev_unsupported"},
+    )
 
-    assert quality["status"] == "failed"
-    assert quality["boilerplate_bridge_paragraph_indices"] == [0]
-    assert quality["revision_reasons"] == {"0": "generic_relevance_bridge"}
+    assert revised[1]["text"] == repair["revisions"][0]["text"]
+    assert revised[1]["claim_ids"] == ["claim-ayni"]
+    assert revised[1]["cv_line_ids"] == ["L0001"]
+    assert revised[1]["requirement_ids"] == ["REQ-02"]
+    assert revised[1]["research_finding_ids"] == []
+    assert revised[1]["source_urls"] == [JOB_URL]
+    assert revised[1]["preference_source_ids"] == []
+    assert events == [
+        {
+            "paragraph_index": 1,
+            "fields_preserved_or_filtered": [
+                "claim_ids", "requirement_ids", "research_finding_ids",
+                "source_urls", "preference_source_ids",
+            ],
+        }
+    ]
 
 
-def test_cover_letter_quality_revises_semicolon_stacked_project_details():
-    rewrite = {
-        "cover_letter_paragraphs": [
-            {
-                "section": "evidence",
-                "text": (
-                    "I built an agent workflow with review tools; I added a recovery system. "
-                    "The role builds agent-assisted workflows."
-                ),
-                "claim_ids": ["claim-1"],
-                "requirement_ids": ["REQ-01"],
-                "source_urls": [JOB_URL],
-            },
-            {
-                "section": "evidence",
-                "text": (
-                    "I deployed a PyTorch model on FPGA hardware. "
-                    "The role deploys services across on-premises infrastructure."
-                ),
-                "claim_ids": ["claim-2"],
-                "requirement_ids": ["REQ-02"],
-                "source_urls": [JOB_URL],
-            },
-        ]
-    }
-    grounding = {
-        "results": [
-            {"id": f"cover_letter_paragraph_{index}", "output_type": "cover_letter_paragraph", "status": "supported"}
-            for index in range(2)
-        ]
-    }
+def test_letter_revision_fails_closed_when_a_required_paragraph_is_omitted():
+    paragraphs = _complete_quality_letter()["cover_letter_paragraphs"]
 
-    quality = _cover_letter_quality(rewrite, grounding)
-
-    assert quality["status"] == "failed"
-    assert quality["stacked_detail_paragraph_indices"] == [0]
-    assert quality["revision_paragraph_indices"] == [0]
-    assert quality["revision_reasons"] == {"0": "stacked_detail"}
+    with pytest.raises(OpenAIProviderError, match="omitted required paragraph"):
+        _merge_letter_revisions(
+            paragraphs,
+            _supported_letter_grounding(),
+            {"revisions": [], "unresolved_questions": []},
+            [1, 2],
+            repair_context={"paragraphs_for_repair": []},
+            repair_reasons={1: "jev_unsupported", 2: "jev_unsupported"},
+        )
 
 
 def test_cover_letter_contact_header_uses_only_contact_lines_before_cv_sections():
@@ -2763,30 +3551,70 @@ def test_rewriter_preserve_mode_omits_redundant_line_order_and_bounds_edits():
     assert "return an empty `resume_line_order`" in prompt
     assert "at most eight high-value" in prompt
     assert OUTPUT_SCHEMAS["rewriter"]["properties"]["resume_bullet_edits"]["maxItems"] == 8
-    assert MAX_OUTPUT_TOKENS["rewriter"] == 9_000
-    assert MAX_OUTPUT_TOKENS["letter_reviser"] == 2_000
-    paragraph_schema = OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["items"]
+    assert MAX_OUTPUT_TOKENS["rewriter"] == 20_000
+    assert MAX_OUTPUT_TOKENS["letter_reviser"] == 12_000
+    paragraph_schema = OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]
+    paragraph_schema = paragraph_schema["items"]
     assert "section" in paragraph_schema["required"]
-    assert paragraph_schema["properties"]["section"]["enum"] == ["evidence"]
+    assert paragraph_schema["properties"]["section"] == {
+        "type": ["string", "null"],
+        "enum": ["opening", "evidence", "contribution", "closing", None],
+    }
+    revision_schema = OUTPUT_SCHEMAS["letter_reviser"]["properties"]["revisions"]["items"]
+    assert "section" in revision_schema["required"]
+    assert revision_schema["properties"]["section"]["type"] == ["string", "null"]
+
+    def assert_strict_objects_have_required_properties(schema):
+        if schema.get("type") == "object":
+            properties = schema.get("properties", {})
+            assert set(schema.get("required", [])) == set(properties)
+            assert schema.get("additionalProperties") is False
+            for child in properties.values():
+                assert_strict_objects_have_required_properties(child)
+        if schema.get("type") == "array":
+            assert_strict_objects_have_required_properties(schema["items"])
+
+    assert_strict_objects_have_required_properties(OUTPUT_SCHEMAS["rewriter"])
+    assert_strict_objects_have_required_properties(OUTPUT_SCHEMAS["letter_reviser"])
     assert "research_finding_ids" in paragraph_schema["required"]
     assert paragraph_schema["properties"]["research_finding_ids"]["maxItems"] == 2
     assert "requirement_ids" in paragraph_schema["required"]
-    assert OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["maxItems"] == 2
-    assert PROMPT_VERSION == "2026-10-08.38"
-    assert OUTPUT_SCHEMA_VERSION == "application-output-v9"
-    assert "Do not claim broad fit" in prompt
+    assert OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["maxItems"] == 8
+    assert PROMPT_VERSION == "2026-10-11.72"
+    assert OUTPUT_SCHEMA_VERSION == "application-output-v19"
+    assert "unsupported equivalence claims" in prompt
     assert "A project or technology name alone does not establish" in prompt
-    assert "vary sentence openings" in prompt.casefold()
-    assert "first-person voice" in prompt.casefold()
-    assert "Begin each project paragraph with a clear first-person action" in " ".join(prompt.split())
-    assert "preserve both in the example" in " ".join(prompt.split())
-    assert "abstract connection to the role" in prompt.casefold()
-    assert "personal application letter, not resume bullets" in " ".join(prompt.split())
-    assert "named project from the selected technical profile" in " ".join(prompt.split())
-    assert "at most one" in " ".join(ROLE_PROMPTS["letter_reviser"].split()) or "one targeted repair" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
-    assert "at most two sentences and no semicolons" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
-    assert "Fix every applicable item in `cover_letter_quality_issues`" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
-    assert "Outreach is optional" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "one well-developed example can be enough" in " ".join(prompt.split())
+    assert "supports another important responsibility" in prompt
+    assert "Make one bounded repair" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
+    assert "multiple stacked semicolon details" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
+    assert "Apply every item in `cover_letter_quality_issues`" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
+    assert "There is no required word count" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "Use `section` only as optional internal metadata" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "one page is a practical norm" in " ".join(ROLE_PROMPTS["letter_reviewer"].split())
+    assert "Do not summarize or inventory several job requirements" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "remove the inventory or preview and keep only supported application context" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
+    assert MAX_OUTPUT_TOKENS["letter_reviewer"] == 8_000
+    assert "public_email_verified=true" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "70–120 words" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "avoid generic bridges" in " ".join(ROLE_PROMPTS["rewriter"].split()).casefold()
+    assert "replacement characters" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "do not weaken \"built\" to \"worked on\"" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "For separate examples, vary the sentence structure" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "Do not print candidate project brands or repository names" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "Do not write \"the role includes\"" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "Do not add a generic preview such as \"my relevant project work has covered" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "Do not treat a generic opening that previews later examples" in " ".join(ROLE_PROMPTS["letter_reviewer"].split())
+    assert "strict fact boundary" in " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "strict fact boundary" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
+    rewriter_prompt = " ".join(ROLE_PROMPTS["rewriter"].split())
+    assert "When an exact owner-attributed profile claim adds a material role-relevant" in rewriter_prompt
+    assert "consider incorporating it into that bullet" in rewriter_prompt
+    assert "Do not summarize or inventory several job requirements" in rewriter_prompt
+    assert "a few abbreviated notes as a completed letter" in rewriter_prompt
+    assert "what this experience prepares the candidate to contribute" in rewriter_prompt
+    assert "integrate it naturally and avoid repeating the same action" in rewriter_prompt
+    assert "A factual project sentence followed by a job-duty sentence is only an outline" in rewriter_prompt
 
 
 def test_invalid_optional_outreach_is_omitted_without_blocking_letter():
@@ -2828,7 +3656,12 @@ def test_invalid_optional_outreach_is_omitted_without_blocking_letter():
         set(),
         {
             "findings": [],
-            "contacts": [{"source_url": "https://example.org/team", "suppressed": False}],
+            "contacts": [{
+                "source_url": "https://example.org/team",
+                "name": "Recruitment team",
+                "public_email": "recruiting@example.org",
+                "suppressed": False,
+            }],
         },
         [],
         "preserve",
@@ -2838,8 +3671,165 @@ def test_invalid_optional_outreach_is_omitted_without_blocking_letter():
     assert len(rewrite["cover_letter_paragraphs"]) == 1
     assert rewrite["outreach_drafts"] == []
     assert rewrite["unresolved_questions"] == [
-        "Clue omitted outreach draft 1 because it has no approved candidate evidence."
+        "Clue omitted outreach draft 1 because it has no approved candidate evidence.",
+        "A verified public recruitment address was available, but no supported outreach draft was generated.",
     ]
+
+
+def test_invalid_optional_resume_edit_is_omitted_without_blocking_letter():
+    rewrite = {
+        "selected_cv_id": "cv-synthetic",
+        "resume_line_order": ["L0001"],
+        "resume_bullet_edits": [{
+            "line_id": "L9999",
+            "original_text": "A line from another CV.",
+            "revised_text": "An unsupported rewrite.",
+            "claim_ids": ["claim-synthetic"],
+            "cv_line_ids": ["L0001"],
+        }],
+        "cover_letter_paragraphs": [{
+            "section": "evidence",
+            "text": "I built a Python service for the role's API work.",
+            "claim_ids": ["claim-synthetic"],
+            "cv_line_ids": [],
+            "requirement_ids": [],
+            "research_finding_ids": [],
+            "source_urls": [JOB_URL],
+            "preference_source_ids": [],
+        }],
+        "application_answers": [],
+        "outreach_drafts": [],
+        "unresolved_questions": [],
+    }
+
+    _validate_rewrite(
+        rewrite,
+        "cv-synthetic",
+        {"L0001": "Built a Python service."},
+        {"claim-synthetic"},
+        {"findings": [], "contacts": []},
+        [],
+        "preserve",
+        job_source_url=JOB_URL,
+    )
+
+    assert rewrite["resume_bullet_edits"] == []
+    assert len(rewrite["cover_letter_paragraphs"]) == 1
+    assert rewrite["unresolved_questions"] == [
+        "Clue omitted 1 optional resume edit(s) because the exact selected CV source line was not verified; the original line was retained."
+    ]
+
+
+def test_supported_outreach_draft_requires_and_accepts_verified_contact_source():
+    contact_url = "https://example.org/team"
+    rewrite = {
+        "selected_cv_id": "cv-synthetic",
+        "resume_line_order": ["L0001"],
+        "resume_bullet_edits": [],
+        "cover_letter_paragraphs": [],
+        "application_answers": [],
+        "outreach_drafts": [{
+            "contact_source_url": contact_url,
+            "recipient_name": "Recruitment team",
+            "subject": "Question about AI Engineer",
+            "body": (
+                "Hello Recruitment Team, I am writing about the AI Engineer opening and its work on model deployment. "
+                "I built a Python retrieval service and am interested in how the team evaluates services used by researchers. "
+                "If you are able to share guidance, I would appreciate learning which technical priorities are most important for this role. "
+                "A short pointer to the team's public information would be helpful as I prepare my application. "
+                "Thank you for your time."
+            ),
+            "claim_ids": [],
+            "cv_line_ids": ["L0001"],
+            "source_urls": [contact_url, JOB_URL],
+        }],
+        "unresolved_questions": [],
+    }
+
+    _validate_rewrite(
+        rewrite,
+        "cv-synthetic",
+        {"L0001": "Built a Python retrieval service."},
+        set(),
+        {
+            "findings": [],
+            "contacts": [{
+                "source_url": contact_url,
+                "name": "Recruitment team",
+                "public_email": "recruiting@example.org",
+                "suppressed": False,
+            }],
+        },
+        [],
+        "preserve",
+        job_source_url=JOB_URL,
+    )
+
+    assert len(rewrite["outreach_drafts"]) == 1
+    assert rewrite["outreach_drafts"][0]["recipient_email"] == "recruiting@example.org"
+    assert rewrite["unresolved_questions"] == []
+
+
+def test_outreach_draft_rejects_replacement_characters_short_bodies_and_body_addresses():
+    contact_url = "https://example.org/team"
+    base = {
+        "selected_cv_id": "cv-synthetic",
+        "resume_line_order": ["L0001"],
+        "resume_bullet_edits": [],
+        "cover_letter_paragraphs": [],
+        "application_answers": [],
+        "unresolved_questions": [],
+    }
+    valid_body = (
+        "Hello Recruitment Team, I am writing about the AI Engineer opening and its work on model deployment. "
+        "I built a Python retrieval service and am interested in how the team evaluates services used by researchers. "
+        "If you are able to share guidance, I would appreciate learning which technical priorities are most important for this role. "
+        "A short pointer to the team's public information would be helpful as I prepare my application. Thank you for your time."
+    )
+    invalid_drafts = [
+        {"subject": "Question � about the AI Engineer role", "body": valid_body},
+        {"subject": "Question about the AI Engineer role", "body": "Could you share more about the role?"},
+        {"subject": "Question about the AI Engineer role", "body": valid_body + " Please email me at juan@example.com."},
+    ]
+    expected_reasons = [
+        "replacement character",
+        "70-to-120-word range",
+        "email address",
+    ]
+
+    for draft, expected_reason in zip(invalid_drafts, expected_reasons, strict=True):
+        rewrite = {
+            **base,
+            "outreach_drafts": [{
+                "contact_source_url": contact_url,
+                "recipient_name": "Recruitment team",
+                **draft,
+                "claim_ids": [],
+                "cv_line_ids": ["L0001"],
+                "source_urls": [contact_url, JOB_URL],
+            }],
+        }
+        _validate_rewrite(
+            rewrite,
+            "cv-synthetic",
+            {"L0001": "Built a Python retrieval service."},
+            set(),
+            {
+                "findings": [],
+                "contacts": [{
+                    "source_url": contact_url,
+                    "name": "Recruitment team",
+                    "public_email": "recruiting@example.org",
+                    "suppressed": False,
+                }],
+            },
+            [],
+            "preserve",
+            job_source_url=JOB_URL,
+        )
+
+        assert rewrite["outreach_drafts"] == []
+        assert any(expected_reason in question for question in rewrite["unresolved_questions"])
 
 
 def test_resume_document_heading_detection_covers_common_section_and_project_titles():
@@ -2847,6 +3837,41 @@ def test_resume_document_heading_detection_covers_common_section_and_project_tit
     assert _looks_like_heading("Selected AI and ML Projects")
     assert _looks_like_subheading("Transformer Model | Independent project")
     assert not _looks_like_subheading("name@example.org | +39 123 456")
+
+
+def test_resume_reflow_repairs_pdf_wraps_bullets_and_inline_skill_categories():
+    lines = [
+        {"id": "L0001", "text": "JUAN MARTIN SANCHEZ-BARDELLINI"},
+        {"id": "L0002", "text": "AI/ML Engineer"},
+        {"id": "L0003", "text": "Professional Profile"},
+        {"id": "L0004", "text": "Engineer using simulation      -generated systems across"},
+        {"id": "L0005", "text": "large-scale test cases."},
+        {"id": "L0006", "text": "Technical Skills"},
+        {
+            "id": "L0007",
+            "text": "APIs and applications: FastAPI, React Databases: PostgreSQL, SQLite",
+        },
+        {"id": "L0008", "text": "\ufffd Built a retrieval service with routing"},
+        {"id": "L0009", "text": "and continued retrieval behavior."},
+    ]
+    rewrite = {
+        "resume_line_order": [item["id"] for item in lines],
+        "resume_bullet_edits": [
+            {"line_id": "L0008", "revised_text": "Built a retrieval service with routing"}
+        ],
+    }
+
+    blocks = _resume_render_blocks(lines, rewrite)
+
+    assert [block["type"] for block in blocks] == [
+        "header", "header", "heading", "plain", "heading", "skill", "skill", "bullet"
+    ]
+    assert blocks[3]["text"] == "Engineer using simulation-generated systems across large-scale test cases."
+    assert blocks[5]["text"] == "APIs and applications: FastAPI, React"
+    assert blocks[6]["text"] == "Databases: PostgreSQL, SQLite"
+    assert blocks[7]["text"] == "Built a retrieval service with routing and continued retrieval behavior."
+    assert blocks[7]["type"] == "bullet"
+    assert lines[3]["text"] == "Engineer using simulation      -generated systems across"
 
 
 def test_descriptive_profile_supports_only_close_cover_letter_preferences():
@@ -2971,35 +3996,70 @@ def test_researcher_prompt_requires_useful_facts_even_without_public_contacts():
     assert "general_recruitment_inbox" in contact_types
 
 
-def test_rewriter_cover_letter_prompt_requires_a_complete_evidence_led_letter():
-    prompt = ROLE_PROMPTS["rewriter"]
-    normalized_prompt = " ".join(prompt.split())
+def test_cover_letter_prompt_and_review_use_research_based_flexible_quality_criteria():
+    prompt = " ".join(ROLE_PROMPTS["rewriter"].split())
+    reviser_prompt = " ".join(ROLE_PROMPTS["letter_reviser"].split())
+    reviewer_prompt = " ".join(ROLE_PROMPTS["letter_reviewer"].split())
     recruiter_prompt = " ".join(ROLE_PROMPTS["recruiter"].split())
-    assert "Return exactly two `evidence` paragraphs" in normalized_prompt
-    assert "locally generated title already names the role and employer" in normalized_prompt
-    assert "personal application letter, not resume bullets followed by generic fit" in normalized_prompt
-    assert "Prefer a specific, role-relevant named project from the selected technical profile" in normalized_prompt
-    assert "Agent-assisted workflows are also an explicit part of IFOM's role" in normalized_prompt
-    assert "must use distinct candidate evidence and distinct role criteria" in normalized_prompt
-    assert "requirement_id" in normalized_prompt
-    assert "not a whitelist of candidate sources" in normalized_prompt
-    assert "Jev checks the complete paragraph against the cited candidate evidence and the selected job listing" in normalized_prompt
-    assert "A CV line is valid candidate evidence" in normalized_prompt
-    assert "locally rendered role heading already states application intent" in normalized_prompt
-    assert "Preserve exact project names" in normalized_prompt
-    assert "never turn a project description into a first-person action" in normalized_prompt
-    assert "Do not claim broad fit" in normalized_prompt
-    assert "owner's direct, modest voice" in normalized_prompt
-    assert "at most two sentences" in normalized_prompt
-    assert "preferred_technical_profile_claim_ids" in normalized_prompt
-    assert "at most 100 words" in normalized_prompt
-    assert "one strong, role-relevant fact" in normalized_prompt
-    assert "Avoid semicolons" in normalized_prompt
-    assert "Unknown or AI-assisted profiles and writing samples are style guidance only" in normalized_prompt
+
+    assert "complete, role-specific application letter, not a brief note" in prompt
+    assert "These are content functions, not mandatory separate sections" in prompt
+    assert "Keep the owner's direct, modest voice" in prompt
+    assert "Keep the owner's direct, modest voice" in reviser_prompt
+    assert "use this as a practical guide, not a quota" in prompt
+    assert "one well-developed example can be enough" in prompt
+    assert "complementary evidence can make a stronger case" in prompt
+    assert "State a personal reason, enthusiasm, or employer preference only when" in prompt
+    assert "strict fact boundary" in prompt
+    assert "reproduce its `original_text` exactly" in prompt
+    assert "requirement IDs are provenance metadata and do not count as a written connection" in prompt
+    assert "do not wrap it in phrases such as" in prompt
+    assert "Jev checks each complete paragraph" in prompt
+    assert "direct, modest voice" in prompt
+    assert "There is no fixed word count, paragraph count, section order, or sentence count" in reviser_prompt
+    assert "When Jev removes a whole example" in reviser_prompt
+    assert "replace the paragraph with a directly supported example when one is available" in reviser_prompt
+    assert "Preserve the original citation and source ID arrays exactly" in reviser_prompt
+    assert "Do not require a specific number of words, paragraphs, or labeled sections" in reviewer_prompt
+    assert "professional conclusion" in reviewer_prompt
+    assert "the title, salutation, and signature do not do this work" in prompt
+    assert "one project fact plus one job duty" in reviser_prompt
+    assert "A contribution sentence plus a parallel job-duty sentence is an outline" in reviewer_prompt
+    assert prompt.count("Connect each candidate example") <= 1
+    assert "Do not print candidate project brands or repository names" in prompt
+    assert "A focused body can be complete when it identifies the application" in reviewer_prompt
+    assert "body much shorter than the ordinary one-page norm deserves close scrutiny" in reviewer_prompt
+    assert "do not count as body substance" in reviewer_prompt
+    assert "A short letter passes only when its prose still makes a developed, role-specific case" in reviewer_prompt
+    assert "A 3 is an affirmative quality judgment" in reviewer_prompt
+    assert "few compressed project statements do not become a complete letter" in reviewer_prompt
+    assert "Recommend `ready` only when every dimension scores at least 3" in reviewer_prompt
+    assert "selected_profile_evidence_for_review" in reviewer_prompt
+    assert "material_gap" in reviewer_prompt
+    assert "Do not require every selected claim to appear" in reviewer_prompt
+    assert "Do not approve a short body only because it has an application title" in reviewer_prompt
+    assert "`paragraph_index` equal to the current body paragraph count" in reviser_prompt
     assert "cite at least one exact selected-CV line ID" in recruiter_prompt
     assert "a profile-only claim cannot establish CV coverage" in recruiter_prompt
-    assert "one targeted repair" in " ".join(ROLE_PROMPTS["letter_reviser"].split())
 
+    paragraph_schema = OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]
+    assert paragraph_schema["maxItems"] == 8
+    assert "minItems" not in paragraph_schema
+    assert paragraph_schema["items"]["properties"]["section"]["enum"] == [
+        "opening", "evidence", "contribution", "closing", None
+    ]
+    revision_schema = OUTPUT_SCHEMAS["letter_reviser"]["properties"]["revisions"]
+    assert revision_schema["maxItems"] == 8
+    assert "minItems" not in revision_schema
+    assert revision_schema["items"]["properties"]["paragraph_index"]["maximum"] == 7
+    review_schema = OUTPUT_SCHEMAS["letter_reviewer"]
+    assert review_schema["properties"]["dimensions"]["minItems"] == 5
+    assert review_schema["properties"]["dimensions"]["maxItems"] == 5
+    assert review_schema["properties"]["issues"]["maxItems"] == 8
+    assert review_schema["properties"]["profile_evidence_assessment"]["maxItems"] == 4
+    assert set(review_schema["required"]) == {
+        "decision", "dimensions", "issues", "profile_evidence_assessment"
+    }
 
 def test_diagnoser_prompt_requires_verbatim_source_and_line_ids():
     prompt = " ".join(ROLE_PROMPTS["diagnoser"].split())
@@ -3490,7 +4550,9 @@ def test_crawler_rejects_private_dns_and_research_requires_source_supported_cont
     assert len(checked["contacts"]) == 1
     assert checked["contacts"][0]["name"] == "Alex Rivera"
     writer_context = _research_context(checked)
-    assert "public_email" not in json.dumps(writer_context)
+    assert '"public_email":' not in json.dumps(writer_context)
+    assert "alex@example.org" not in json.dumps(writer_context)
+    assert writer_context["contacts"][0]["public_email_verified"] is True
     assert "alex@example.org" not in json.dumps(writer_context)
 
 
@@ -4131,13 +5193,15 @@ def test_openai_local_preflight_releases_reservation_without_claiming_api_usage(
 
 def test_payloads_fix_model_storage_and_limit_crawler_to_researcher():
     plain = _payload("rewriter", {"test": "synthetic"})
-    letter_reviser = _payload("letter_reviser", {"test": "synthetic"})
+    letter_reviser = _payload("letter_reviser", {"paragraphs_for_repair": [{"paragraph_index": 1}, {"paragraph_index": 2}]})
     researcher = _payload("researcher", {"test": "synthetic"}, tools=[CRAWL_TOOL])
     assert plain["model"] == researcher["model"] == "gpt-6-luna"
     assert plain["reasoning"] == letter_reviser["reasoning"] == researcher["reasoning"] == {"effort": "high"}
     assert plain["store"] is letter_reviser["store"] is researcher["store"] is False
-    assert plain["text"]["format"]["name"] == "clue_rewriter_v7"
-    assert letter_reviser["text"]["format"]["name"] == "clue_letter_reviser_v5"
+    assert plain["text"]["format"]["name"] == "clue_rewriter_v14"
+    assert letter_reviser["text"]["format"]["name"] == "clue_letter_reviser_v12"
+    revision_array = letter_reviser["text"]["format"]["schema"]["properties"]["revisions"]
+    assert revision_array["minItems"] == revision_array["maxItems"] == 2
     assert researcher["text"]["format"]["name"] == "clue_researcher_v4"
     assert "tools" not in plain
     assert researcher["tools"] == [CRAWL_TOOL]
@@ -4426,3 +5490,102 @@ def test_application_workspace_groups_packet_versions_and_submission_receipts(se
     assert historical_download.content == older_bytes
     assert client.get(f"/preparations/{record['id']}").status_code == 200
     assert client.get("/applications/not-a-request").status_code == 404
+
+
+def test_cover_letter_body_cannot_duplicate_rendered_salutation_and_signoff():
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][0]["text"] = (
+        "Dear Hiring Team,\n\n" + rewrite["cover_letter_paragraphs"][0]["text"]
+    )
+    rewrite["cover_letter_paragraphs"][-1]["text"] += "\n\nYours sincerely,\nCandidate"
+    quality = _cover_letter_quality(rewrite, _supported_letter_grounding())
+    assert quality["status"] == "failed"
+    assert "Return body prose only" in " ".join(quality["issues"])
+    assert 0 in quality["revision_paragraph_indices"]
+    assert len(rewrite["cover_letter_paragraphs"]) - 1 in quality["revision_paragraph_indices"]
+
+
+def test_letter_profile_evidence_in_introduction_counts_without_a_section_quota():
+    preferred = ["intro-profile"]
+    rewrite = _complete_quality_letter()
+    rewrite["cover_letter_paragraphs"][0]["claim_ids"] = preferred
+    quality = _cover_letter_quality(
+        rewrite, _supported_letter_grounding(), preferred_profile_claim_ids=preferred
+    )
+    assert quality["preferred_profile_claims_used"] == 1
+    assert "use_technical_profile_evidence" not in quality["revision_reasons"].values()
+
+
+def test_second_letter_repair_rebases_surviving_indices_and_stops_after_two(monkeypatch):
+    from clue_ai import application_workflow as workflow
+
+    paragraphs = [{"section": "evidence", "text": "Supported body."}]
+    grounding = {"results": [
+        {"id": "cover_letter_paragraph_0", "output_type": "cover_letter_paragraph", "final_artifact_id": None},
+        {"id": "cover_letter_paragraph_1", "output_type": "cover_letter_paragraph", "final_artifact_id": "cover_letter_paragraph_0"},
+    ]}
+    calls = []
+
+    def repair(**kwargs):
+        calls.append(kwargs)
+        return {"cover_letter_paragraphs": paragraphs}, grounding, {
+            "status": "completed", "attempted": True,
+            "final_writing_review": {"status": "needs_revision"},
+        }
+
+    monkeypatch.setattr(workflow, "_repair_cover_letter_once", repair)
+    monkeypatch.setattr(workflow, "_cover_letter_quality", lambda *_args, **_kwargs: {"status": "failed"})
+    _, _, report = workflow._repair_cover_letter(
+        original_paragraphs=[], recruiter_requirements=[],
+        preferred_profile_claim_ids=[], technical_profile_sources=[],
+    )
+    assert len(calls) == 2
+    assert calls[1]["original_paragraphs"] == paragraphs
+    assert [item["id"] for item in calls[1]["grounding"]["results"]] == ["cover_letter_paragraph_0"]
+    assert report["attempt_limit"] == 2
+    assert report["attempt_count"] == 2
+    assert len(report["attempt_reports"]) == 2
+
+
+def test_missing_profile_repair_does_not_reassign_evidence_already_in_introduction():
+    from clue_ai import application_workflow as workflow
+
+    context = workflow._letter_repair_context(
+        job={"title": "AI Engineer", "canonical_url": "https://example.org/job"},
+        original_paragraphs=[
+            {"section": "opening", "text": "I built an agent workflow system.", "claim_ids": ["agent"]},
+            {"section": "closing", "text": "Thank you for considering my application."},
+        ],
+        grounding={"results": []}, failed_indices=[2],
+        repair_reasons={2: "missing_candidate_evidence"}, approved_claims=[],
+        technical_profile_sources=[{"source_id": "profile", "filename": "profile.md", "use": "cover_letter", "evidence": [
+            {"id": "agent", "claim_text": "I built an agent workflow system.", "evidence_excerpt": "I built an agent workflow system.", "review_status": "unreviewed"},
+            {"id": "deployment", "claim_text": "I deployed a model on FPGA hardware.", "evidence_excerpt": "I deployed a model on FPGA hardware.", "review_status": "unreviewed"},
+        ]}], preferred_profile_claim_ids=["agent", "deployment"],
+        writing_preferences={}, owner_writing_context=[], research={"findings": []},
+        recruiter_requirements=[], cv_lines={}, quality_issues=[],
+    )
+    assert context["paragraphs_for_repair"][0]["allowed_claim_ids"] == ["deployment"]
+
+
+def test_local_caps_can_be_disabled_without_disabling_usage_tracking(settings, database):
+    from clue_ai.repository import reserve_jev_budget
+
+    gated = replace(_enable_synthetic_openai(settings, database), enforce_local_spend_caps=False)
+    save_openai_controls(
+        database, consent=True, monthly_cap_usd=0.000001, opportunity_cap_usd=0.000001,
+        input_usd_per_million=0.1, output_usd_per_million=0.5,
+        rate_card_revision=datetime.now(timezone.utc).date().isoformat(),
+    )
+    usage_id = reserve_usage(
+        database, gated, get_settings(database), request_id="no-local-cap", job_id="job",
+        stage="rewriter", payload={"input": "Synthetic request"},
+        input_token_count=10000, max_output_tokens=1000,
+    )
+    jev_id, _ = reserve_jev_budget(
+        database, None, "jev-test", 80000, 0.042, 0.000001, enforce_cap=False
+    )
+    with connect(database) as db:
+        assert db.execute("SELECT status FROM openai_usage WHERE id=?", (usage_id,)).fetchone()["status"] == "reserved"
+        assert db.execute("SELECT status FROM jev_usage WHERE id=?", (jev_id,)).fetchone()["status"] == "reserved"
+    assert settle_usage(database, usage_id, input_tokens=10, output_tokens=5) > 0

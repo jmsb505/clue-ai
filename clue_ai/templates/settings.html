@@ -86,6 +86,7 @@
     <div class="budget-labels"><span>{{ "%.4f"|format(openai_usage.reserved_usd) }} USD unresolved reserve</span><span>{{ openai_usage.unknown_count }} usage receipt(s) need reconciliation</span></div>
     <p>Usage is kept in a separate ledger from Jev. Clue has no OpenAI key in this repository or browser UI. Caps apply to calls made through this local app, not other uses of the same provider account.</p>
   </div>
+  {% if not local_spend_caps_enabled %}<p><b>Local spending caps are disabled for OpenAI and Jev.</b> Usage is still recorded; configured provider limits apply. The saved local cap values below are inactive.</p>{% endif %}
   <form action="/settings/openai-controls" method="post" class="openai-controls-form">
     <div class="form-grid">
       <label class="field"><span>Monthly hard cap · USD</span><input type="number" name="monthly_cap_usd" min="0" max="10000" step="0.01" value="{{ openai_settings.openai_monthly_budget_usd or '' }}" required></label>

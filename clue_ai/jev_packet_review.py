@@ -126,6 +126,7 @@ def check_tailored_resume_fit(
         settings.jev_reserved_tokens_per_request,
         settings.jev_price_per_million_input_tokens,
         settings.monthly_jev_budget_usd,
+        enforce_cap=settings.enforce_local_spend_caps,
     )
     if usage_id is None:
         raise JevPacketReviewError(
