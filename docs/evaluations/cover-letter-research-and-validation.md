@@ -48,3 +48,7 @@ Acceptance requires focused and full regression checks, a manually triggered liv
 - Independent assessment: this is a usable application letter rather than a brief project note. The rationale is particular to the employer, actions and methods are developed, quantified evidence is qualified, and the body ends professionally. Some technical lists and repeated conditional contribution wording could still be polished. Owner voice acceptance, repeatability across other listings, and hiring outcomes remain unverified. No application or outreach was sent.
 
 The final request ledger, including generation, repair and editorial review calls, contains 11 settled GPT calls at `high`, 126,997 input tokens and 39,167 output tokens. The configured local rate-card estimate is $0.0322832, not a provider billing reconciliation. No usage from this request remains unsettled. [ADR 0039](../decisions/0039-optional-local-spending-gates.md) records the local-cap instruction and implementation.
+
+## Delivery
+
+Implementation commit `d7df5b3387e770b4fb907d03ee948454b6661a81` merged to main in [PR #5](https://github.com/jmsb505/clue-ai/pull/5), merge `4e634f9f7653d87e920da1d3a4ff5aee5d485ba8`. GitHub reported a clean merge and no status/check runs or required branch checks. Local regression, live and rendered evidence are recorded above. Credentials and personal artifacts were excluded.
