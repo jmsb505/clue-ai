@@ -14,6 +14,7 @@ from clue_ai.repository import (
     all_active_jobs,
     get_run_result_counts,
     get_run_results,
+    list_search_history_jobs,
     save_jobs,
     save_run_results,
     set_job_user_state,
@@ -191,6 +192,61 @@ def test_opportunities_rank_review_by_fit_with_exact_counts_and_pagination(datab
     second = get_run_results(database, "ranked", filter_status="opportunities", limit=1, offset=1)
     assert first[0]["title"] == "Related AI graduate"
     assert second[0]["title"] == "Confirmed junior"
+
+
+def test_search_history_lists_latest_unique_positions_by_fit_and_keeps_run_link(settings, database):
+    seed_ranked_results(database)
+    senior = next(
+        job for job in get_run_results(database, "ranked") if job["title"] == "Senior conflict"
+    )
+    update_score(database, "ranked", senior["id"], score_state="scored", combined_score=0.99)
+    rows, total = list_search_history_jobs(database, limit=2)
+    assert total == 4
+    assert [row["title"] for row in rows] == ["Senior conflict", "Pending role"]
+    assert all(row["run_id"] == "ranked" for row in rows)
+
+    response = TestClient(create_app(settings)).get("/searches")
+    assert response.status_code == 200
+    assert "RANKED POSITIONS FROM YOUR SEARCHES" in response.text
+    assert response.text.index("Senior conflict") < response.text.index("Pending role")
+    assert "/searches/ranked" in response.text
+    assert "Open source posting" in response.text
+    assert "Hidden lead" not in response.text
+
+
+def test_search_history_uses_latest_score_for_duplicate_positions(database):
+    save_search_run(database, "first-history", SearchCriteria())
+    save_jobs(database, [make_job(title="Same posting")])
+    save_run_results(database, "first-history", all_active_jobs(database))
+    first_job = get_run_results(database, "first-history")[0]
+    update_score(database, "first-history", first_job["id"], score_state="scored", combined_score=0.9)
+    update_run(database, "first-history", status="complete", completed=True)
+
+    save_search_run(database, "second-history", SearchCriteria())
+    save_run_results(database, "second-history", all_active_jobs(database))
+    update_score(database, "second-history", first_job["id"], score_state="scored", combined_score=0.4)
+    update_run(database, "second-history", status="complete", completed=True)
+
+    rows, total = list_search_history_jobs(database)
+    assert total == 1
+    assert rows[0]["run_id"] == "second-history"
+    assert rows[0]["combined_score"] == 0.4
+
+
+def test_search_history_keeps_active_and_failed_searches_reopenable(settings, database):
+    save_search_run(database, "active-history", SearchCriteria(roles="Researcher"))
+    update_run(database, "active-history", status="running")
+    save_search_run(database, "failed-history", SearchCriteria(roles="Engineer"))
+    update_run(database, "failed-history", status="failed", error="Synthetic failure")
+
+    response = TestClient(create_app(settings)).get("/searches")
+
+    assert response.status_code == 200
+    assert "Previous searches · 2" in response.text
+    assert "/searches/active-history" in response.text
+    assert "/searches/failed-history" in response.text
+    assert "Running" in response.text
+    assert "Failed" in response.text
 
 
 def test_results_default_to_opportunities_with_filter_details_and_all_view(settings, database):

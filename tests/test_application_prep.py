@@ -340,7 +340,7 @@ def test_review_result_can_be_prepared_only_with_verified_location_and_stays_a_r
 def test_preparation_rejects_nonpublic_or_non_https_employer_sources(database):
     job_id = _save_eligible_match(database)
 
-    with pytest.raises(ValueError, match="direct public HTTPS employer listing URL"):
+    with pytest.raises(ValueError, match="direct public HTTPS job or application page URL"):
         request_preparation(
             database,
             job_id,
@@ -495,7 +495,8 @@ def test_review_listing_button_and_dossier_keep_jev_uncertainty_visible(settings
     assert "Jev marked this listing for review, not as a match" in search_page.text
     assert "Paid compensation" in search_page.text
     assert "Language requirements" in search_page.text
-    assert "Add employer listing link" in search_page.text
+    assert "Add a public employer application page" in search_page.text
+    assert "It will not sign in, fill fields, or submit anything." in search_page.text
 
     response = client.post(
         f"/jobs/{job_id}/prepare",

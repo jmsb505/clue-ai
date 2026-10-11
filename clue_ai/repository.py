@@ -468,6 +468,53 @@ def list_search_runs(database_path: Path) -> list[dict[str, Any]]:
     return runs
 
 
+def list_search_history_jobs(
+    database_path: Path, *, limit: int = 50, offset: int = 0
+) -> tuple[list[dict[str, Any]], int]:
+    """List unique historical jobs using their latest saved run and current run rank."""
+    latest = """WITH ranked AS (
+        SELECT r.run_id, r.job_id, r.rank, r.score_state, r.filter_status,
+               r.combined_score, r.eligibility_status, r.eligibility_evidence,
+               run.created_at AS run_created_at,
+               ROW_NUMBER() OVER (
+                   PARTITION BY r.job_id
+                   ORDER BY run.created_at DESC, run.id DESC
+               ) AS recency
+        FROM search_results r
+        JOIN search_runs run ON run.id = r.run_id
+    )"""
+    where = f"WHERE COALESCE(u.hidden, 0) = 0 AND {not_applied_sql()}"
+    with connect(database_path) as db:
+        total = db.execute(
+            f"""{latest}
+            SELECT COUNT(*) FROM ranked r
+            JOIN jobs j ON j.id = r.job_id
+            LEFT JOIN job_user_state u ON u.job_id = j.id
+            {where} AND r.recency = 1"""
+        ).fetchone()[0]
+        rows = db.execute(
+            f"""{latest}
+            SELECT j.id, j.title, j.company, j.location_raw, j.workplace_type,
+                   j.employment_type, j.salary_min, j.salary_max, j.salary_currency,
+                   j.salary_period, j.posted_at, j.last_checked_at, j.canonical_url,
+                   r.run_id, r.rank, r.score_state, r.filter_status,
+                   r.combined_score, r.eligibility_status, r.eligibility_evidence,
+                   r.run_created_at,
+                   COALESCE(u.saved, 0) AS saved,
+                   (SELECT js.source_url FROM job_sources js
+                    WHERE js.job_id = j.id ORDER BY js.last_seen_at DESC LIMIT 1) AS source_url
+            FROM ranked r
+            JOIN jobs j ON j.id = r.job_id
+            LEFT JOIN job_user_state u ON u.job_id = j.id
+            {where} AND r.recency = 1
+            ORDER BY CASE WHEN r.combined_score IS NULL THEN 1 ELSE 0 END,
+                     r.combined_score DESC, r.rank ASC, r.run_created_at DESC
+            LIMIT ? OFFSET ?""",
+            (max(1, int(limit)), max(0, int(offset))),
+        ).fetchall()
+    return [dict(row) for row in rows], int(total)
+
+
 def has_active_runs(database_path: Path) -> bool:
     with connect(database_path) as db:
         row = db.execute(
@@ -973,11 +1020,25 @@ def clear_job_user_state(database_path: Path, job_id: str) -> None:
 def saved_jobs(database_path: Path) -> list[dict[str, Any]]:
     with connect(database_path) as db:
         rows = db.execute(
-            f"""SELECT j.* FROM jobs j JOIN job_user_state u ON u.job_id = j.id
+            f"""WITH ranked AS (
+                   SELECT r.*, run.created_at AS run_created_at,
+                          ROW_NUMBER() OVER (
+                              PARTITION BY r.job_id
+                              ORDER BY run.created_at DESC, run.id DESC
+                          ) AS recency
+                   FROM search_results r JOIN search_runs run ON run.id = r.run_id
+               )
+               SELECT j.*, r.run_id AS latest_run_id, r.rank AS jev_rank,
+                      r.score_state, r.filter_status,
+                      r.combined_score, r.eligibility_status AS result_eligibility_status
+               FROM jobs j JOIN job_user_state u ON u.job_id = j.id
+               LEFT JOIN ranked r ON r.job_id = j.id AND r.recency = 1
                WHERE u.saved = 1 AND {not_applied_sql()} ORDER BY u.updated_at DESC"""
         ).fetchall()
         result = [dict(row) for row in rows]
         for job in result:
+            if job.get("result_eligibility_status"):
+                job["eligibility_status"] = job.pop("result_eligibility_status")
             sources = db.execute(
                 """SELECT s.name, s.attribution, s.state, s.last_state,
                           s.last_checked_at AS source_checked_at,

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Search history · Clue AI{% endblock %}
+{% block eyebrow %}RANKED POSITIONS FROM YOUR SEARCHES{% endblock %}
+{% block content %}
+<section class="page-intro">
+  <div>
+    <span class="kicker kicker-muted">YOUR SEARCH HISTORY · {{ total }} POSITIONS</span>
+    <h1>Keep the strongest<br><em>leads in view.</em></h1>
+    <p>Positions are grouped by job and sorted by their latest saved Jev ranking. Each score links to the search snapshot that produced it; it is a fit signal, not a hiring probability.</p>
+  </div>
+  <div class="intro-mark" aria-hidden="true"><span>↕</span><i>⌕</i></div>
+</section>
+
+{% if not runs %}
+  <section class="empty-state panel">
+    <span class="empty-illustration" aria-hidden="true">⌕</span>
+    <span class="kicker kicker-muted">NO SEARCHES SAVED YET</span>
+    <h2>Your previous positions will collect here.</h2>
+    <p>Start a search to build a ranked history you can revisit. Saving a position only adds it to your local shortlist; it will not start research or document generation.</p>
+    <a class="button button-dark" href="/search">Start a search <span aria-hidden="true">→</span></a>
+  </section>
+{% else %}
+  <div class="history-controls">
+    <div><span class="kicker kicker-muted">LATEST SAVED RANKING PER POSITION</span><h2>{{ total }} previous positions</h2></div>
+    <a class="button button-outline" href="/search">Run another search <span aria-hidden="true">→</span></a>
+  </div>
+  {% if not jobs %}
+    <section class="empty-state panel"><h2>No visible positions in this history.</h2><p>Hidden or already applied roles are omitted here. Your saved search runs remain available below.</p></section>
+  {% else %}
+    <section class="history-job-list" aria-label="Previously searched positions sorted by Jev fit">
+      {% for job in jobs %}
+        <article class="history-job-row">
+          <div class="history-rank" aria-label="{% if job.combined_score is not none %}Jev fit score {{ '%.2f'|format(job.combined_score) }}{% else %}Not assessed{% endif %}">
+            {% if job.combined_score is not none %}<b>{{ "%.2f"|format(job.combined_score) }}</b><small>Jev fit</small>{% else %}<b>—</b><small>Not assessed</small>{% endif %}
+          </div>
+          <div class="history-job-detail">
+            <h3>{{ job.title }}</h3>
+            <p>{{ job.company or 'Company not listed' }} <span class="dot-separator">·</span> {{ job.location_raw or 'Location not specified' }}</p>
+            <div class="job-tags">
+              {% if job.filter_status == 'match' %}<span class="tag tag-green">Jev: matches filters</span>
+              {% elif job.filter_status == 'review' %}<span class="tag tag-amber">Jev: review filters</span>
+              {% elif job.filter_status == 'conflict' %}<span class="tag tag-warning">Conflicts with filters</span>
+              {% else %}<span class="tag tag-muted">Filter assessment pending</span>{% endif %}
+              {% if job.eligibility_status == 'eligible' %}<span class="tag tag-green">Location evidence found</span>
+              {% elif job.eligibility_status == 'needs_verification' %}<span class="tag tag-amber">Verify work location</span>
+              {% else %}<span class="tag tag-muted">Location not confirmed</span>{% endif %}
+              <span class="tag">Search rank {{ job.rank }} · {{ job.run_created_at[:10] }}</span>
+            </div>
+          </div>
+          <div class="history-job-actions">
+            <a class="button button-outline button-small" href="/searches/{{ job.run_id }}">Open ranked result</a>
+            {% if job.source_url %}<a class="button button-outline button-small" href="{{ job.source_url }}" target="_blank" rel="noopener noreferrer">Open source posting <span aria-hidden="true">↗</span></a>{% endif %}
+            {% if not job.saved %}
+              <form action="/jobs/{{ job.id }}/save" method="post"><input type="hidden" name="return_to" value="/searches?page={{ current_page }}"><button class="quiet-button" type="submit">Save for later</button></form>
+            {% else %}<span class="tag tag-green">Saved for later</span>{% endif %}
+            {% if job.score_state == 'scored' and job.eligibility_status == 'eligible' and job.filter_status in ['match', 'review'] %}
+              {% if preparation_cvs and preparation_claims_ready %}
+                <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
+                  <input type="hidden" name="run_id" value="{{ job.run_id }}">
+                  <label class="sr-only" for="history-cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
+                  <select id="history-cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
+                    {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv or (preparation_cvs|length == 1) %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
+                  </select>
+                  <label class="sr-only" for="history-source-{{ job.id }}">Optional public employer job or application page URL</label>
+                  <input id="history-source-{{ job.id }}" type="url" name="additional_source_url" placeholder="Optional public application-page URL">
+                  <button class="button button-dark button-small" type="submit">{% if job.filter_status == 'review' %}Prepare for review{% else %}Prepare application{% endif %} <span aria-hidden="true">→</span></button>
+                </form>
+              {% else %}<a class="button button-outline button-small" href="/evidence">Set up materials to prepare</a>{% endif %}
+            {% elif job.score_state != 'scored' %}<span class="panel-muted">Assess with Jev before preparation</span>
+            {% else %}<span class="panel-muted">Preparation requires confirmed eligible location and no Jev conflict.</span>{% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% endif %}
+  {% if page_count > 1 %}
+    <nav class="pagination" aria-label="Search history pages">
+      {% if current_page > 1 %}<a href="/searches?page={{ current_page - 1 }}">← Previous</a>{% else %}<span></span>{% endif %}
+      <span>Page {{ current_page }} of {{ page_count }}</span>
+      {% if current_page < page_count %}<a href="/searches?page={{ current_page + 1 }}">Next →</a>{% else %}<span></span>{% endif %}
+    </nav>
+  {% endif %}
+  <details class="history-runs">
+    <summary>Previous searches · {{ runs|length }}</summary>
+    <ul>{% for run in runs %}<li><a href="/searches/{{ run.id }}">{{ run.created_at[:10] }} · {{ run.criteria.roles or 'All roles' }}</a><span>{{ run.result_count }} positions · {{ run.scored_result_count }} scored{% if run.status != 'complete' %} · {{ run.status|title }}{% endif %}</span></li>{% endfor %}</ul>
+  </details>
+{% endif %}
+{% endblock %}
