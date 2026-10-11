@@ -74,3 +74,16 @@ PLAN-003 adds an X-lead page in the existing Jinja/CSS system with labeled role/
 | Add a React/data-table library | No existing React runtime; introduces another toolchain and visual defaults for a single-user local app. | **REJECT.** Use native links/forms and the installed Jinja/CSS stack. |
 
 Status names and totals must remain available as text, not color alone. Keep focus visible, use a semantic `nav` with an accessible label and `aria-current`, preserve the current result card headings/links, and make pagination links identify the destination page. No animation or component dependency is needed.
+
+## Ranked search history and application links — 2026-10-11
+
+**Purpose:** Reopen positions from prior search runs in current Jev-fit order, distinguish visiting a posting from preparing materials, and make observed public form structure usable during owner review.
+
+| Candidate | Product fit, access, and maintenance | Decision |
+|---|---|---|
+| Reuse saved run snapshots, semantic Jinja links/forms, and the existing Saved roles store | Preserves exact run provenance and local state. Native navigation works by keyboard and browser history; the ranked list can paginate without client-side state. | **ADAPT.** Add a Search history tab over unique positions using each position's latest saved Jev assessment; retain the original run link and run-specific rank. Keep Save for later as a local action and preparation as a separate explicit per-listing trigger. |
+| Start research when a user saves a role | Fewer clicks, but turns a reversible bookmark into provider/crawler work and conflicts with the owner's manual per-listing trigger. | **REJECT.** Save is side-effect free; Prepare starts research/generation for one eligible listing. |
+| Automated browser completion of employer applications | Would interact with third-party forms and can submit or change candidate data; requires login/session support and cannot be guaranteed across dynamic forms. | **REJECT.** Read static public field markup only after the selected preparation trigger. The owner opens the application page and enters/submits all values manually. |
+| Parse public form markup with the existing Scrapling response and Python HTML parser | Keeps the current stack, reads static HTML without browser interaction, and can discard input values before persistence. CSS visibility/JavaScript-rendered fields cannot be known without a browser. | **ADAPT.** Extract labels, control types, required flags, and visible options with fixed caps. Hide/password controls are discarded; dynamic or inaccessible forms are labeled unknown. |
+
+**Validation:** Keep visible focus, descriptive button/link labels, native pagination, and a responsive scroll container for the field table. Preserve original source and observation time beside every form observation. Do not turn a form inspection into a fit signal or job-open guarantee. Focused automated tests and browser review are recorded in PLAN-023 when complete.

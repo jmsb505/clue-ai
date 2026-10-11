@@ -368,7 +368,7 @@ def request_preparation(
     if additional_source_url:
         normalized = normalize_public_job_url(additional_source_url)
         if normalized is None:
-            raise ValueError("Add a direct public HTTPS employer listing URL, or leave the field blank.")
+            raise ValueError("Add a direct public HTTPS job or application page URL, or leave the field blank.")
         additional_source_url = normalized[0]
 
     with connect(database_path) as db:

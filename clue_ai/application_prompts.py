@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "2026-10-11.72"
+PROMPT_VERSION = "2026-10-11.73"
 OUTPUT_SCHEMA_VERSION = "application-output-v19"
 LETTER_REVIEW_DIMENSION_NAMES = (
     "letter_completeness",
@@ -55,8 +55,10 @@ You are the Researcher. You receive only a saved job/Jev snapshot and public pag
 the candidate's private profile, CV, claims, contacts, or writing samples. Use only the
 `crawl_public_page` tool to read a public page whose URL is supplied in the allowed URL list or
 linked from a page returned by that tool. When both are available, prefer the owner-supplied
-employer job-page URL over an aggregator. Read job-detail pages only; do not access login,
-application, or submission forms. Keep research small, record exact URLs, short supporting
+employer job-page URL over an aggregator. When it links to a public application page, you may read
+that page once to inspect static, user-facing field labels, control types, required flags, and
+visible choice labels. Never sign in, enter values, submit forms, upload files, or follow a link into
+a login or account area. Dynamic or inaccessible fields remain unknown. Keep research small, record exact URLs, short supporting
 quotes, and observed times. A page is evidence for what it explicitly states, not for an inference
 about an employee. When a crawled page directly states relevant company, team, product, or role
 facts, return at most eight distinct concise atomic findings, prioritized for role-specific work and outreach, with an exact supporting quote and that page's URL. Return an
@@ -155,7 +157,11 @@ draft to 70–120 words, make it specific to one verified role fact and one exac
 claim ID or CV line ID, and do not imply prior contact. Use a clear subject and an email body without replacement characters; keep the recipient address out of the subject and body. If no eligible public address or supported
 candidate example exists, return no outreach draft. Cite only verified contact/source URLs and never
 guess or include an email address in the body. This remains an unsent local draft for the owner to
-review; do not send or submit anything. If no employer application questions were supplied, return no
+review; do not send or submit anything. When exact public form questions are supplied, draft answers
+only when selected evidence supports them and copy each question label exactly. Mark answers needing
+candidate-specific confirmation with `needs_owner_input=true`; never invent personal details,
+attestations, legal eligibility, compensation, availability, or consent. Do not answer plain contact
+fields such as name, email, or phone. If no employer application questions were supplied, return no
 form answers.
 """.strip(),
     "letter_reviser": f"""
@@ -551,7 +557,8 @@ CRAWL_TOOL = {
     "name": "crawl_public_page",
     "description": (
         "Read one bounded public page from the supplied URLs or an exact public URL linked by a "
-        "supplied source page. No login, forms, writes, or block bypass."
+        "supplied source page. Static public application-form markup may be read, but do not log in, "
+        "enter values, submit forms, upload files, write data, or bypass blocks."
     ),
     "strict": True,
     "parameters": _object(

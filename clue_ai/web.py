@@ -116,6 +116,8 @@ from clue_ai.repository import (
     has_active_runs,
     hidden_jobs,
     list_companies,
+    list_search_history_jobs,
+    list_search_runs,
     list_sources,
     manual_x_leads,
     mark_source_for_review,
@@ -949,6 +951,47 @@ def create_app(
             },
         )
 
+    @app.get("/searches", response_class=HTMLResponse)
+    async def search_history_page(request: Request):
+        try:
+            requested_page = max(1, int(request.query_params.get("page", "1")))
+        except ValueError:
+            requested_page = 1
+        page_size = 50
+        jobs, total = list_search_history_jobs(
+            db_path, limit=page_size, offset=(requested_page - 1) * page_size
+        )
+        runs = list_search_runs(db_path)
+        page_count = max(1, (total + page_size - 1) // page_size)
+        page = min(requested_page, page_count)
+        if page != requested_page:
+            jobs, _ = list_search_history_jobs(
+                db_path, limit=page_size, offset=(page - 1) * page_size
+            )
+        evidence_sources = list_preparation_sources(db_path)
+        permitted_cvs = [
+            source for source in evidence_sources
+            if source["source_type"] == "resume" and source["permitted"]
+        ]
+        settings_row = get_settings(db_path)
+        return render(
+            request,
+            "search_history.html",
+            {
+                "active_page": "history",
+                "jobs": jobs,
+                "runs": runs,
+                "total": total,
+                "current_page": page,
+                "page_count": page_count,
+                "preparation_cvs": permitted_cvs,
+                "preparation_claims_ready": bool(approved_claims(db_path)),
+                "jev_consented": bool(settings_row.get("jev_consent_at")),
+                "jev_key_configured": bool(current_settings.api_key),
+                "notice": request.query_params.get("notice", ""),
+            },
+        )
+
     @app.get("/searches/{run_id}/status")
     async def search_status(run_id: str):
         run = get_run(db_path, run_id)
@@ -1635,12 +1678,19 @@ def create_app(
 
     @app.get("/saved", response_class=HTMLResponse)
     async def saved_page(request: Request):
+        evidence_sources = list_preparation_sources(db_path)
+        permitted_cvs = [
+            source for source in evidence_sources
+            if source["source_type"] == "resume" and source["permitted"]
+        ]
         return render(
             request,
             "saved.html",
             {
                 "active_page": "saved",
                 "jobs": saved_jobs(db_path),
+                "preparation_cvs": permitted_cvs,
+                "preparation_claims_ready": bool(approved_claims(db_path)),
                 "notice": request.query_params.get("notice", ""),
             },
         )

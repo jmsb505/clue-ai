@@ -3580,7 +3580,7 @@ def test_rewriter_preserve_mode_omits_redundant_line_order_and_bounds_edits():
     assert paragraph_schema["properties"]["research_finding_ids"]["maxItems"] == 2
     assert "requirement_ids" in paragraph_schema["required"]
     assert OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["maxItems"] == 8
-    assert PROMPT_VERSION == "2026-10-11.72"
+    assert PROMPT_VERSION == "2026-10-11.73"
     assert OUTPUT_SCHEMA_VERSION == "application-output-v19"
     assert "unsupported equivalence claims" in prompt
     assert "A project or technology name alone does not establish" in prompt
@@ -4500,6 +4500,83 @@ def test_crawler_can_follow_exact_external_source_links_but_not_unlinked_domains
     with pytest.raises(ResearchCrawlError, match="not supplied or linked"):
         crawler.crawl("https://unlinked.example.net/person", "guess a contact")
     assert len(fetched) == 3
+
+
+def test_public_form_parser_keeps_labels_and_choices_but_never_input_values():
+    from clue_ai.scrapling_research import _PublicFormParser
+
+    parser = _PublicFormParser()
+    parser.feed(
+        '<form><label for="motivation">Why this role?</label>'
+        '<textarea id="motivation" name="motivation">PRIVATE ANSWER</textarea>'
+        '<label for="country">Country</label><select id="country" required>'
+        '<option value="it">Italy</option><option value="fr">France</option></select>'
+        '<label for="email">Email</label><input id="email" type="email" value="PRIVATE EMAIL">'
+        '<input type="hidden" value="SECRET TOKEN">'
+        '<div hidden><label for="ghost">Hidden question</label>'
+        '<input id="ghost" type="text"></div>'
+        '<input id="css-hidden" style="display: none" type="text">'
+        '</form>'
+    )
+
+    fields = parser.result()
+    assert [(item["label"], item["control_type"]) for item in fields] == [
+        ("Why this role?", "textarea"),
+        ("Country", "select"),
+        ("Email", "email"),
+    ]
+    assert fields[0]["is_open_question"] is True
+    assert fields[1]["options"] == ["Italy", "France"]
+    assert fields[1]["required"] is True
+    assert "PRIVATE ANSWER" not in repr(fields)
+    assert "PRIVATE EMAIL" not in repr(fields)
+    assert "SECRET TOKEN" not in repr(fields)
+    assert "Hidden question" not in repr(fields)
+
+
+def test_research_reports_only_application_form_observations_with_sources():
+    posting_url = "https://jobs.example.org/careers/role"
+    application_url = "https://jobs.example.org/apply/role"
+    pages = {
+        posting_url: {
+            "url": posting_url,
+            "text": "Job details",
+            "links": [{"label": "Apply now", "url": application_url}],
+            "form_fields": [
+                {"field_id": "F001", "label": "Newsletter email", "control_type": "email"}
+            ],
+            "observed_at": "2026-10-11T10:00:00Z",
+        },
+        application_url: {
+            "url": application_url,
+            "text": "Public application form",
+            "links": [],
+            "form_fields": [
+                {
+                    "field_id": "F001", "label": "Email", "control_type": "email",
+                    "required": True, "options": [], "is_open_question": False,
+                },
+                {
+                    "field_id": "F002", "label": "Why are you applying?", "control_type": "textarea",
+                    "required": True, "options": [], "is_open_question": True,
+                },
+            ],
+            "observed_at": "2026-10-11T10:01:00Z",
+        },
+    }
+    checked = _validate_research(
+        {"findings": [], "contacts": [], "no_contact_found_reason": "No contact."}, pages
+    )
+
+    form = checked["application_form"]
+    assert form["status"] == "observed"
+    assert [field["label"] for field in form["fields"]] == ["Email", "Why are you applying?"]
+    assert form["questions"] == ["Why are you applying?"]
+    assert form["application_pages"][0]["url"] == application_url
+    assert form["fields"][1]["source_url"] == application_url
+    assert form["fields"][1]["observed_at"] == "2026-10-11T10:01:00Z"
+    context = _research_context(checked)
+    assert context["application_form"]["questions"] == ["Why are you applying?"]
 
 
 def test_crawler_rejects_private_dns_and_research_requires_source_supported_contact(settings, monkeypatch):

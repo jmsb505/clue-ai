@@ -257,7 +257,7 @@
         </div>
         <div class="job-actions">
           {% if job.sources and job.sources[0].source_url %}
-            <a class="button button-outline button-small" href="{{ job.sources[0].source_url }}" target="_blank" rel="noopener noreferrer" aria-label="Open listing for {{ job.title }}">Open listing <span aria-hidden="true">↗</span></a>
+            <a class="button button-outline button-small" href="{{ job.sources[0].source_url }}" target="_blank" rel="noopener noreferrer" aria-label="Open original job posting for {{ job.title }}">Open original posting <span aria-hidden="true">↗</span></a>
           {% else %}
             <span class="tag tag-muted">Listing link unavailable</span>
           {% endif %}
@@ -270,10 +270,10 @@
                   {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv or (preparation_cvs|length == 1) %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
                 </select>
                 <details class="preparation-source-details">
-                  <summary>Add employer listing link</summary>
-                  <label for="source-{{ job.id }}">Official employer job-page URL <span>(optional)</span></label>
+                  <summary>Add a public employer application page</summary>
+                  <label for="source-{{ job.id }}">Official job or application page URL <span>(optional)</span></label>
                   <input id="source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123" aria-describedby="source-help-{{ job.id }}">
-                  <small id="source-help-{{ job.id }}">Clue will read this public page as a research source. It will not open or submit its application form.</small>
+                  <small id="source-help-{{ job.id }}">Clue may inspect the public page and its visible field labels during this selected preparation. It will not sign in, fill fields, or submit anything.</small>
                 </details>
                 <button class="button button-dark button-small" type="submit" aria-label="{% if job.filter_status == 'review' %}Prepare materials for review for{% else %}Prepare application materials for{% endif %} {{ job.title }} at {{ job.company }}">{% if job.filter_status == 'review' %}Prepare for review{% else %}Prepare application{% endif %} <span aria-hidden="true">→</span></button>
               </form>
@@ -289,8 +289,8 @@
           {% endif %}
           <form action="/jobs/{{ job.id }}/save" method="post">
             <input type="hidden" name="return_to" value="/searches/{{ run.id }}">
-            <button class="quiet-button {% if job.saved %}is-saved{% endif %}" type="submit" aria-label="{% if job.saved %}Saved{% else %}Save{% endif %} {{ job.title }}">
-              <span aria-hidden="true">{% if job.saved %}♥{% else %}♡{% endif %}</span>{% if job.saved %}Saved{% else %}Save{% endif %}
+          <button class="quiet-button {% if job.saved %}is-saved{% endif %}" type="submit" aria-label="{% if job.saved %}Saved for later{% else %}Save{% endif %} {{ job.title }}">
+              <span aria-hidden="true">{% if job.saved %}♥{% else %}♡{% endif %}</span>{% if job.saved %}Saved{% else %}Save for later{% endif %}
             </button>
           </form>
           <form action="/jobs/{{ job.id }}/hide" method="post">
