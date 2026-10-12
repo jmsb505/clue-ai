@@ -7,6 +7,7 @@ import threading
 import time
 import uuid
 from dataclasses import replace
+from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
@@ -30,11 +31,13 @@ from clue_ai.application_prep import (
     approved_claims,
     get_preparation,
     get_writing_preferences,
+    heartbeat_preparation,
     list_claims,
     list_preparations,
     request_preparation,
     review_claim,
     save_writing_preferences,
+    set_preparation_progress,
     set_source_options,
     suggest_claims,
     suppress_researched_contact,
@@ -161,6 +164,46 @@ SOURCE_KINDS = {
 }
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "testserver"}
 LOCAL_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+PREPARATION_HEARTBEAT_SECONDS = 10
+PREPARATION_STALE_AFTER_SECONDS = 35
+ACTIVE_PREPARATION_STATES = {"requested", "researching", "generating"}
+
+
+def _preparation_progress_payload(record: dict) -> dict:
+    state = str(record.get("state") or "")
+    heartbeat_at = str(record.get("worker_heartbeat_at") or "")
+    last_signal = heartbeat_at or str(record.get("updated_at") or record.get("created_at") or "")
+    age_seconds = None
+    if last_signal:
+        try:
+            signal_time = datetime.fromisoformat(last_signal.replace("Z", "+00:00"))
+            if signal_time.tzinfo is None:
+                signal_time = signal_time.replace(tzinfo=timezone.utc)
+            age_seconds = max(0, int((datetime.now(timezone.utc) - signal_time).total_seconds()))
+        except ValueError:
+            age_seconds = None
+    active = state in ACTIVE_PREPARATION_STATES
+    stale = active and (age_seconds is None or age_seconds > PREPARATION_STALE_AFTER_SECONDS)
+    step_index = {
+        "requested": 0,
+        "researching": 1,
+        "generating": 2,
+        "review": 3,
+        "completed": 4,
+    }.get(state)
+    return {
+        "state": state,
+        "status_message": str(record.get("status_message") or ""),
+        "created_at": str(record.get("created_at") or ""),
+        "updated_at": str(record.get("updated_at") or ""),
+        "worker_heartbeat_at": heartbeat_at,
+        "active": active,
+        "stale": stale,
+        "heartbeat_age_seconds": age_seconds,
+        "stale_after_seconds": PREPARATION_STALE_AFTER_SECONDS,
+        "poll_interval_ms": 2500,
+        "step_index": step_index,
+    }
 
 
 def create_app(
@@ -202,8 +245,35 @@ def create_app(
             run_jev_scoring(db_path, current_settings, run_id)
 
     def run_preparation_serialized(request_id: str) -> None:
-        with operation_lock:
-            run_preparation(db_path, current_settings, request_id)
+        set_preparation_progress(
+            db_path,
+            request_id,
+            "requested",
+            "Queued for the local worker; waiting for another local operation to finish if needed.",
+        )
+        stop_heartbeat = threading.Event()
+
+        def keep_preparation_alive() -> None:
+            while not stop_heartbeat.is_set():
+                try:
+                    heartbeat_preparation(db_path, request_id)
+                except Exception:
+                    LOGGER.exception("Could not refresh application-preparation heartbeat.")
+                if stop_heartbeat.wait(PREPARATION_HEARTBEAT_SECONDS):
+                    break
+
+        heartbeat_thread = threading.Thread(
+            target=keep_preparation_alive,
+            name="clue-preparation-heartbeat",
+            daemon=True,
+        )
+        heartbeat_thread.start()
+        try:
+            with operation_lock:
+                run_preparation(db_path, current_settings, request_id)
+        finally:
+            stop_heartbeat.set()
+            heartbeat_thread.join(timeout=2)
 
     def run_practice_questions_serialized(session_id: str) -> None:
         with operation_lock:
@@ -1213,6 +1283,12 @@ def create_app(
             {
                 "active_page": "applications",
                 "preparation": record,
+                "progress": _preparation_progress_payload(record),
+                "progress_url": (
+                    f"/applications/{request_id}/status"
+                    if record["state"] in ACTIVE_PREPARATION_STATES
+                    else ""
+                ),
                 "filter_review_items": filter_review_items,
                 "practice_sessions": list_practice_sessions(db_path, request_id),
                 "packet": packet,
@@ -1227,6 +1303,17 @@ def create_app(
                 "applied_recorded": bool(applied_record),
                 "notice": request.query_params.get("notice", ""),
             },
+        )
+
+    @app.get("/applications/{request_id}/status")
+    @app.get("/preparations/{request_id}/status", include_in_schema=False)
+    async def preparation_progress_status(request_id: str):
+        record = get_preparation(db_path, request_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="Preparation request not found.")
+        return JSONResponse(
+            _preparation_progress_payload(record),
+            headers={"Cache-Control": "no-store"},
         )
 
     @app.get("/outcomes", response_class=HTMLResponse)

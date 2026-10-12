@@ -58,17 +58,23 @@
   {% if preparation.snapshot.inputs.additional_source_url %}<p class="panel-muted">Additional employer source: <a href="{{ preparation.snapshot.inputs.additional_source_url }}" target="_blank" rel="noopener noreferrer">Open the saved public job page <span aria-hidden="true">↗</span></a></p>{% endif %}
   </div>
 </details>
-<details id="preparation-progress" class="panel preparation-snapshot-panel application-section application-foldout" {% if preparation.state in ['blocked', 'failed', 'cancelled'] %}open{% endif %}>
-  <summary><span><span class="kicker kicker-muted">PACKET STATUS</span><b>Preparation progress and retry options</b></span><span class="tag {% if preparation.state in ['blocked', 'failed'] %}tag-amber{% elif preparation.state in ['review', 'completed'] %}tag-green{% else %}tag-muted{% endif %}">{{ preparation.state|title }}</span></summary>
+<details id="preparation-progress" class="panel preparation-snapshot-panel application-section application-foldout" data-preparation-progress data-state="{{ progress.state }}" data-progress-url="{{ progress_url }}" data-created-at="{{ progress.created_at }}" data-updated-at="{{ progress.updated_at }}" data-worker-heartbeat-at="{{ progress.worker_heartbeat_at }}" data-poll-interval-ms="{{ progress.poll_interval_ms }}" data-stale-after-seconds="{{ progress.stale_after_seconds }}" data-step-index="{{ progress.step_index if progress.step_index is not none else '' }}" aria-busy="{{ 'true' if progress.active else 'false' }}" {% if progress.active or preparation.state in ['blocked', 'failed', 'cancelled', 'review', 'completed'] %}open{% endif %}>
+  <summary><span><span class="kicker kicker-muted">PACKET STATUS</span><b>Preparation progress</b></span><span class="tag {% if preparation.state in ['blocked', 'failed'] %}tag-amber{% elif preparation.state in ['review', 'completed'] %}tag-green{% else %}tag-muted{% endif %}" data-progress-state>{{ preparation.state|title }}</span></summary>
   <div class="application-foldout-body">
-  <ol class="preparation-stage-list">
-    <li class="is-complete"><b>Owner selected this listing</b><span>Manual trigger recorded for input revision {{ preparation.snapshot.inputs.selected_cv_sha256[:12] }}</span></li>
-    <li class="{% if preparation.state in ['review', 'completed'] %}is-complete{% endif %}"><b>Research and file generation</b><span>{{ preparation.status_message }}</span></li>
-    <li class="{% if preparation.state == 'completed' %}is-complete{% endif %}"><b>Owner reviews the complete packet</b><span>{% if preparation.state == 'completed' %}Approved packet version {{ packet.revision }}{% else %}No external action is performed by Clue{% endif %}</span></li>
+  <p class="preparation-progress-message" data-progress-message role="status" aria-live="polite" aria-atomic="true">{{ preparation.status_message }}</p>
+  {% if progress.active %}<div class="preparation-progress-track" data-progress-bar role="progressbar" aria-label="Application packet preparation is in progress"><span></span></div>{% else %}<div class="preparation-progress-track" data-progress-bar role="progressbar" aria-label="Application packet preparation is in progress" hidden><span></span></div>{% endif %}
+  <p class="preparation-progress-timing" data-progress-timing data-created-at="{{ progress.created_at }}" data-worker-heartbeat-at="{{ progress.worker_heartbeat_at }}">{% if progress.active %}Waiting for the first worker heartbeat.{% elif preparation.state in ['review', 'completed'] %}Preparation finished. Review the packet files below.{% endif %}</p>
+  <p class="alert alert-warning preparation-progress-warning" data-progress-stall role="alert" hidden></p>
+  <p class="alert alert-warning preparation-progress-warning" data-progress-connection role="alert" hidden></p>
+  <ol class="preparation-stage-list" data-progress-steps>
+    <li data-progress-step="0" class="{% if progress.step_index is not none and progress.step_index > 0 %}is-complete{% elif progress.active and progress.step_index == 0 %}is-active{% endif %}"><b>Request queued</b><span>Clue reserves local time for this selected listing only.</span></li>
+    <li data-progress-step="1" class="{% if progress.step_index is not none and progress.step_index > 1 %}is-complete{% elif progress.active and progress.step_index == 1 %}is-active{% endif %}"><b>Research role and public application pages</b><span>Read the saved description and allowed linked pages; blocked pages are reported and skipped.</span></li>
+    <li data-progress-step="2" class="{% if progress.step_index is not none and progress.step_index > 2 %}is-complete{% elif progress.active and progress.step_index == 2 %}is-active{% endif %}"><b>Draft and validate the materials</b><span>GPT prepares content; Jev checks supported claims and the tailored CV.</span></li>
+    <li data-progress-step="3" class="{% if preparation.state in ['review', 'completed'] %}is-complete{% endif %}"><b>Files ready for your review</b><span>No application is submitted and no outreach is sent.</span></li>
   </ol>
   <div class="preparation-action-row">
     {% if preparation.state in ['blocked', 'failed', 'cancelled'] %}<form action="/preparations/{{ preparation.id }}/retry" method="post"><button class="button button-outline button-small" type="submit">Manually retry this listing</button></form>{% endif %}
-    {% if preparation.state == 'requested' %}<span class="tag tag-muted">Waiting for the local operation slot</span>{% endif %}
+    {% if preparation.state == 'requested' %}<span class="tag tag-muted" data-progress-queue>Waiting for the local operation slot</span>{% endif %}
     <a class="button button-outline button-small" href="/applications">Back to applications</a>
   </div>
 </div>
@@ -108,6 +114,7 @@
   <details class="packet-detail-section">
     <summary>Company research and application-form details</summary>
   <h3 id="application-research">Research and source evidence</h3>
+  {% if packet.output.research.crawl_warnings %}<div class="alert alert-warning"><b>Public pages Clue could not read</b><ul>{% for crawl_warning in packet.output.research.crawl_warnings %}<li>{{ crawl_warning.host }} · {{ crawl_warning.reason }}. The saved listing and reachable allowed pages were still used.{% if crawl_warning.observed_at %} · observed {{ crawl_warning.observed_at }}{% endif %}</li>{% endfor %}</ul></div>{% endif %}
   {% if packet.output.research.findings %}<ul class="evidence-list">{% for finding in packet.output.research.findings %}<li><b>{{ finding.topic }}:</b> {{ finding.fact }} <blockquote>{{ finding.quote }}</blockquote><a href="{{ finding.source_url }}" target="_blank" rel="noopener noreferrer">{{ finding.source_url }} <span aria-hidden="true">↗</span></a> · observed {{ finding.observed_at }}</li>{% endfor %}</ul>{% else %}<p>{{ packet.output.research.no_contact_found_reason or 'No sourced company findings were retained.' }}</p>{% endif %}
   {% set application_form = packet.output.research.application_form|default({}) %}
   <section class="application-form-research" aria-labelledby="public-form-heading">

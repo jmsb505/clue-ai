@@ -1,7 +1,7 @@
 # Architecture direction
 
-**Status:** Application preparation and local dossiers are implemented. PLAN-021 M6's researched cover-letter correction is locally validated, including a complete live pilot, Jev factual and CV checks, writing review, and exact rendering. Owner acceptance and broader repeatability remain open. The validated implementation is merged to main through PR #5.
-**Updated:** 2026-10-11
+**Status:** Application preparation and local dossiers are implemented. PLAN-026's live, stage-based dossier progress, worker-heartbeat/stall visibility, and crawl-outcome reporting pass local integration validation: 394 tests pass. The prior preparation implementation is merged to main through PR #9; PLAN-026 branch/PR checks remain pending. Owner acceptance and broader repeatability remain open.
+**Updated:** 2026-10-12
 
 ## Owner-set cost ceiling
 
@@ -49,6 +49,7 @@ The diagram describes the connector-fed local workflow. X leads use a separate m
 | Results UI | Show source, freshness, fit evidence, confidence, and user actions | User opens the original listing; the platform does not submit applications. |
 | Search history UI | List unique previous positions by their latest saved Jev score, linking back to the score's search run | Preserve run-specific rank and date; hidden/already-applied records follow existing history visibility rules. Save for later performs no research. |
 | Application workspace | Group a prepared listing's immutable packet versions, generated files, sourced contacts, receipts, reminders, and owner-recorded stages | Reuse the preparation request ID and local SQLite/files; do not create a second tracker or require Gmail. |
+| Preparation progress | Poll the local status endpoint for the current workflow stage, elapsed time, and worker heartbeat; surface stale-worker and crawl warnings | Return only progress metadata. Heartbeats do not alter dossier ordering timestamps. A live heartbeat shows the local worker is alive, not that a crawler/provider call has completed. |
 | Public form reconnaissance | After a single-listing preparation trigger, inspect static public form labels/options through the bounded Researcher crawler and show dated observations in the dossier | Discard input values and hidden/password fields. No login, form entry, upload, or submission. Dynamic/inaccessible fields remain unknown. |
 
 ## Data flow and controls
@@ -61,6 +62,7 @@ The diagram describes the connector-fed local workflow. X leads use a separate m
 6. Make the local delete control cover profile, original CV, extracted data, preferences, saved/hidden jobs, fit results, search history, and owner-added sources. Preserve built-in source definitions, but clear personal role-feed cache hashes and refresh timestamps. Manual backup/restore and local deletion are tested; the owner waived device-encryption confirmation. Deletion cannot affect data already processed by TypeSafe.
 7. Keep an audit trail for the scoring version and input snapshot without retaining more personal data than evaluation and support need.
 8. Start application research and file generation only from the owner's per-listing trigger. Keep each request's immutable versions, file downloads, and owner-saved receipt evidence together in the local Applications dossier. The Researcher may inspect static field metadata on a public application page linked from the selected employer page. Dated field/option observations and exact links remain in the dossier; question answers use existing candidate-evidence checks. The owner does every external form action manually.
+9. The dossier polls `/applications/{request_id}/status` every 2.5 seconds while preparation is active. The endpoint returns only the request state, current status message, stage index, timestamps, heartbeat age, and stale flag; it never returns profile, CV, job-description, research-page, or generated-file content. A local worker refreshes `worker_heartbeat_at` every 10 seconds, including while waiting for the operation lock. The UI warns that the worker may have stopped after 35 seconds without a heartbeat. The separate heartbeat column leaves `updated_at` semantics and Applications ordering unchanged. The UI shows an indeterminate bar and named stages, not a percentage or time estimate. A blocked/unavailable public page remains blocked and is recorded in the prepared research packet; Clue continues with the saved listing and any reachable allowed pages where possible.
 
 ## Search and scoring pipeline
 

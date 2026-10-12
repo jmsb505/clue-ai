@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** Application preparation and local dossiers are implemented. PLAN-021 M6's researched cover-letter correction is locally validated, including a complete live pilot, Jev factual and CV checks, writing review, and exact rendering. PLAN-025's owner-acknowledged blocker controls, linked-form answer drafts, and explicit application-email handoff pass local validation; PR checks remain pending. Owner acceptance and broader repeatability remain open. Earlier implementation is merged to main through PR #5.
+**Status:** Application preparation and local dossiers are implemented through merged PR #9. PLAN-025's owner-acknowledged blocker controls, linked-form answer drafts, and explicit application-email handoff passed local validation. PLAN-026's live preparation stages, worker-heartbeat/stall visibility, and surfaced crawl failures pass local integration validation: 394 tests pass. PLAN-026 branch/PR checks and owner acceptance remain open; broader repeatability is still unmeasured.
 **Updated:** 2026-10-12
 
 ## Definition gate

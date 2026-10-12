@@ -27,6 +27,7 @@ from clue_ai.application_prep import (
     list_claims,
     selected_technical_profile_sources,
     selected_writing_sources,
+    set_preparation_progress,
 )
 from clue_ai.application_prompts import (
     CRAWL_TOOL,
@@ -129,6 +130,7 @@ def run_preparation(
 ) -> None:
     """Run one explicitly requested listing; all outputs remain local drafts."""
     usage_ids: list[str] = []
+    crawl_status_note = ""
     try:
         request = get_preparation(database_path, request_id)
         if request is None:
@@ -143,7 +145,12 @@ def run_preparation(
         )
         client = client_factory(settings.openai_api_key)
         snapshot = request["snapshot"]
-        _set_request_state(database_path, request_id, "researching", "Researcher is reading bounded public pages for this listing.")
+        _set_request_state(
+            database_path,
+            request_id,
+            "researching",
+            "Researcher is reviewing the saved role and may inspect up to four linked public pages.",
+        )
         research = _run_researcher(
             database_path,
             settings,
@@ -154,7 +161,18 @@ def run_preparation(
             crawler_factory,
             usage_ids,
         )
+        crawl_status_note = _crawl_warning_summary(research.get("crawl_warnings", []))
+        request["crawl_status_note"] = crawl_status_note
         research = _save_research(database_path, request_id, research)
+        _set_request_state(
+            database_path,
+            request_id,
+            "researching",
+            _with_crawl_status_note(
+                "Research is saved locally. Preparing the role-specific CV and application drafts.",
+                request,
+            ),
+        )
         saved_email_instruction = snapshot.get(
             "application_email_instruction", {"required": False, "quote": "", "source_url": ""}
         )
@@ -170,7 +188,15 @@ def run_preparation(
         application_questions = research.get("application_form", {}).get("questions", [])
 
         _assert_snapshot_current(database_path, request, settings)
-        _set_request_state(database_path, request_id, "generating", "Running the Diagnoser, Recruiter, and Rewriter with the selected CV and permitted profile evidence.")
+        _set_request_state(
+            database_path,
+            request_id,
+            "generating",
+            _with_crawl_status_note(
+                "Starting the Diagnoser, Recruiter, and Rewriter with your selected CV and permitted profile evidence.",
+                request,
+            ),
+        )
         lines = _cv_lines(str(source["extracted_text"]))
         line_map = {item["id"]: item["text"] for item in lines}
         cv_context = {
@@ -300,6 +326,15 @@ def run_preparation(
             cv_source_id=source["id"],
         )
         original_letter_paragraphs = deepcopy(rewrite.get("cover_letter_paragraphs", []))
+        _set_request_state(
+            database_path,
+            request_id,
+            "generating",
+            _with_crawl_status_note(
+                "Jev is checking each CV edit, letter paragraph, and answer against its linked evidence.",
+                request,
+            ),
+        )
         grounding = (
             claim_support_checker(database_path, settings, request_id, grounding_assertions)
             if claim_support_checker
@@ -362,6 +397,15 @@ def run_preparation(
             }
             for index, edit in enumerate(rewrite.get("resume_bullet_edits", []))
         ]
+        _set_request_state(
+            database_path,
+            request_id,
+            "generating",
+            _with_crawl_status_note(
+                "Jev is reviewing whether the tailored CV fits the saved job match and supported evidence.",
+                request,
+            ),
+        )
         resume_review = (tailored_resume_reviewer or check_tailored_resume_fit)(
             database_path,
             settings,
@@ -418,7 +462,12 @@ def run_preparation(
                 jev_tailored_resume_review=resume_review,
                 quality_check={"status": "failed", "issues": [reason]},
             )
-            _set_request_state(database_path, request_id, "failed", reason)
+            _set_request_state(
+                database_path,
+                request_id,
+                "failed",
+                _with_crawl_status_note(reason, request),
+            )
             return
         if quality["issues"]:
             _save_packet(
@@ -427,10 +476,33 @@ def run_preparation(
                 jev_tailored_resume_review=resume_review,
                 quality_check=quality,
             )
-            _set_request_state(database_path, request_id, "failed", quality["issues"][0])
+            _set_request_state(
+                database_path,
+                request_id,
+                "failed",
+                _with_crawl_status_note(quality["issues"][0], request),
+            )
             return
         _assert_snapshot_current(database_path, request, settings)
+        _set_request_state(
+            database_path,
+            request_id,
+            "generating",
+            _with_crawl_status_note(
+                "Rendering the tailored CV, cover letter, answer drafts, and any required application email.",
+                request,
+            ),
+        )
         artifacts = _render_artifacts(settings, request_id, source, lines, rewrite)
+        _set_request_state(
+            database_path,
+            request_id,
+            "generating",
+            _with_crawl_status_note(
+                "Saving generated files and their evidence to this application folder.",
+                request,
+            ),
+        )
         packet_id = _save_packet(
             database_path,
             request,
@@ -443,13 +515,24 @@ def run_preparation(
             jev_tailored_resume_review=resume_review,
             quality_check=quality,
         )
-        _set_request_state(database_path, request_id, "review", f"Packet {packet_id[:8]} is ready for your review. Clue has not contacted anyone or submitted an application.")
+        _set_request_state(
+            database_path,
+            request_id,
+            "review",
+            _with_crawl_status_note(
+                f"Packet {packet_id[:8]} is ready for your review. Clue has not contacted anyone or submitted an application.",
+                request,
+            ),
+        )
     except OpenAIConfigurationError as exc:
-        _set_request_state(database_path, request_id, "blocked", str(exc))
+        message = _with_crawl_status_note(str(exc), {"crawl_status_note": crawl_status_note})
+        _set_request_state(database_path, request_id, "blocked", message)
     except Exception as exc:  # noqa: BLE001 - fail closed and keep diagnostics free of user data.
         mark_request_usage_unresolved(database_path, request_id, "Request ended before usage could be confirmed.")
         state = "blocked" if isinstance(exc, StalePreparationError) else "failed"
         summary = str(exc) if isinstance(exc, (ClaimSupportError, JevPacketReviewError, OpenAIProviderError, StalePreparationError, ValueError)) else f"Preparation stopped ({type(exc).__name__})."
+        if crawl_status_note:
+            summary = _with_crawl_status_note(summary, {"crawl_status_note": crawl_status_note})
         _set_request_state(database_path, request_id, state, summary[:500])
 
 
@@ -482,7 +565,15 @@ def _run_researcher(
     conversation: list[dict[str, Any]] = [
         {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False)}
     ]
+    crawl_warnings: list[dict[str, str]] = []
+    crawl_attempt_count = 0
     for call_index in range(MAX_RESEARCH_API_CALLS):
+        set_preparation_progress(
+            database_path,
+            request["id"],
+            "researching",
+            "Researcher is analyzing the saved role and deciding whether a bounded public-page read can add useful evidence.",
+        )
         result = _api_call(
             database_path,
             settings,
@@ -496,17 +587,40 @@ def _run_researcher(
         calls = [item for item in result.get("output", []) if item.get("type") == "function_call"]
         if not calls:
             research = _parse_stage_result(result, "researcher")
-            return _validate_research(research, crawler.pages)
+            validated = _validate_research(research, crawler.pages)
+            if crawl_warnings:
+                validated["crawl_warnings"] = crawl_warnings
+                _set_request_state(
+                    database_path,
+                    request["id"],
+                    "researching",
+                    _crawl_warning_summary(crawl_warnings),
+                )
+            return validated
         if call_index + 1 >= MAX_RESEARCH_API_CALLS or len(calls) > 1:
             raise OpenAIProviderError("Researcher exceeded the local crawl-call limit.")
         conversation.extend(result.get("output", []))
         for call in calls:
             if call.get("name") != "crawl_public_page":
                 raise OpenAIProviderError("Researcher requested a tool outside its allowlist.")
+            arguments: dict[str, Any] = {}
             try:
-                arguments = json.loads(call.get("arguments") or "{}")
+                parsed_arguments = json.loads(call.get("arguments") or "{}")
+                if not isinstance(parsed_arguments, dict):
+                    raise TypeError("Crawler arguments must be an object.")
+                arguments = parsed_arguments
+                target_url = str(arguments.get("url") or "")
+                host = (urlsplit(target_url).hostname or "public page").casefold()
+                crawl_attempt_count += 1
+                page_number = min(crawl_attempt_count, 4)
+                set_preparation_progress(
+                    database_path,
+                    request["id"],
+                    "researching",
+                    f"Researcher is reading {host} (public page {page_number} of 4).",
+                )
                 page = crawler.crawl(
-                    str(arguments.get("url") or ""),
+                    target_url,
                     str(arguments.get("research_question") or ""),
                 )
                 _save_research_page(database_path, request["id"], page)
@@ -519,6 +633,26 @@ def _run_researcher(
                     if key in page
                 }
             except Exception as exc:  # noqa: BLE001 - only the bounded local crawl tool is caught; it never retries.
+                safe_host = (urlsplit(str(arguments.get("url") or "")).hostname or "public page").casefold()
+                failure_text = str(exc).casefold()
+                reason = (
+                    "the site blocked or challenged the request"
+                    if any(token in failure_text for token in ("blocked", "403", "429", "challenge", "max retries"))
+                    else f"the request failed ({type(exc).__name__})"
+                )
+                set_preparation_progress(
+                    database_path,
+                    request["id"],
+                    "researching",
+                    f"Researcher could not read {safe_host}: {reason}. Continuing with the saved listing and any reachable allowed pages.",
+                )
+                crawl_warnings.append(
+                    {
+                        "host": safe_host,
+                        "reason": reason,
+                        "observed_at": utc_now(),
+                    }
+                )
                 tool_output = {"error": str(exc)[:400]}
             conversation.append(
                 {
@@ -528,6 +662,24 @@ def _run_researcher(
                 }
             )
     raise OpenAIProviderError("Researcher did not return a final research packet.")
+
+
+def _crawl_warning_summary(warnings: list[dict[str, Any]]) -> str:
+    hosts = list(dict.fromkeys(str(item.get("host") or "public page") for item in warnings))
+    if not hosts:
+        return ""
+    host_list = ", ".join(hosts[:4])
+    count = len(warnings)
+    page_label = "page was" if count == 1 else "pages were"
+    return (
+        f"{count} linked public {page_label} blocked or unavailable ({host_list}); "
+        "the saved listing and any reachable allowed sources remain in use."
+    )
+
+
+def _with_crawl_status_note(message: str, request: dict[str, Any]) -> str:
+    note = str(request.get("crawl_status_note") or "").strip()
+    return f"{message} {note}" if note else message
 
 
 def _call_stage(
@@ -540,6 +692,20 @@ def _call_stage(
     client: Any,
     usage_ids: list[str],
 ) -> dict[str, Any]:
+    progress_messages = {
+        "diagnoser": "Diagnoser is checking selected CV lines for likely screening gaps.",
+        "recruiter": "Recruiter is mapping the job requirements to your CV, profiles, and role research.",
+        "rewriter": "Rewriter is drafting the tailored CV, cover letter, and any observed form or email answers.",
+        "letter_reviewer": "Jev is reviewing the cover letter for structure, evidence, tone, and role-specific detail.",
+        "letter_reviser": "Rewriter is revising the cover letter against Jev's review.",
+    }
+    if stage in progress_messages:
+        set_preparation_progress(
+            database_path,
+            request["id"],
+            "generating",
+            _with_crawl_status_note(progress_messages[stage], request),
+        )
     payload = _payload(stage, context)
     result = _api_call(database_path, settings, request, stage, payload["input"], client, usage_ids=usage_ids)
     output = _parse_stage_result(result, stage)
@@ -4866,11 +5032,7 @@ def _technical_profile_prompt_context(sources: list[dict[str, Any]]) -> list[dic
 
 
 def _set_request_state(database_path: Path, request_id: str, state: str, message: str) -> None:
-    with connect(database_path) as db:
-        db.execute(
-            "UPDATE preparation_requests SET state = ?, status_message = ?, updated_at = ? WHERE id = ?",
-            (state, message[:500], utc_now(), request_id),
-        )
+    set_preparation_progress(database_path, request_id, state, message)
 
 
 def _job_context(snapshot: dict[str, Any]) -> dict[str, Any]:

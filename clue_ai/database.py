@@ -474,6 +474,7 @@ CREATE TABLE IF NOT EXISTS preparation_requests (
   status_message TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  worker_heartbeat_at TEXT NOT NULL DEFAULT '',
   UNIQUE (job_id, snapshot_sha256, attempt_no)
 );
 CREATE INDEX IF NOT EXISTS idx_preparation_requests_updated ON preparation_requests(updated_at DESC);
@@ -677,6 +678,7 @@ def initialize(database_path: Path) -> None:
         _ensure_column(db, "app_settings", "gmail_consent_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "app_settings", "gmail_oauth_connected_at", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(db, "preparation_requests", "attempt_no", "INTEGER NOT NULL DEFAULT 1")
+        _ensure_column(db, "preparation_requests", "worker_heartbeat_at", "TEXT NOT NULL DEFAULT ''")
         _migrate_preparation_request_retry_uniqueness(db)
         _ensure_column(db, "openai_usage", "reserved_input_tokens", "INTEGER NOT NULL DEFAULT 0")
         _ensure_column(
@@ -815,15 +817,16 @@ def _migrate_preparation_request_retry_uniqueness(db: sqlite3.Connection) -> Non
                  status_message TEXT NOT NULL DEFAULT '',
                  created_at TEXT NOT NULL,
                  updated_at TEXT NOT NULL,
+                 worker_heartbeat_at TEXT NOT NULL DEFAULT '',
                  UNIQUE (job_id, snapshot_sha256, attempt_no)
                )"""
         )
         db.execute(
             """INSERT INTO preparation_requests__retry_migration
-               (id, job_id, run_id, snapshot_json, snapshot_sha256, attempt_no,
-                state, status_message, created_at, updated_at)
+                (id, job_id, run_id, snapshot_json, snapshot_sha256, attempt_no,
+                 state, status_message, created_at, updated_at, worker_heartbeat_at)
                SELECT id, job_id, run_id, snapshot_json, snapshot_sha256, attempt_no,
-                      state, status_message, created_at, updated_at
+                      state, status_message, created_at, updated_at, worker_heartbeat_at
                FROM preparation_requests"""
         )
         db.execute("DROP TABLE preparation_requests")
