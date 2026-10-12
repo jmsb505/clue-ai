@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status:** Application preparation and local dossiers are implemented. PLAN-026's live, stage-based dossier progress, worker-heartbeat/stall visibility, and crawl-outcome reporting pass local integration validation: 394 tests pass. The prior preparation implementation is merged to main through PR #9; PLAN-026 branch/PR checks remain pending. Owner acceptance and broader repeatability remain open.
+**Status:** Application preparation and local dossiers are implemented. PLAN-026's live, stage-based dossier progress, worker-heartbeat/stall visibility, and crawl-outcome reporting are merged through PR #10; the full local suite passed 394 tests. GitHub reported no Actions runs or commit checks for the PR branch. Owner acceptance and broader repeatability remain open.
 **Updated:** 2026-10-12
 
 ## Owner-set cost ceiling
