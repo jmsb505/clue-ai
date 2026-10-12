@@ -1,0 +1,35 @@
+{% set needs_jev_override = job.filter_status == 'conflict' %}
+{% set needs_location_override = job.eligibility_status != 'eligible' %}
+<form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
+  <input type="hidden" name="run_id" value="{{ prepare_run_id }}">
+  {% if preparation_cvs|length > 1 %}
+    <label class="sr-only" for="{{ prepare_form_prefix }}-cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
+    <select id="{{ prepare_form_prefix }}-cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
+      {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
+    </select>
+  {% else %}<input type="hidden" name="selected_cv_id" value="{{ preparation_cvs[0].id }}">{% endif %}
+  <details class="preparation-source-details">
+    <summary>Add a public employer application page</summary>
+    <label class="sr-only" for="{{ prepare_form_prefix }}-source-{{ job.id }}">Optional public employer application page URL</label>
+    <input id="{{ prepare_form_prefix }}-source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123">
+    <small>Clue reads public job and form details only after you start this packet. It will not sign in, fill fields, or submit anything.</small>
+  </details>
+  {% if needs_jev_override %}
+    <label class="check-field preparation-override-field">
+      <input type="checkbox" name="confirm_jev_conflict" value="on" required>
+      <span class="check-custom" aria-hidden="true"></span>
+      <span><b>Continue despite Jev’s conflict</b><small>Jev’s saved match decision stays unchanged. Preparation still requires its final document checks.</small></span>
+    </label>
+  {% endif %}
+  {% if needs_location_override %}
+    <label class="check-field preparation-override-field">
+      <input type="checkbox" name="confirm_location_eligibility" value="on" required>
+      <span class="check-custom" aria-hidden="true"></span>
+      <span><b>Continue without confirmed location eligibility</b><small>Review the employer’s location terms yourself before applying. Jev’s saved location result stays unchanged.</small></span>
+    </label>
+  {% endif %}
+  <button class="button button-dark button-small" type="submit" aria-label="Generate packet for {{ job.title }}{% if needs_jev_override or needs_location_override %} despite the listed Jev blocker{% endif %}">
+    {% if needs_jev_override or needs_location_override %}Generate packet for review{% else %}Generate packet{% endif %}
+    <span aria-hidden="true">→</span>
+  </button>
+</form>

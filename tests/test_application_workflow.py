@@ -120,6 +120,7 @@ from clue_ai.web import create_app
 
 ORIGIN = {"Origin": "http://127.0.0.1"}
 JOB_URL = "https://jobs.example.org/openings/software-engineer"
+APPLICATION_URL = "https://jobs.example.org/openings/software-engineer/apply"
 OFFICIAL_SOURCE_URL = "https://careers.example.org/jobs/software-engineer-intern"
 
 def _opening_text(
@@ -256,8 +257,17 @@ def synthetic_claim_support(monkeypatch):
     )
 
 
-def _save_match(database_path: Path, *, filter_status="match") -> str:
-    save_jobs(database_path, [make_job(url=JOB_URL)])
+def _save_match(
+    database_path: Path,
+    *,
+    filter_status="match",
+    eligibility_status="eligible",
+    description=None,
+) -> str:
+    job = make_job(url=JOB_URL)
+    if description is not None:
+        job = replace(job, description=description)
+    save_jobs(database_path, [job])
     with connect(database_path) as db:
         job_id = db.execute("SELECT id FROM jobs LIMIT 1").fetchone()["id"]
     save_search_run(database_path, "run-workflow", SearchCriteria())
@@ -265,7 +275,7 @@ def _save_match(database_path: Path, *, filter_status="match") -> str:
     save_run_results(
         database_path,
         "run-workflow",
-        [{"id": job_id, "filter_status": filter_status, "eligibility_status": "eligible"}],
+        [{"id": job_id, "filter_status": filter_status, "eligibility_status": eligibility_status}],
         score_state="scored",
     )
     return job_id
@@ -304,6 +314,10 @@ def _create_preparation(
     descriptive_text="I prefer direct, modest writing and collaborative technical teams.\n",
     descriptive_authorship="owner_written",
     filter_status="match",
+    eligibility_status="eligible",
+    confirm_jev_conflict=False,
+    confirm_location_eligibility=False,
+    description=None,
     additional_source_url="",
 ):
     technical = add_source(
@@ -363,13 +377,20 @@ def _create_preparation(
         b"This synthetic sample is not selected and must stay out of prompts.\n",
         authorship_label="owner_written",
     )
-    job_id = _save_match(database_path, filter_status=filter_status)
+    job_id = _save_match(
+        database_path,
+        filter_status=filter_status,
+        eligibility_status=eligibility_status,
+        description=description,
+    )
     record, created = request_preparation(
         database_path,
         job_id,
         "run-workflow",
         cv["id"],
         additional_source_url,
+        confirm_jev_conflict,
+        confirm_location_eligibility,
     )
     assert created
     return get_preparation(database_path, record["id"]), cv, technical, descriptive, sample, claim_id, resume_text
@@ -390,6 +411,10 @@ def _enable_synthetic_openai(settings: Settings, database_path: Path) -> Setting
 
 class FakeCrawler:
     instances: ClassVar[list[FakeCrawler]] = []
+    inspect_application_page: ClassVar[bool] = False
+    application_instruction_quote: ClassVar[str] = (
+        "To apply, email your CV and cover letter to recruitment@example.org."
+    )
 
     def __init__(self, _settings, allowed_urls):
         self.allowed_urls = set(allowed_urls)
@@ -397,6 +422,30 @@ class FakeCrawler:
         self.__class__.instances.append(self)
 
     def crawl(self, url, research_question):
+        if self.inspect_application_page and url == APPLICATION_URL:
+            page = {
+                "url": url,
+                "title": "Apply for Software Engineer",
+                "text": (
+                    self.application_instruction_quote + " "
+                    "Tell us about a Python service you have built."
+                ),
+                "links": [],
+                "form_fields": [
+                    {
+                        "field_id": "why-python-service",
+                        "label": "Tell us about a Python service you have built.",
+                        "control_type": "textarea",
+                        "required": True,
+                        "options": [],
+                        "is_open_question": True,
+                    }
+                ],
+                "observed_at": "2026-10-06T10:01:00+00:00",
+                "research_question": research_question,
+            }
+            self.pages[url] = page
+            return page
         page = {
             "url": url,
             "title": "Example Labs Team",
@@ -404,7 +453,11 @@ class FakeCrawler:
                 "Example Labs builds Python services for software teams. "
                 "Alex Rivera, Engineering Manager at Example Labs, can be contacted at alex@example.org."
             ),
-            "links": [],
+            "links": (
+                [{"label": "Apply now", "url": APPLICATION_URL}]
+                if self.inspect_application_page
+                else []
+            ),
             "observed_at": "2026-10-06T10:00:00+00:00",
             "research_question": research_question,
         }
@@ -429,6 +482,7 @@ class FakePreparationClient:
     short_letter_mode: ClassVar[bool] = False
     force_letter_review: ClassVar[bool] = False
     force_profile_coverage_gap: ClassVar[bool] = False
+    inspect_application_page: ClassVar[bool] = False
 
     def __init__(self, _key):
         self.calls = []
@@ -448,7 +502,20 @@ class FakePreparationClient:
         prompt_input = payload["input"]
         if stage == "researcher" and payload.get("tools"):
             assert payload["tools"] == [CRAWL_TOOL]
-            if not any(item.get("type") == "function_call_output" for item in prompt_input):
+            tool_outputs = [
+                item for item in prompt_input
+                if item.get("type") == "function_call_output"
+            ]
+            if not tool_outputs:
+                next_url = JOB_URL
+            elif (
+                self.inspect_application_page
+                and json.loads(tool_outputs[-1].get("output", "{}")).get("url") == JOB_URL
+            ):
+                next_url = APPLICATION_URL
+            else:
+                next_url = ""
+            if next_url:
                 return {
                     "model": MODEL_ID,
                     "status": "completed",
@@ -457,7 +524,7 @@ class FakePreparationClient:
                             "type": "function_call",
                             "name": "crawl_public_page",
                             "arguments": json.dumps(
-                                {"url": JOB_URL, "research_question": "Find public team contacts"}
+                                {"url": next_url, "research_question": "Inspect role and application details"}
                             ),
                             "call_id": "synthetic-call-1",
                         }
@@ -568,6 +635,10 @@ class FakePreparationClient:
             assert isinstance(contact_context, list)
             assert '"public_email":' not in json.dumps(contact_context)
             assert "alex@example.org" not in json.dumps(contact_context)
+            assert "recruitment@example.org" not in json.dumps(context["job"])
+            assert "applications@example.org" not in json.dumps(context["job"])
+            if self.inspect_application_page:
+                assert "recruitment@example.org" not in json.dumps(context["research"])
             assert context["owner_writing_context"][0]["source_type"] == "descriptive_profile"
             assert "synthetic-writing-sample" not in json.dumps(context)
             order = [line["id"] for line in lines]
@@ -638,6 +709,59 @@ class FakePreparationClient:
             if self.omit_preferred_profile_claims:
                 letter[1]["claim_ids"] = [claim_id]
                 letter[2]["claim_ids"] = [claim_id]
+            application_questions = context.get("application_questions", [])
+            application_answers = [
+                {
+                    "question": question,
+                    "answer": (
+                        "I have implemented reliable Python services and tested a simulated "
+                        "maintenance workflow with synthetic reports to measure duplicate handling."
+                    ),
+                    "claim_ids": [claim_id],
+                    "cv_line_ids": ["L0004"],
+                    "source_urls": [APPLICATION_URL],
+                    "needs_owner_input": False,
+                }
+                for question in application_questions
+            ]
+            application_email = context["research"].get("application_email_instruction", {})
+            if application_email.get("required"):
+                outreach_drafts = [
+                    {
+                        "contact_source_url": application_email["source_url"],
+                        "recipient_name": "Recruitment team",
+                        "subject": "Application for Software Engineer",
+                        "body": (
+                            "Hello Recruitment team, I am applying for the Software Engineer role. "
+                            "My experience includes implementing reliable Python services and testing "
+                            "a simulated maintenance workflow with synthetic reports. I will attach "
+                            "my tailored CV and cover letter when sending this message. Thank you "
+                            "for considering my application; I would welcome a conversation about "
+                            "the role."
+                        ),
+                        "claim_ids": [claim_id],
+                        "cv_line_ids": ["L0004"],
+                        "source_urls": [JOB_URL, application_email["source_url"]],
+                    }
+                ]
+            else:
+                outreach_drafts = ([
+                    {
+                        "contact_source_url": JOB_URL,
+                        "recipient_name": "Alex Rivera",
+                        "subject": "Question about the Software Engineer role",
+                        "body": (
+                            "Hello Alex, I am interested in the Software Engineer role and the team's work on Python services. "
+                            "My experience includes building a Python service for Example Labs, where I focused on reliable behavior and clear interfaces. "
+                            "I would be grateful for any guidance on the priorities for this opening and how the engineering team approaches service evaluation. "
+                            "I understand you may be busy, so even a brief pointer to the most relevant team information would be helpful. "
+                            "Thank you for your time and consideration."
+                        ),
+                        "claim_ids": [claim_id],
+                        "cv_line_ids": ["L0004"],
+                        "source_urls": [JOB_URL],
+                    }
+                ] if contact_context else [])
             return _message_result(
                 {
                     "selected_cv_id": context["cv"]["source_id"],
@@ -654,24 +778,8 @@ class FakePreparationClient:
                     ],
                     "cover_letter_title": "Application for Software Engineer",
                     "cover_letter_paragraphs": letter,
-                    "application_answers": [],
-                    "outreach_drafts": ([
-                        {
-                            "contact_source_url": JOB_URL,
-                            "recipient_name": "Alex Rivera",
-                            "subject": "Question about the Software Engineer role",
-                            "body": (
-                                "Hello Alex, I am interested in the Software Engineer role and the team's work on Python services. "
-                                "My experience includes building a Python service for Example Labs, where I focused on reliable behavior and clear interfaces. "
-                                "I would be grateful for any guidance on the priorities for this opening and how the engineering team approaches service evaluation. "
-                                "I understand you may be busy, so even a brief pointer to the most relevant team information would be helpful. "
-                                "Thank you for your time and consideration."
-                            ),
-                            "claim_ids": [claim_id],
-                            "cv_line_ids": ["L0004"],
-                            "source_urls": [JOB_URL],
-                        }
-                    ] if contact_context else []),
+                    "application_answers": application_answers,
+                    "outreach_drafts": outreach_drafts,
                     "unresolved_questions": [],
                     "change_summary": "Reordered existing sections and clarified one supported bullet.",
                 }
@@ -1436,6 +1544,195 @@ def test_review_snapshot_can_finish_with_jev_approval_without_mutating_match_sta
     assert packet["output"]["quality_check"]["status"] == "passed"
     assert application_count == 0
     assert OFFICIAL_SOURCE_URL in FakeCrawler.instances[-1].allowed_urls
+
+
+def test_owner_acknowledged_conflict_and_location_override_can_finish_all_document_gates(
+    settings, database
+):
+    record, *_ = _create_preparation(
+        settings,
+        database,
+        filter_status="conflict",
+        eligibility_status="needs_verification",
+        confirm_jev_conflict=True,
+        confirm_location_eligibility=True,
+    )
+    enabled = _enable_synthetic_openai(settings, database)
+    FakePreparationClient.instances.clear()
+    FakeCrawler.instances.clear()
+
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+        tailored_resume_reviewer=_approve_synthetic_tailored_resume,
+    )
+
+    completed = get_preparation(database, record["id"])
+    with connect(database) as db:
+        saved = db.execute(
+            "SELECT filter_status, eligibility_status FROM search_results WHERE run_id = ? AND job_id = ?",
+            ("run-workflow", record["job_id"]),
+        ).fetchone()
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+    packet = get_packet(database, packet_id)
+
+    assert completed["state"] == "review"
+    assert completed["snapshot"]["filter_status"] == "conflict"
+    assert completed["snapshot"]["eligibility_status"] == "needs_verification"
+    assert completed["snapshot"]["owner_preparation_overrides"] == {
+        "jev_conflict_acknowledged": True,
+        "location_eligibility_acknowledged": True,
+    }
+    assert saved["filter_status"] == "conflict"
+    assert saved["eligibility_status"] == "needs_verification"
+    assert packet["output"]["jev_tailored_resume_review"]["status"] == "approved"
+    assert packet["output"]["quality_check"]["status"] == "passed"
+    assert {artifact["artifact_type"] for artifact in packet["artifacts"]} >= {
+        "resume",
+        "cover_letter",
+    }
+    dossier = TestClient(create_app(enabled), base_url="http://127.0.0.1").get(
+        f"/applications/{record['id']}"
+    )
+    assert dossier.status_code == 200
+    assert "You chose to prepare this listing with a Jev warning" in dossier.text
+    assert "Saved Jev filter status: <strong>conflict</strong>" in dossier.text
+    assert "Saved Jev location eligibility: <strong>needs_verification</strong>" in dossier.text
+
+
+@pytest.mark.parametrize(
+    (
+        "description_instruction",
+        "page_instruction_quote",
+        "expected_quote",
+        "expected_email",
+        "expected_source_url",
+    ),
+    [
+        (
+            "",
+            "To apply, email your CV and cover letter to recruitment@example.org.",
+            "To apply, email your CV and cover letter to recruitment@example.org.",
+            "recruitment@example.org",
+            APPLICATION_URL,
+        ),
+        (
+            "",
+            "To apply, email your CV and cover letter to the recruitment team.",
+            "To apply, email your CV and cover letter to the recruitment team.",
+            "",
+            APPLICATION_URL,
+        ),
+        (
+            "To apply, email your CV and cover letter to applications@example.org.",
+            "Apply through our online portal.",
+            "To apply, email your CV and cover letter to applications@example.org.",
+            "applications@example.org",
+            JOB_URL,
+        ),
+    ],
+)
+def test_linked_application_page_generates_grounded_form_answer_and_email_packet(
+    settings,
+    database,
+    monkeypatch,
+    description_instruction,
+    page_instruction_quote,
+    expected_quote,
+    expected_email,
+    expected_source_url,
+):
+    role_description = "Build Python services that support reliable model inference."
+    if description_instruction:
+        role_description += " " + description_instruction
+    record, *_ = _create_preparation(
+        settings, database, description=role_description
+    )
+    enabled = _enable_synthetic_openai(settings, database)
+    monkeypatch.setattr(FakeCrawler, "inspect_application_page", True)
+    monkeypatch.setattr(FakeCrawler, "application_instruction_quote", page_instruction_quote)
+    monkeypatch.setattr(FakePreparationClient, "inspect_application_page", True)
+    FakePreparationClient.instances.clear()
+    FakeCrawler.instances.clear()
+
+    run_preparation(
+        database,
+        enabled,
+        record["id"],
+        client_factory=FakePreparationClient,
+        crawler_factory=FakeCrawler,
+        tailored_resume_reviewer=_approve_synthetic_tailored_resume,
+    )
+    researcher_input = json.loads(
+        FakePreparationClient.instances[-1].calls[0]["input"][0]["content"]
+    )
+    assert researcher_input["job_and_jev_snapshot"]["description"] == role_description
+    if description_instruction:
+        assert "applications@example.org" in json.dumps(researcher_input)
+
+    completed = get_preparation(database, record["id"])
+    assert completed["state"] == "review", completed.get("status_message")
+    with connect(database) as db:
+        packet_id = db.execute(
+            "SELECT id FROM preparation_packets WHERE request_id = ? ORDER BY revision DESC LIMIT 1",
+            (record["id"],),
+        ).fetchone()["id"]
+    packet = get_packet(database, packet_id)
+    research = packet["output"]["research"]
+    instruction = research["application_email_instruction"]
+    assert instruction == {
+        "required": True,
+        "quote": expected_quote,
+        "source_url": expected_source_url,
+    }
+    assert research["application_form"]["status"] == "observed"
+    assert research["application_form"]["application_pages"][0]["url"] == APPLICATION_URL
+    question = "Tell us about a Python service you have built."
+    assert research["application_form"]["questions"] == [question]
+    answer = packet["output"]["rewriter"]["application_answers"][0]
+    assert answer["question"] == question
+    assert answer["source_urls"] == [APPLICATION_URL]
+    assert answer["claim_ids"]
+    assert packet["output"]["quality_check"]["status"] == "passed"
+
+    email = packet["output"]["rewriter"]["outreach_drafts"][0]
+    assert email["purpose"] == "application_email"
+    assert email["recipient_email"] == expected_email
+    assert email["contact_source_url"] == expected_source_url
+    assert expected_source_url in email["source_urls"]
+    artifacts = {item["artifact_type"]: item for item in packet["artifacts"]}
+    assert {"resume", "cover_letter", "application_answers", "outreach_draft"} <= set(artifacts)
+    assert artifacts["outreach_draft"]["filename"] == "application-email-draft-v1.txt"
+    assert question in artifacts["application_answers"]["content_text"]
+    expected_to = (
+        f"To: Recruitment team <{expected_email}>"
+        if expected_email
+        else "To: Recruitment team (verify address)"
+    )
+    assert expected_to in artifacts["outreach_draft"]["content_text"]
+    assert "tailored CV and cover letter" in artifacts["outreach_draft"]["content_text"]
+    dossier = TestClient(create_app(enabled), base_url="http://127.0.0.1").get(
+        f"/applications/{record['id']}"
+    )
+    assert dossier.status_code == 200
+    assert "Apply by email" in dossier.text
+    assert expected_source_url in dossier.text
+    assert question in dossier.text
+    assert "Use this local preview in your email app" in dossier.text
+    assert "Create this exact message as an unsent Gmail draft" not in dossier.text
+    if expected_email:
+        assert "Application recipient address" in dossier.text
+        assert expected_email in dossier.text
+    else:
+        assert "No verified address for this application channel is available" in dossier.text
+    with connect(database) as db:
+        assert db.execute("SELECT COUNT(*) FROM applications").fetchone()[0] == 0
 
 
 def test_unsupported_or_unresolved_blocks_are_omitted_before_documents(settings, database):
@@ -3580,7 +3877,7 @@ def test_rewriter_preserve_mode_omits_redundant_line_order_and_bounds_edits():
     assert paragraph_schema["properties"]["research_finding_ids"]["maxItems"] == 2
     assert "requirement_ids" in paragraph_schema["required"]
     assert OUTPUT_SCHEMAS["rewriter"]["properties"]["cover_letter_paragraphs"]["maxItems"] == 8
-    assert PROMPT_VERSION == "2026-10-11.73"
+    assert PROMPT_VERSION == "2026-10-12.3"
     assert OUTPUT_SCHEMA_VERSION == "application-output-v19"
     assert "unsupported equivalence claims" in prompt
     assert "A project or technology name alone does not establish" in prompt

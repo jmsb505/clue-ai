@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "2026-10-11.73"
+PROMPT_VERSION = "2026-10-12.3"
 OUTPUT_SCHEMA_VERSION = "application-output-v19"
 LETTER_REVIEW_DIMENSION_NAMES = (
     "letter_completeness",
@@ -61,7 +61,7 @@ visible choice labels. Never sign in, enter values, submit forms, upload files, 
 a login or account area. Dynamic or inaccessible fields remain unknown. Keep research small, record exact URLs, short supporting
 quotes, and observed times. A page is evidence for what it explicitly states, not for an inference
 about an employee. When a crawled page directly states relevant company, team, product, or role
-facts, return at most eight distinct concise atomic findings, prioritized for role-specific work and outreach, with an exact supporting quote and that page's URL. Return an
+facts, return at most eight distinct concise atomic findings, prioritized for role-specific work and outreach, with an exact supporting quote and that page's URL. If a listing or linked public application page explicitly directs applicants to email application materials, include that exact instruction as a finding; never infer an email application channel from a contact address alone. Return an
 empty findings list only when every crawled page lacks directly useful facts; say so in
 `unresolved_questions`. A lack of contact details does not make useful company or role facts
 irrelevant. Return a named professional contact only when a crawled page explicitly supports that
@@ -103,6 +103,9 @@ mapped. Every evidence statement in a note must cite its exact source IDs.
     "rewriter": f"""
 {COMMON_RULES}
 You are the Rewriter. Propose edits only to a permitted CV source selected by the Recruiter. Use
+the `owner_preparation_overrides` context to understand that the owner deliberately chose to
+prepare this specific listing despite the recorded Jev warning. Do not change, relabel, or hide the
+saved Jev decision; continue only with evidence-supported drafts and keep the warning visible.
 Google's XYZ pattern only when the exact evidence supports the result, metric, and action. Candidate
 facts may cite exact `cv_line_ids` from the selected CV, owner-approved `claim_ids`, or exact profile
 claim IDs in `claim_ids`; preserve each source's scope and contribution verbs. Compare the Recruiter
@@ -148,6 +151,22 @@ The context's `preferred_technical_profile_claim_ids` identify strong role-relev
 Candidate-to-role connections must be visible in the prose: requirement IDs are provenance metadata and do not count as a written connection. State the shared work or capability directly; do not wrap it in phrases such as "this demonstrates fit" or make unsupported equivalence claims. For separate examples, vary the sentence structure. Do not write "the role includes" as a repeated lead-in. Do not add a generic preview such as "my relevant project work has covered agent workflows and model deployment" when the body develops those examples. Avoid generic bridges, résumé references, repeated ideas, filler, canned enthusiasm, puffery, and replacement characters.
 
 Bind every factual paragraph to its exact candidate evidence and/or verified public evidence. Cite exact mapped `requirement_id` values and the listing URL for role facts; cite research finding IDs for other employer facts. Jev checks each complete paragraph. Use enough exact related sources to support the whole explanation, not a claim that supports only its first sentence. Do not transfer a property from an unnamed CV model onto a named profile model unless the sources explicitly establish that property for that model. For example, a CV claim about training a quantized registration model and a profile claim about deploying a named pipeline may support separate statements about the same project; they do not automatically prove that the named pipeline was trained or quantized. Keep courteous application requests and thanks free of factual additions; do not force them to claim skills or repeat job responsibilities merely to justify a citation. If evidence cannot support a complete argument, report the evidence gap in `unresolved_questions` instead of returning a few abbreviated notes as a completed letter.
+
+When `research.application_email_instruction.required=true`, it supersedes the ordinary outreach behavior
+below: write exactly one application-submission email in `outreach_drafts` for the explicitly stated
+email-application channel. The instruction may come from the saved role description or a public
+application page reached from the selected listing. Use the exact bound instruction excerpt and
+cite its source URL plus the selected listing URL when both are available. Address an
+exact unsuppressed verified contact when the supplied research provides one; if no unique verified
+address is available, use “Recruitment team” and the instruction source URL so Clue can show a useful
+draft with a blank To field. Public email addresses are redacted from the writing context; use only
+the supported recipient name or “Recruitment team” and let Clue resolve the To field locally from
+the exact instruction or verified contact. Never guess a recipient or put an email address in the message. Write a concise,
+direct application note (35–120 words) with a role-specific subject, one supported candidate example,
+and a clear mention of the tailored CV and cover letter available in this packet for manual
+attachment. Do not claim the files have already been sent. Cite the exact permitted candidate claim
+ID or CV line ID and the selected listing URL; use only verified contact/source URLs. If the candidate
+example is unsupported, return no draft and explain the gap.
 
 Do not answer attestations, legal/work-authorization questions, compensation, or availability without
 an explicit approved answer-bank fact. When `research.contacts` includes an unsuppressed contact with

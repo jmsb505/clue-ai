@@ -6,7 +6,7 @@
   <div>
     <span class="kicker kicker-muted">BOOKMARKED BY YOU</span>
     <h1>Saved roles.</h1>
-    <p>Your shortlist stays on this device. Choose Generate packet to research one eligible role and prepare files for review.</p>
+    <p>Your shortlist stays on this device. Choose Generate packet on a scored role to research it and prepare files. Any Jev or location warning appears with a listing-specific acknowledgement.</p>
   </div>
   <div class="intro-mark" aria-hidden="true"><span>♡</span><i>↗</i></div>
 </section>
@@ -31,6 +31,7 @@
           <div class="job-tags">
             {% if job.workplace_type == 'remote' %}<span class="tag tag-teal">Remote</span>{% endif %}
             {% if job.eligibility_status == 'eligible' %}<span class="tag tag-green">Location evidence found</span>{% else %}<span class="tag tag-amber">Verify work location</span>{% endif %}
+            {% if job.filter_status == 'match' %}<span class="tag tag-green">Jev: matches filters</span>{% elif job.filter_status == 'review' %}<span class="tag tag-amber">Jev: review filters</span>{% elif job.filter_status == 'conflict' %}<span class="tag tag-warning">Jev: conflict</span>{% endif %}
             {% if job.posted_at %}<span class="tag">Posted {{ job.posted_at[:10] }}</span>{% endif %}
           </div>
           <details class="job-description"><summary>Read listing details</summary><div class="description-copy">{{ job.description or 'The source did not provide a description.' }}</div></details>
@@ -39,15 +40,13 @@
           <div class="source-trail"><span class="source-trail-mark" aria-hidden="true">⌁</span><span class="source-trail-links">{% for source in job.sources %}<a href="{{ source.source_url }}" target="_blank" rel="noreferrer noopener">{{ source.attribution or source.name }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</span><span class="source-trail-meta">Checked {{ job.last_checked_at[:16].replace('T', ' ') }} UTC{% for source in job.sources %} · {{ source.name }} {{ source.state }}{% if source.last_state and source.last_state != 'ok' %} ({{ source.last_state }}){% endif %}{% endfor %}</span></div>
           <div class="job-actions">
             {% if job.sources and job.sources[0].source_url %}<a class="button button-outline button-small" href="{{ job.sources[0].source_url }}" target="_blank" rel="noopener noreferrer">Open employer posting <span aria-hidden="true">↗</span></a>{% endif %}
-            {% if job.score_state == 'scored' and job.eligibility_status == 'eligible' and job.filter_status in ['match', 'review'] and job.latest_run_id %}
-              {% if preparation_cvs and preparation_claims_ready %}
-                <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
-                  <input type="hidden" name="run_id" value="{{ job.latest_run_id }}">
-                  {% if preparation_cvs|length > 1 %}<label class="sr-only" for="saved-cv-{{ job.id }}">Choose a CV for {{ job.title }}</label><select id="saved-cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">{% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}</select>{% else %}<input type="hidden" name="selected_cv_id" value="{{ preparation_cvs[0].id }}">{% endif %}
-                  <details class="preparation-source-details"><summary>Add official application URL</summary><label class="sr-only" for="saved-source-{{ job.id }}">Optional public employer application page URL</label><input id="saved-source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123"><small>Optional. Clue reads public page details only after you start this packet.</small></details>
-                  <button class="button button-dark button-small" type="submit">Generate packet <span aria-hidden="true">→</span></button>
-                </form>
+            {% if job.score_state == 'scored' and job.filter_status in ['match', 'review', 'conflict'] and job.latest_run_id %}
+              {% if preparation_cvs and preparation_evidence_ready %}
+                {% set prepare_run_id = job.latest_run_id %}
+                {% set prepare_form_prefix = 'saved' %}
+                {% include '_prepare_listing_form.html' %}
               {% else %}<a class="button button-outline button-small" href="/evidence">Set up materials to prepare</a>{% endif %}
+            {% elif job.latest_run_id and (job.score_state != 'scored' or job.filter_status == 'unassessed') %}<span class="panel-muted">Complete Jev scoring before preparing this listing.</span>
             {% else %}<a class="text-link" href="/searches">Review Jev ranking before preparing <span aria-hidden="true">→</span></a>{% endif %}
             <form action="/jobs/{{ job.id }}/applied" method="post"><input type="hidden" name="return_to" value="/saved"><button class="quiet-button" type="submit" aria-label="Mark {{ job.title }} as applied">Mark applied</button></form>
             <form action="/jobs/{{ job.id }}/unsave" method="post"><input type="hidden" name="return_to" value="/saved"><button class="quiet-button" type="submit">Remove saved</button></form>

@@ -123,7 +123,7 @@ def test_local_email_handoff_and_selected_attachment_bundle(settings, database):
     with connect(database) as db:
         db.execute("UPDATE researched_contacts SET public_email = '' WHERE request_id = ?", (record["id"],))
     no_address = client.get(f"/applications/{record['id']}")
-    assert "No publicly verified email address is available" in no_address.text
+    assert "No publicly verified contact address is available" in no_address.text
     assert "Clue will not guess one" in no_address.text
     assert "Copy recipient address for" not in no_address.text
     assert "Copy subject for" in no_address.text
