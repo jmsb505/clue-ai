@@ -15,6 +15,13 @@
     <p>{{ preparation.status_message }}{% if preparation.application_stage %} · Application stage: {{ preparation.application_stage|replace('_', ' ')|title }}{% endif %}</p>
   </div>
 </section>
+{% for acknowledgement in retry_acknowledgements %}
+<div class="alert alert-warning" role="note">
+  <b>Retry started after your acknowledgment</b>
+  <p>You acknowledged that OpenAI may already have processed and charged the previous request. Its usage entry remains unresolved; the reserved values are estimates, not billing receipts.</p>
+  {% if acknowledgement.usage %}<ul>{% for usage in acknowledgement.usage %}<li>{{ usage.stage|replace('_', ' ')|title }} · {{ usage.status|title }} · estimated reserve ${{ "%.7f"|format(usage.reserved_usd) }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% endfor %}
 <div class="application-action-bar">
   <a class="text-link" href="/applications">← All packets</a>
   {% if packet and application_form.application_pages %}<a class="button button-dark button-small" href="{{ application_form.application_pages[0].url }}" target="_blank" rel="noopener noreferrer">Open application page <span aria-hidden="true">↗</span></a>{% elif preparation.snapshot.canonical_url %}<a class="button button-outline button-small" href="{{ preparation.snapshot.canonical_url }}" target="_blank" rel="noopener noreferrer">Open job posting <span aria-hidden="true">↗</span></a>{% endif %}
@@ -73,7 +80,21 @@
     <li data-progress-step="3" class="{% if preparation.state in ['review', 'completed'] %}is-complete{% endif %}"><b>Files ready for your review</b><span>No application is submitted and no outreach is sent.</span></li>
   </ol>
   <div class="preparation-action-row">
-    {% if preparation.state in ['blocked', 'failed', 'cancelled'] %}<form action="/preparations/{{ preparation.id }}/retry" method="post"><button class="button button-outline button-small" type="submit">Manually retry this listing</button></form>{% endif %}
+    {% if preparation.state in ['blocked', 'failed', 'cancelled'] %}
+      {% if unresolved_openai_usage %}
+        <div class="alert alert-warning" role="note">
+          <b>Possible duplicate OpenAI charge</b>
+          <p>An earlier request may already have reached OpenAI. The reserved amount below is Clue's estimate, not a billing receipt. A retry can create another provider charge; the unresolved usage record will remain in your ledger.</p>
+          <ul>{% for usage in unresolved_openai_usage %}<li>{{ usage.stage|replace('_', ' ')|title }} · {{ usage.status|title }} · estimated reserve ${{ "%.7f"|format(usage.reserved_usd) }} · {{ usage.created_at[:16].replace('T', ' ') }} UTC</li>{% endfor %}</ul>
+          <form action="/preparations/{{ preparation.id }}/retry" method="post">
+            <label><input type="checkbox" name="acknowledge_unresolved_usage" value="on" required> I understand the previous request may already have been charged, and I want to start a new attempt.</label>
+            <button class="button button-outline button-small" type="submit">Retry and acknowledge possible duplicate charge</button>
+          </form>
+        </div>
+      {% else %}
+        <form action="/preparations/{{ preparation.id }}/retry" method="post"><button class="button button-outline button-small" type="submit">Manually retry this listing</button></form>
+      {% endif %}
+    {% endif %}
     {% if preparation.state == 'requested' %}<span class="tag tag-muted" data-progress-queue>Waiting for the local operation slot</span>{% endif %}
     <a class="button button-outline button-small" href="/applications">Back to applications</a>
   </div>

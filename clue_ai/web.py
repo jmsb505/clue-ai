@@ -41,6 +41,7 @@ from clue_ai.application_prep import (
     set_source_options,
     suggest_claims,
     suppress_researched_contact,
+    unresolved_openai_usage,
 )
 from clue_ai.application_prep import (
     get_source as get_preparation_source,
@@ -1210,6 +1211,12 @@ def create_app(
                    ORDER BY occurred_at DESC, id DESC""",
                 (request_id,),
             ).fetchall()
+            retry_acknowledgement_rows = db.execute(
+                """SELECT details_json, occurred_at FROM application_events
+                   WHERE request_id = ? AND event_type = 'owner_acknowledged_openai_retry'
+                   ORDER BY occurred_at DESC, id DESC""",
+                (request_id,),
+            ).fetchall()
         packet_history = list_packet_versions(db_path, request_id)
         packet = packet_history[0] if packet_history else None
         receipts = []
@@ -1224,6 +1231,29 @@ def create_app(
                     "occurred_at": row["occurred_at"],
                     "filename": str(details.get("receipt_filename") or "Submission receipt"),
                     "sha256": str(details.get("receipt_sha256") or ""),
+                }
+            )
+        retry_acknowledgements = []
+        for row in retry_acknowledgement_rows:
+            try:
+                details = json.loads(row["details_json"])
+            except (json.JSONDecodeError, TypeError):
+                details = {}
+            if not isinstance(details, dict):
+                details = {}
+            usage = details.get("unresolved_openai_usage", [])
+            retry_acknowledgements.append(
+                {
+                    "occurred_at": row["occurred_at"],
+                    "usage": [
+                        {
+                            "stage": str(item.get("stage") or "OpenAI"),
+                            "status": str(item.get("status") or "unresolved"),
+                            "reserved_usd": item.get("reserved_usd"),
+                        }
+                        for item in usage
+                        if isinstance(item, dict)
+                    ] if isinstance(usage, list) else [],
                 }
             )
         with connect(db_path) as db:
@@ -1283,6 +1313,8 @@ def create_app(
             {
                 "active_page": "applications",
                 "preparation": record,
+                "unresolved_openai_usage": unresolved_openai_usage(db_path, request_id),
+                "retry_acknowledgements": retry_acknowledgements,
                 "progress": _preparation_progress_payload(record),
                 "progress_url": (
                     f"/applications/{request_id}/status"
@@ -1324,6 +1356,8 @@ def create_app(
                 for item in db.execute(
                     """SELECT event.*, app.title, app.company FROM application_events event
                        LEFT JOIN applications app ON app.job_id = event.job_id
+                       WHERE event.event_type IN
+                         ('owner_submission_attestation', 'owner_stage_update', 'receipt_imported')
                        ORDER BY event.occurred_at DESC, event.id"""
                 ).fetchall()
             ]
@@ -1402,11 +1436,20 @@ def create_app(
 
 
     @app.post("/preparations/{request_id}/retry")
-    async def retry_preparation_route(request_id: str, background_tasks: BackgroundTasks):
+    async def retry_preparation_route(
+        request: Request, request_id: str, background_tasks: BackgroundTasks
+    ):
         from clue_ai.application_prep import retry_preparation
 
+        form = dict(await request.form())
         try:
-            record, created = retry_preparation(db_path, request_id)
+            record, created = retry_preparation(
+                db_path,
+                request_id,
+                acknowledge_unresolved_usage=(
+                    str(form.get("acknowledge_unresolved_usage") or "") == "on"
+                ),
+            )
         except ValueError as exc:
             return RedirectResponse(
                 f"/preparations/{request_id}?{urlencode({'notice': str(exc)})}",

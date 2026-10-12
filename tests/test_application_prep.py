@@ -198,6 +198,26 @@ def _configure_preparation_inputs(settings, database):
     return cv["id"]
 
 
+def _add_unresolved_openai_usage(database, request):
+    usage_id = f"usage-{request['id']}"
+    with connect(database) as db:
+        db.execute(
+            """INSERT INTO openai_usage
+               (id, request_id, job_id, month_key, stage, model, estimated_input_bytes,
+                max_output_tokens, reserved_usd, input_usd_per_million,
+                output_usd_per_million, search_usd_per_thousand, status, created_at)
+               VALUES (?, ?, ?, '2026-10', 'recruiter', 'gpt-6-luna', 48000,
+                       9000, 0.0072721, 0.4, 2.0, 0.0, 'reserved',
+                       '2026-10-12T09:47:46+00:00')""",
+            (usage_id, request["id"], request["job_id"]),
+        )
+        db.execute(
+            "UPDATE preparation_requests SET state = 'failed' WHERE id = ?",
+            (request["id"],),
+        )
+        return dict(db.execute("SELECT * FROM openai_usage WHERE id = ?", (usage_id,)).fetchone())
+
+
 def test_preparation_request_requires_eligible_jev_result_and_is_idempotent(settings, database):
     _configure_preparation_inputs(settings, database)
     job_id = _save_eligible_match(database)
@@ -438,6 +458,103 @@ def test_interrupted_preparation_can_be_manually_retried(settings, database):
     assert was_created is True
     assert retried["attempt_no"] == 2
     assert retried["state"] == "requested"
+
+
+def test_retry_with_unresolved_usage_requires_ack_and_preserves_auditable_reservation(
+    settings, database, monkeypatch
+):
+    monkeypatch.setattr("clue_ai.web.run_preparation", lambda *_args: None)
+    _configure_preparation_inputs(settings, database)
+    job_id = _save_eligible_match(database)
+    request, _created = request_preparation(database, job_id, "run-app-prep")
+    usage_before = _add_unresolved_openai_usage(database, request)
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+
+    dossier = client.get(f"/applications/{request['id']}")
+    assert dossier.status_code == 200
+    assert "Possible duplicate OpenAI charge" in dossier.text
+    assert "Recruiter · Reserved · estimated reserve $0.0072721" in dossier.text
+    assert 'name="acknowledge_unresolved_usage"' in dossier.text
+    assert "not a billing receipt" in dossier.text
+
+    without_acknowledgement = client.post(
+        f"/preparations/{request['id']}/retry", headers=ORIGIN, follow_redirects=False
+    )
+    assert without_acknowledgement.status_code == 303
+    assert without_acknowledgement.headers["location"].startswith(
+        f"/preparations/{request['id']}?notice="
+    )
+    assert "acknowledge+it+before+retrying" in without_acknowledgement.headers["location"]
+    retried_response = client.post(
+        f"/preparations/{request['id']}/retry",
+        data={"acknowledge_unresolved_usage": "on"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert retried_response.status_code == 303
+    new_request_id = retried_response.headers["location"].removeprefix("/preparations/")
+    assert new_request_id != request["id"]
+
+    with connect(database) as db:
+        usage_after = dict(db.execute("SELECT * FROM openai_usage WHERE id = ?", (usage_before["id"],)).fetchone())
+        event = db.execute(
+            """SELECT * FROM application_events
+               WHERE request_id = ? AND event_type = 'owner_acknowledged_openai_retry'""",
+            (new_request_id,),
+        ).fetchone()
+        attempt = db.execute(
+            "SELECT attempt_no, state FROM preparation_requests WHERE id = ?",
+            (new_request_id,),
+        ).fetchone()
+
+    assert usage_after == usage_before
+    assert attempt["attempt_no"] == 2
+    assert attempt["state"] == "requested"
+    assert event["evidence_level"] == "owner_reported"
+    details = json.loads(event["details_json"])
+    assert details["previous_request_id"] == request["id"]
+    assert details["possible_duplicate_charge_acknowledged"] is True
+    assert details["unresolved_openai_usage"] == [
+        {
+            "id": usage_before["id"],
+            "stage": "recruiter",
+            "status": "reserved",
+            "reserved_usd": 0.0072721,
+            "actual_usd": None,
+            "reserved_input_tokens": 0,
+            "max_output_tokens": 9000,
+            "created_at": "2026-10-12T09:47:46+00:00",
+        }
+    ]
+    retried_dossier = client.get(f"/applications/{new_request_id}")
+    assert "Retry started after your acknowledgment" in retried_dossier.text
+    assert "usage entry remains unresolved" in retried_dossier.text
+    assert "Openai Retry" not in client.get("/outcomes").text
+
+
+def test_acknowledging_older_request_does_not_bypass_newer_unresolved_usage(settings, database):
+    _configure_preparation_inputs(settings, database)
+    job_id = _save_eligible_match(database)
+    first, _created = request_preparation(database, job_id, "run-app-prep")
+    _add_unresolved_openai_usage(database, first)
+
+    second, created = retry_preparation(database, first["id"], acknowledge_unresolved_usage=True)
+    assert created is True
+    _add_unresolved_openai_usage(database, second)
+
+    with pytest.raises(ValueError, match="unresolved OpenAI usage"):
+        retry_preparation(database, first["id"], acknowledge_unresolved_usage=True)
+
+    with connect(database) as db:
+        attempts = db.execute(
+            "SELECT COUNT(*) FROM preparation_requests WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()[0]
+        audits = db.execute(
+            "SELECT COUNT(*) FROM application_events WHERE event_type = 'owner_acknowledged_openai_retry'"
+        ).fetchone()[0]
+    assert attempts == 2
+    assert audits == 1
 
 
 def test_scored_blocker_controls_are_visible_on_search_results_history_and_saved_roles(

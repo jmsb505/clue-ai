@@ -174,7 +174,10 @@ def outcome_summary(database_path: Path) -> dict[str, Any]:
     with connect(database_path) as db:
         events = [dict(row) for row in db.execute(
             """SELECT stage, evidence_level, COUNT(*) AS count
-               FROM application_events GROUP BY stage, evidence_level ORDER BY stage"""
+               FROM application_events
+               WHERE event_type IN
+                 ('owner_submission_attestation', 'owner_stage_update', 'receipt_imported')
+               GROUP BY stage, evidence_level ORDER BY stage"""
         ).fetchall()]
         feedback = [dict(row) for row in db.execute(
             """SELECT stage, COUNT(*) AS count,
@@ -189,7 +192,7 @@ def outcome_summary(database_path: Path) -> dict[str, Any]:
         latest = {}
         for row in db.execute(
             """SELECT job_id, stage FROM application_events
-               WHERE event_type != 'receipt_imported'
+               WHERE event_type IN ('owner_submission_attestation', 'owner_stage_update')
                ORDER BY occurred_at DESC, created_at DESC, rowid DESC"""
         ):
             latest.setdefault(row["job_id"], row["stage"])
