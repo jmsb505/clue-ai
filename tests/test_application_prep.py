@@ -25,6 +25,7 @@ from clue_ai.application_prompts import MAX_OUTPUT_TOKENS, OUTPUT_SCHEMA_VERSION
 from clue_ai.applications import mark_applied
 from clue_ai.database import connect, initialize, save_search_run
 from clue_ai.domain import SearchCriteria
+from clue_ai.lifecycle import mark_interrupted_preparations
 from clue_ai.repository import save_jobs, save_run_results, update_run
 from clue_ai.web import create_app
 
@@ -415,6 +416,28 @@ def test_owner_override_is_retained_when_a_failed_request_is_retried(settings, d
         "jev_conflict_acknowledged": True,
         "location_eligibility_acknowledged": True,
     }
+
+
+def test_interrupted_preparation_can_be_manually_retried(settings, database):
+    _configure_preparation_inputs(settings, database)
+    job_id = _save_eligible_match(database)
+    request, created = request_preparation(database, job_id, "run-app-prep")
+    assert created is True
+    with connect(database) as db:
+        db.execute(
+            "UPDATE preparation_requests SET state = 'generating' WHERE id = ?",
+            (request["id"],),
+        )
+
+    assert mark_interrupted_preparations(database) == 1
+    failed = get_preparation(database, request["id"])
+    assert failed["state"] == "failed"
+    assert "manually retrying" in failed["status_message"]
+
+    retried, was_created = retry_preparation(database, request["id"])
+    assert was_created is True
+    assert retried["attempt_no"] == 2
+    assert retried["state"] == "requested"
 
 
 def test_scored_blocker_controls_are_visible_on_search_results_history_and_saved_roles(
