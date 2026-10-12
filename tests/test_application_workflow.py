@@ -5616,9 +5616,9 @@ def test_openai_missing_usage_receipt_is_unknown_and_blocks_retry(settings, data
             "UPDATE preparation_requests SET state = 'failed' WHERE id = ?",
             (record["id"],),
         )
-    with pytest.raises(ValueError, match="previous API charge.*unresolved"):
+    with pytest.raises(ValueError, match="unresolved OpenAI usage"):
         retry_preparation(database, record["id"])
-    with pytest.raises(ValueError, match="previous API charge.*unresolved"):
+    with pytest.raises(ValueError, match="unresolved OpenAI usage"):
         request_preparation(
             database,
             record["job_id"],

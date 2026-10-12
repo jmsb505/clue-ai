@@ -400,6 +400,7 @@ def request_preparation(
     additional_source_url: str = "",
     confirm_jev_conflict: bool = False,
     confirm_location_eligibility: bool = False,
+    _acknowledge_unresolved_usage_for: str = "",
 ) -> tuple[dict[str, Any], bool]:
     """Create one idempotent queue item after any listing-specific override is acknowledged."""
     from clue_ai.applications import not_applied_sql
@@ -607,16 +608,42 @@ def request_preparation(
         }:
             db.execute("COMMIT")
             return dict(existing), False
+        acknowledged_usage = []
+        if _acknowledge_unresolved_usage_for:
+            acknowledged_request = db.execute(
+                """SELECT id, job_id, run_id, state FROM preparation_requests WHERE id = ?""",
+                (_acknowledge_unresolved_usage_for,),
+            ).fetchone()
+            if (
+                acknowledged_request is None
+                or acknowledged_request["job_id"] != job_id
+                or acknowledged_request["run_id"] != run_id
+                or acknowledged_request["state"] not in {"blocked", "failed", "cancelled"}
+            ):
+                db.execute("ROLLBACK")
+                raise ValueError("The failed request changed. Refresh this dossier before retrying.")
+            acknowledged_usage = db.execute(
+                """SELECT id, stage, status, reserved_usd, actual_usd,
+                          reserved_input_tokens, max_output_tokens, created_at
+                   FROM openai_usage WHERE request_id = ? AND status IN ('reserved', 'unknown')
+                   ORDER BY created_at, id""",
+                (_acknowledge_unresolved_usage_for,),
+            ).fetchall()
+            if not acknowledged_usage:
+                db.execute("ROLLBACK")
+                raise ValueError(
+                    "This request no longer has unresolved OpenAI usage. Refresh the dossier and retry normally."
+                )
         if existing:
             unresolved = db.execute(
-                """SELECT 1 FROM openai_usage WHERE request_id = ?
+                """SELECT id FROM openai_usage WHERE request_id = ?
                    AND status IN ('reserved', 'unknown') LIMIT 1""",
                 (existing["id"],),
             ).fetchone()
-            if unresolved:
+            if unresolved and _acknowledge_unresolved_usage_for != existing["id"]:
                 db.execute("ROLLBACK")
                 raise ValueError(
-                    "A previous API charge for this request is unresolved. Review usage before retrying."
+                    "This request has unresolved OpenAI usage. Review its possible-charge warning before retrying."
                 )
         attempt_no = int(existing["attempt_no"]) + 1 if existing else 1
         now = utc_now()
@@ -641,11 +668,52 @@ def request_preparation(
         created = db.execute(
             "SELECT * FROM preparation_requests WHERE id = ?", (request_id,)
         ).fetchone()
+        if acknowledged_usage:
+            acknowledgement = {
+                "previous_request_id": _acknowledge_unresolved_usage_for,
+                "possible_duplicate_charge_acknowledged": True,
+                "acknowledgement": (
+                    "The owner acknowledged that the provider may already have processed and charged "
+                    "the previous request; the reserved amount is not a billing receipt."
+                ),
+                "unresolved_openai_usage": [dict(item) for item in acknowledged_usage],
+            }
+            db.execute(
+                """INSERT INTO application_events
+                   (id, job_id, request_id, event_type, stage, evidence_level,
+                    details_json, occurred_at, created_at)
+                   VALUES (?, ?, ?, 'owner_acknowledged_openai_retry', 'retry',
+                           'owner_reported', ?, ?, ?)""",
+                (
+                    uuid.uuid4().hex,
+                    job_id,
+                    request_id,
+                    json.dumps(acknowledgement, ensure_ascii=False, sort_keys=True),
+                    now,
+                    now,
+                ),
+            )
         db.execute("COMMIT")
     return dict(created), True
 
 
-def retry_preparation(database_path: Path, request_id: str) -> tuple[dict[str, Any], bool]:
+def unresolved_openai_usage(database_path: Path, request_id: str) -> list[dict[str, Any]]:
+    """Return the minimal usage fields needed to explain a blocked retry in its dossier."""
+    with connect(database_path) as db:
+        rows = db.execute(
+            """SELECT id, stage, status, reserved_usd, created_at
+               FROM openai_usage WHERE request_id = ? AND status IN ('reserved', 'unknown')
+               ORDER BY created_at, id""",
+            (request_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def retry_preparation(
+    database_path: Path,
+    request_id: str,
+    acknowledge_unresolved_usage: bool = False,
+) -> tuple[dict[str, Any], bool]:
     """Create a new owner-triggered attempt for the same immutable job and inputs."""
     with connect(database_path) as db:
         prior = db.execute(
@@ -656,12 +724,19 @@ def retry_preparation(database_path: Path, request_id: str) -> tuple[dict[str, A
         if prior["state"] not in {"blocked", "failed", "cancelled"}:
             raise ValueError("Only a blocked, failed, or cancelled request can be retried.")
         unresolved = db.execute(
-            """SELECT 1 FROM openai_usage WHERE request_id = ?
-               AND status IN ('reserved', 'unknown') LIMIT 1""",
+            """SELECT id FROM openai_usage WHERE request_id = ?
+               AND status IN ('reserved', 'unknown') ORDER BY created_at, id""",
             (request_id,),
-        ).fetchone()
-        if unresolved:
-            raise ValueError("A previous API charge is unresolved. Reconcile usage before retrying.")
+        ).fetchall()
+        if unresolved and not acknowledge_unresolved_usage:
+            raise ValueError(
+                "This request has unresolved OpenAI usage. Review its possible-charge warning "
+                "and acknowledge it before retrying."
+            )
+        if acknowledge_unresolved_usage and not unresolved:
+            raise ValueError(
+                "This request no longer has unresolved OpenAI usage. Refresh the dossier and retry normally."
+            )
         snapshot = json.loads(prior["snapshot_json"])
         job_id = prior["job_id"]
         run_id = prior["run_id"]
@@ -675,6 +750,7 @@ def retry_preparation(database_path: Path, request_id: str) -> tuple[dict[str, A
         additional_source_url,
         bool(snapshot.get("owner_preparation_overrides", {}).get("jev_conflict_acknowledged")),
         bool(snapshot.get("owner_preparation_overrides", {}).get("location_eligibility_acknowledged")),
+        request_id if acknowledge_unresolved_usage else "",
     )
     if is_new:
         return created, True
