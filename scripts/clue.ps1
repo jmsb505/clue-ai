@@ -44,26 +44,32 @@ function Get-GenPythonPath {
     return [System.IO.Path]::GetFullPath([string]$pythonPath[0])
 }
 
-function Complete-InterruptedSearches([string]$PythonPath) {
-    $code = "from clue_ai.config import Settings; from clue_ai.lifecycle import mark_interrupted_runs; database = Settings.from_environment().database_path; print(mark_interrupted_runs(database) if database.is_file() else 0)"
+function Complete-InterruptedWork([string]$PythonPath) {
+    $code = "from clue_ai.config import Settings; from clue_ai.lifecycle import mark_interrupted_preparations, mark_interrupted_runs; database = Settings.from_environment().database_path; print(mark_interrupted_runs(database) if database.is_file() else 0); print(mark_interrupted_preparations(database) if database.is_file() else 0)"
     Push-Location $ProjectRoot
     try {
         $output = & $PythonPath -c $code
         if ($LASTEXITCODE -ne 0) {
-            throw "Could not update interrupted search state using Conda 'gen'."
+            throw "Could not recover interrupted Clue work using Conda 'gen'."
         }
     }
     finally {
         Pop-Location
     }
 
-    $count = 0
-    $countText = @($output | Select-Object -Last 1)
-    if ($countText.Count -gt 0 -and -not [int]::TryParse([string]$countText[0], [ref]$count)) {
-        throw "Could not read the interrupted search count from Conda 'gen'."
+    $searchCount = 0
+    $preparationCount = 0
+    $countLines = @($output | Select-Object -Last 2)
+    if ($countLines.Count -ne 2 -or
+        -not [int]::TryParse([string]$countLines[0], [ref]$searchCount) -or
+        -not [int]::TryParse([string]$countLines[1], [ref]$preparationCount)) {
+        throw "Could not read the interrupted-work counts from Conda 'gen'."
     }
-    if ($count -gt 0) {
-        Write-Host "Marked $count unfinished search run(s) as stopped."
+    if ($searchCount -gt 0) {
+        Write-Host "Marked $searchCount unfinished search run(s) as stopped."
+    }
+    if ($preparationCount -gt 0) {
+        Write-Host "Marked $preparationCount unfinished application preparation(s) as failed; manual retry is available."
     }
 }
 
@@ -117,7 +123,7 @@ function Stop-ClueServer {
         if (Test-Path -LiteralPath $ManagedPidPath) {
             Remove-Item -LiteralPath $ManagedPidPath -Force
         }
-        Complete-InterruptedSearches (Get-GenPythonPath)
+        Complete-InterruptedWork (Get-GenPythonPath)
         Write-Host "Port $Port is already free."
         return
     }
@@ -172,7 +178,7 @@ function Stop-ClueServer {
     if ($remaining.Count -gt 0) {
         throw "Port $Port is still in use by PID(s): $($remaining -join ', ')."
     }
-    Complete-InterruptedSearches $genPythonPath
+    Complete-InterruptedWork $genPythonPath
     Write-Host "Clue and its crawl processes are stopped. Local profile, CV, and indexed listings were not deleted."
 }
 
@@ -192,7 +198,7 @@ function Start-ClueServer {
     }
 
     $genPythonPath = Get-GenPythonPath
-    Complete-InterruptedSearches $genPythonPath
+    Complete-InterruptedWork $genPythonPath
     Push-Location $ProjectRoot
     try {
         Write-Host "Starting Clue on http://127.0.0.1:$Port. Use '.\scripts\clue.ps1 stop' in another PowerShell window to stop Clue and its crawler processes."
@@ -215,7 +221,7 @@ function Start-ClueServer {
         try {
             if ($process) {
                 Stop-ProcessTree $process.Id $genPythonPath
-                Complete-InterruptedSearches $genPythonPath
+                Complete-InterruptedWork $genPythonPath
                 Remove-ManagedPidIfMatches $process.Id
             }
         }

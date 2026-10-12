@@ -1,4 +1,4 @@
-"""Recovery for searches interrupted when the local Clue process stops."""
+"""Recovery for work interrupted when the local Clue process stops."""
 
 from __future__ import annotations
 
@@ -20,6 +20,27 @@ def mark_interrupted_runs(database_path: Path) -> int:
                SET status = 'failed', stage = 'interrupted', message = ?,
                    error = 'Clue stopped before the search finished.', completed_at = ?
                WHERE status IN ('queued', 'running', 'scoring')""",
+            (message, utc_now()),
+        )
+    return cursor.rowcount
+
+
+def mark_interrupted_preparations(database_path: Path) -> int:
+    """Make active application preparations retryable after their worker is gone."""
+    message = (
+        "Clue stopped while this preparation was active. The run is marked failed; "
+        "review any unresolved provider usage before manually retrying."
+    )
+    with connect(database_path) as db:
+        table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'preparation_requests'"
+        ).fetchone()
+        if table is None:
+            return 0
+        cursor = db.execute(
+            """UPDATE preparation_requests
+               SET state = 'failed', status_message = ?, updated_at = ?
+               WHERE state IN ('requested', 'researching', 'generating')""",
             (message, utc_now()),
         )
     return cursor.rowcount
