@@ -1,6 +1,6 @@
 # PLAN-026 — Live application preparation progress
 
-Status: Complete locally — branch/PR checks pending
+Status: Complete — merged to main in PR #10
 Created: 2026-10-12 · Last updated: 2026-10-12
 Related: [PLAN-022](PLAN-022-application-workspaces.md), [PLAN-023](PLAN-023-ranked-search-history-and-form-guidance.md), [PLAN-024](PLAN-024-lean-task-first-ui.md), [PLAN-025](PLAN-025-preparation-overrides-and-application-email.md)
 
@@ -166,7 +166,7 @@ The schema migration only adds a nullable-by-default text timestamp column and i
 
 ## Progress
 
-- 2026-10-12: M1 and M2 completed locally. The dossier polls active requests, reports heartbeat age and possible stalls, and keeps bounded-crawl failures visible through packet review. Full local validation passes; branch/PR checks remain.
+- 2026-10-12: M1 and M2 completed locally. The dossier polls active requests, reports heartbeat age and possible stalls, and keeps bounded-crawl failures visible through packet review. PR #10 merged this implementation to main.
 
 ## Implementation discoveries / decisions
 
@@ -180,3 +180,4 @@ The schema migration only adds a nullable-by-default text timestamp column and i
 - Full suite: `394 passed` in 84.64 seconds; one existing Starlette/AnyIO `BlockingPortal` deprecation warning.
 - Static validation: Ruff, Python byte-compilation, JavaScript syntax check, and `git diff --check` pass.
 - No live OpenAI call or real public crawl was needed for this UI/runtime-state change. Block behavior was tested with a synthetic crawler response.
+- GitHub reported no Actions runs or commit checks for the PR branch. PR #10 merged successfully; local `main` was fast-forwarded to the merge commit.

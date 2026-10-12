@@ -1,6 +1,6 @@
 # Roadmap
 
-**Status:** Application preparation and local dossiers are implemented through merged PR #9. PLAN-025's owner-acknowledged blocker controls, linked-form answer drafts, and explicit application-email handoff passed local validation. PLAN-026's live preparation stages, worker-heartbeat/stall visibility, and surfaced crawl failures pass local integration validation: 394 tests pass. PLAN-026 branch/PR checks and owner acceptance remain open; broader repeatability is still unmeasured.
+**Status:** Application preparation and local dossiers are implemented through merged PR #10. PLAN-025's owner-acknowledged blocker controls, linked-form answer drafts, and explicit application-email handoff passed local validation. PLAN-026's live preparation stages, worker-heartbeat/stall visibility, and surfaced crawl failures are merged; 394 local tests pass. GitHub reported no Actions runs or commit checks for PR #10. Owner acceptance and broader repeatability remain open.
 **Updated:** 2026-10-12
 
 ## Definition gate
