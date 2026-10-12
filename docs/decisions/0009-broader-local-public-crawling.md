@@ -15,6 +15,7 @@ Clue is a personal local job-search tool. The owner wants broad discovery from p
 - Raise public career-page limits to 25 HTML pages per employer, 10 child sitemaps, 50 sitemap job pages, 20 dynamic pages per company batch, 100 same-host pages for an owner-added career URL, and 200 JustRemote pages (80 listing pages and 120 job details).
 - Refresh frequently updated feeds hourly. Keep RemoteJobs.org, Himalayas, Remotive, and Working Nomads on their documented daily cadence. Refresh company career pages and JustRemote every six hours.
 - Distinguish query success from query failure. A failed request does not consume the ordinary success interval; failed feeds and public crawls may retry after five minutes. Explicit 401/403/429 responses, anti-bot challenges, and access denials pause the affected host and are not retried.
+- In the manual application-preparation Researcher, retain an explicit host denial for the remainder of that listing's preparation. Later tool calls to the same host are local skips; other already allowed sources and the saved listing remain available.
 - Automatically enable owner-added supported public HTTPS sources after host/identifier validation. Keep pause and remove controls available.
 - Preserve publisher-specific request limits and attribution, source URLs, response-size limits, public-host validation, and source page budgets.
 - Keep login-only and paywalled content, X scraping, undocumented API reverse engineering, proxy rotation, stealth fetchers, browser impersonation, and CAPTCHA solving out of scope.
