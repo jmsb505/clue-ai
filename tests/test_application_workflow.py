@@ -45,6 +45,7 @@ from clue_ai.application_workflow import (
     _apply_grounding_results,
     _assert_packet_quality_gates,
     _bind_recruiter_requirements,
+    _call_stage,
     _contains_role_duty_inventory,
     _cover_letter_quality,
     _cover_letter_title,
@@ -67,6 +68,7 @@ from clue_ai.application_workflow import (
     _resume_render_blocks,
     _resume_signature_name,
     _rewrite_change_summary,
+    _run_researcher,
     _select_technical_profile_evidence,
     _technical_profile_prompt_context,
     _validate_letter_review,
@@ -407,6 +409,94 @@ def _enable_synthetic_openai(settings: Settings, database_path: Path) -> Setting
         rate_card_revision=datetime.now(timezone.utc).date().isoformat(),
     )
     return replace(settings, openai_api_key="synthetic-openai-key")
+
+
+@pytest.mark.parametrize(
+    ("stage", "expected_message"),
+    [
+        ("diagnoser", "Diagnoser is checking selected CV lines"),
+        ("recruiter", "Recruiter is mapping the job requirements"),
+        ("rewriter", "Rewriter is drafting the tailored CV"),
+        ("letter_reviewer", "Jev is reviewing the cover letter"),
+        ("letter_reviser", "Rewriter is revising the cover letter"),
+    ],
+)
+def test_generation_agent_stage_is_saved_before_api_call(
+    settings, database, monkeypatch, stage, expected_message
+):
+    record, *_ = _create_preparation(settings, database)
+    monkeypatch.setattr("clue_ai.application_workflow._payload", lambda *_args, **_kwargs: {"input": []})
+    monkeypatch.setattr("clue_ai.application_workflow._api_call", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr("clue_ai.application_workflow._parse_stage_result", lambda *_args: {"ok": True})
+
+    result = _call_stage(database, settings, {}, record, stage, {}, object(), [])
+
+    assert result == {"ok": True}
+    saved = get_preparation(database, record["id"])
+    assert saved["state"] == "generating"
+    assert saved["status_message"].startswith(expected_message)
+    assert saved["worker_heartbeat_at"]
+
+
+def test_blocked_public_crawl_is_reported_while_research_continues(settings, database, monkeypatch):
+    record, *_ = _create_preparation(settings, database)
+    calls = iter(
+        [
+            {
+                "output": [
+                    {
+                        "type": "function_call",
+                        "name": "crawl_public_page",
+                        "call_id": "crawl-1",
+                        "arguments": json.dumps(
+                            {"url": "https://blocked.example.org/jobs/role", "research_question": "Find application details."}
+                        ),
+                    }
+                ]
+            },
+            {"output": [{"type": "message", "content": []}]},
+        ]
+    )
+
+    class BlockedCrawler:
+        def __init__(self, _settings, _allowed_urls):
+            self.allowed_urls = {JOB_URL}
+            self.pages = {}
+
+        def crawl(self, _url, _question):
+            raise RuntimeError(
+                "Max retries exceeded for blocked request: https://blocked.example.org/jobs/role"
+            )
+
+    monkeypatch.setattr(
+        "clue_ai.application_workflow._api_call",
+        lambda *_args, **_kwargs: next(calls),
+    )
+    monkeypatch.setattr("clue_ai.application_workflow._parse_stage_result", lambda *_args: {"findings": []})
+    monkeypatch.setattr(
+        "clue_ai.application_workflow._validate_research",
+        lambda research, _pages: research,
+    )
+
+    result = _run_researcher(
+        database,
+        settings,
+        record,
+        record["snapshot"],
+        object(),
+        lambda _key: object(),
+        BlockedCrawler,
+        [],
+    )
+
+    saved = get_preparation(database, record["id"])
+    assert result["findings"] == []
+    assert result["crawl_warnings"][0]["host"] == "blocked.example.org"
+    assert result["crawl_warnings"][0]["reason"] == "the site blocked or challenged the request"
+    assert saved["state"] == "researching"
+    assert "blocked.example.org" in saved["status_message"]
+    assert "blocked or unavailable" in saved["status_message"]
+    assert "saved listing and any reachable allowed sources" in saved["status_message"]
 
 
 class FakeCrawler:

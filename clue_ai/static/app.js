@@ -65,4 +65,132 @@
       }
     });
   });
+
+  const progressPanel = document.querySelector("[data-preparation-progress]");
+  if (progressPanel) {
+    const message = progressPanel.querySelector("[data-progress-message]");
+    const stateLabel = progressPanel.querySelector("[data-progress-state]");
+    const timing = progressPanel.querySelector("[data-progress-timing]");
+    const progressBar = progressPanel.querySelector("[data-progress-bar]");
+    const stallWarning = progressPanel.querySelector("[data-progress-stall]");
+    const connectionWarning = progressPanel.querySelector("[data-progress-connection]");
+    const queueLabel = progressPanel.querySelector("[data-progress-queue]");
+    const progressUrl = progressPanel.dataset.progressUrl || "";
+    const pollInterval = Math.max(1000, Number(progressPanel.dataset.pollIntervalMs) || 2500);
+    const staleAfter = Math.max(15, Number(progressPanel.dataset.staleAfterSeconds) || 35);
+    const steps = [...progressPanel.querySelectorAll("[data-progress-step]")];
+    let state = progressPanel.dataset.state || "";
+    let createdAt = progressPanel.dataset.createdAt || "";
+    let lastUpdatedAt = progressPanel.dataset.updatedAt || "";
+    let heartbeatAt = progressPanel.dataset.workerHeartbeatAt || "";
+    let pollTimer = null;
+    let clockTimer = null;
+
+    const stateNames = {
+      requested: "Queued",
+      researching: "Researching",
+      generating: "Generating and checking",
+      review: "Ready for review",
+      completed: "Owner approved",
+      blocked: "Blocked",
+      failed: "Needs attention",
+      cancelled: "Cancelled",
+    };
+    const activeStates = new Set(["requested", "researching", "generating"]);
+    const parseTime = (value) => {
+      const parsed = value ? Date.parse(value) : NaN;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const durationLabel = (totalSeconds) => {
+      const seconds = Math.max(0, Math.floor(totalSeconds));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainder = seconds % 60;
+      if (hours) return `${hours}h ${minutes}m`;
+      if (minutes) return `${minutes}m ${remainder}s`;
+      return `${remainder}s`;
+    };
+    const setTextIfChanged = (node, value) => {
+      if (node && node.textContent !== value) node.textContent = value;
+    };
+    const updateTiming = () => {
+      if (!timing || !activeStates.has(state)) return;
+      const now = Date.now();
+      const start = parseTime(createdAt);
+      const heartbeat = parseTime(heartbeatAt);
+      const lastUpdate = parseTime(lastUpdatedAt);
+      const elapsed = start ? durationLabel((now - start) / 1000) : "—";
+      const signalTime = heartbeat || lastUpdate;
+      const signalAge = signalTime ? Math.max(0, Math.floor((now - signalTime) / 1000)) : null;
+      const heartbeatLabel = heartbeat
+        ? `Last worker heartbeat ${durationLabel(signalAge)} ago.`
+        : "Waiting for the first worker heartbeat.";
+      setTextIfChanged(timing, `Elapsed ${elapsed}. ${heartbeatLabel}`);
+      if (stallWarning) {
+        const stale = signalAge === null ? (start > 0 && (now - start) / 1000 > staleAfter) : signalAge > staleAfter;
+        stallWarning.hidden = !stale;
+        if (stale) {
+          stallWarning.textContent = `No worker heartbeat for ${signalAge === null ? "more than " : ""}${signalAge === null ? staleAfter : signalAge} seconds. Preparation may have stalled or stopped; check the local Clue process before retrying.`;
+        }
+      }
+    };
+    const renderProgress = (payload) => {
+      state = payload.state || state;
+      createdAt = payload.created_at || createdAt;
+      lastUpdatedAt = payload.updated_at || lastUpdatedAt;
+      heartbeatAt = payload.worker_heartbeat_at || heartbeatAt;
+      progressPanel.dataset.state = state;
+      progressPanel.dataset.updatedAt = lastUpdatedAt;
+      progressPanel.dataset.workerHeartbeatAt = heartbeatAt;
+      progressPanel.setAttribute("aria-busy", payload.active ? "true" : "false");
+      setTextIfChanged(message, payload.status_message || "Preparation status updated.");
+      setTextIfChanged(stateLabel, stateNames[state] || state);
+      if (queueLabel) queueLabel.hidden = state !== "requested";
+      if (progressBar) progressBar.hidden = !payload.active;
+      const stepIndex = Number.isInteger(payload.step_index) ? payload.step_index : null;
+      steps.forEach((step) => {
+        const index = Number(step.dataset.progressStep);
+        const complete = (stepIndex !== null && index < stepIndex)
+          || ((state === "review" || state === "completed") && index === 3)
+          || (state === "completed" && index < 3);
+        const current = payload.active && stepIndex === index;
+        step.classList.toggle("is-complete", complete);
+        step.classList.toggle("is-active", current);
+        if (current) step.setAttribute("aria-current", "step");
+        else step.removeAttribute("aria-current");
+      });
+      if (connectionWarning) connectionWarning.hidden = true;
+      updateTiming();
+      if (!payload.active) {
+        if (pollTimer) window.clearTimeout(pollTimer);
+        if (clockTimer) window.clearInterval(clockTimer);
+        pollTimer = null;
+        clockTimer = null;
+      }
+    };
+
+    const poll = async () => {
+      if (!progressUrl || !activeStates.has(state)) return;
+      try {
+        const response = await fetch(progressUrl, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error(`Status request returned ${response.status}`);
+        renderProgress(await response.json());
+      } catch (_error) {
+        if (connectionWarning) {
+          connectionWarning.hidden = false;
+          connectionWarning.textContent = "Clue did not respond to the progress check. Keep the local app running; its current state cannot be confirmed yet.";
+        }
+      }
+      if (activeStates.has(state)) pollTimer = window.setTimeout(poll, pollInterval);
+    };
+
+    if (progressUrl && activeStates.has(state)) {
+      updateTiming();
+      clockTimer = window.setInterval(updateTiming, 1000);
+      pollTimer = window.setTimeout(poll, 500);
+    }
+  }
 })();

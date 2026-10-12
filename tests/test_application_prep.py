@@ -12,6 +12,7 @@ from clue_ai.application_prep import (
     application_email_instruction_for_description,
     approved_claims,
     get_preparation,
+    heartbeat_preparation,
     list_claims,
     list_sources,
     request_preparation,
@@ -620,7 +621,7 @@ def test_initialize_migrates_legacy_preparation_retry_constraint_and_preserves_c
 
     with connect(database_path) as db:
         request = db.execute(
-            "SELECT id, attempt_no, state FROM preparation_requests WHERE id = 'old-request'"
+            "SELECT id, attempt_no, state, worker_heartbeat_at FROM preparation_requests WHERE id = 'old-request'"
         ).fetchone()
         child_count = db.execute("SELECT COUNT(*) FROM migration_child").fetchone()[0]
         indexes = db.execute("PRAGMA index_list(preparation_requests)").fetchall()
@@ -639,6 +640,7 @@ def test_initialize_migrates_legacy_preparation_retry_constraint_and_preserves_c
         assert ["job_id", "snapshot_sha256", "attempt_no"] in unique_columns
         assert ["job_id", "snapshot_sha256"] not in unique_columns
         assert request["attempt_no"] == 1 and request["state"] == "failed"
+        assert request["worker_heartbeat_at"] == ""
         assert child_count == 1
         db.execute(
             """INSERT INTO preparation_requests
@@ -675,9 +677,65 @@ def test_manual_listing_button_creates_only_a_bound_request(settings):
     request_id = response.headers["location"].split("/preparations/", 1)[1].split("?", 1)[0]
     detail = client.get(f"/preparations/{request_id}")
     assert detail.status_code == 200
-    assert "Owner selected this listing" in detail.text
-    assert "No external action is performed by Clue" in detail.text
+    assert "Request queued" in detail.text
+    assert "No application is submitted and no outreach is sent" in detail.text
     assert "Generate packet" in client.get("/searches/run-app-prep").text
+
+
+def test_preparation_progress_endpoint_is_live_private_and_marks_stale_worker(settings):
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    _configure_preparation_inputs(settings, settings.database_path)
+    job_id = _save_eligible_match(settings.database_path)
+    record, created = request_preparation(settings.database_path, job_id, "run-app-prep")
+    assert created
+
+    detail = client.get(f"/applications/{record['id']}")
+    assert detail.status_code == 200
+    progress_panel = detail.text.split('<details id="preparation-progress"', 1)[1].split("</details>", 1)[0]
+    assert 'data-progress-url="/applications/' + record["id"] + '/status"' in progress_panel
+    assert 'aria-busy="true"' in progress_panel
+    assert 'role="progressbar"' in progress_panel
+    assert "aria-valuenow" not in progress_panel
+    assert "Research role and public application pages" in progress_panel
+    assert "Jev checks supported claims and the tailored CV" in progress_panel
+
+    response = client.get(f"/applications/{record['id']}/status")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    status = response.json()
+    assert status["state"] == "requested"
+    assert status["active"] is True
+    assert status["step_index"] == 0
+    assert status["stale"] is False
+    assert set(status) == {
+        "state", "status_message", "created_at", "updated_at", "worker_heartbeat_at",
+        "active", "stale", "heartbeat_age_seconds", "stale_after_seconds",
+        "poll_interval_ms", "step_index",
+    }
+    assert "snapshot" not in status and "cv" not in status and "research" not in status
+
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE preparation_requests SET state = 'generating', worker_heartbeat_at = ? WHERE id = ?",
+            ("2020-01-01T00:00:00+00:00", record["id"]),
+        )
+    stale = client.get(f"/preparations/{record['id']}/status").json()
+    assert stale["active"] is True
+    assert stale["stale"] is True
+    assert stale["step_index"] == 2
+
+
+def test_worker_heartbeat_does_not_change_folder_sort_timestamp(settings, database):
+    _configure_preparation_inputs(settings, database)
+    job_id = _save_eligible_match(database)
+    record, _ = request_preparation(database, job_id, "run-app-prep")
+    before = get_preparation(database, record["id"])
+
+    assert heartbeat_preparation(database, record["id"])
+
+    after = get_preparation(database, record["id"])
+    assert after["updated_at"] == before["updated_at"]
+    assert after["worker_heartbeat_at"]
 
 
 def test_review_listing_button_and_dossier_keep_jev_uncertainty_visible(settings):

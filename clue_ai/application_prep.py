@@ -18,6 +18,10 @@ from clue_ai.openai_provider import MODEL_ID, REASONING_EFFORT
 from clue_ai.resume import ResumeError, extract_resume_text
 
 SOURCE_TYPES = {"technical_profile", "descriptive_profile", "resume", "writing_sample"}
+PREPARATION_STATES = {
+    "requested", "researching", "generating", "review", "completed", "blocked", "failed", "cancelled"
+}
+ACTIVE_PREPARATION_STATES = ("requested", "researching", "generating")
 EVIDENCE_LEVELS = {
     "unknown",
     "measured_result",
@@ -718,6 +722,38 @@ def get_preparation(database_path: Path, request_id: str) -> dict[str, Any] | No
     result["snapshot"] = json.loads(result["snapshot_json"])
     result["application_stage"] = stage["stage"] if stage else ""
     return result
+
+
+def set_preparation_progress(
+    database_path: Path,
+    request_id: str,
+    state: str,
+    message: str,
+) -> bool:
+    """Save a user-facing stage update and its worker liveness timestamp."""
+    if state not in PREPARATION_STATES:
+        raise ValueError("Choose a supported preparation state.")
+    now = utc_now()
+    with connect(database_path) as db:
+        result = db.execute(
+            """UPDATE preparation_requests
+               SET state = ?, status_message = ?, updated_at = ?, worker_heartbeat_at = ?
+               WHERE id = ?""",
+            (state, str(message)[:500], now, now, request_id),
+        )
+    return result.rowcount == 1
+
+
+def heartbeat_preparation(database_path: Path, request_id: str) -> bool:
+    """Refresh only active worker liveness; leave status text and list ordering alone."""
+    now = utc_now()
+    with connect(database_path) as db:
+        result = db.execute(
+            """UPDATE preparation_requests SET worker_heartbeat_at = ?
+               WHERE id = ? AND state IN ('requested', 'researching', 'generating')""",
+            (now, request_id),
+        )
+    return result.rowcount == 1
 
 
 def _claim_candidates(source_text: str) -> list[str]:
