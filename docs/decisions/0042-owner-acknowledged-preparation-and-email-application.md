@@ -1,6 +1,6 @@
 # ADR 0042 — Owner-acknowledged preparation and email-application handoff
 
-- Status: Accepted — implementation and local validation passed; PR checks pending
+- Status: Accepted — implementation and local validation passed
 - Date: 2026-10-12
 - Related: [PLAN-025](../plans/PLAN-025-preparation-overrides-and-application-email.md), [ADR 0023](0023-application-preparation-and-action-boundaries.md), [ADR 0040](0040-ranked-search-history-and-public-form-guidance.md), [ADR 0041](0041-lean-task-first-interface.md)
 
@@ -27,4 +27,4 @@ The listing cards hid packet generation whenever Jev reported a conflict or did 
 
 ## Validation
 
-The project `.venv` ran all **386 tests** successfully (80.47 seconds; one upstream Starlette/AnyIO deprecation warning). The application-preparation and workflow suites passed **155 tests**. Synthetic coverage confirms conflict/location acknowledgements with unchanged saved Jev values, visible controls on result/history/saved routes, public Apply-page crawling, exact question-answer generation, explicit email instructions from the listing and linked page with and without a verified address, writer-context email redaction, contact-only negative cases, dossier/attachment rendering, and no application submission. Ruff, Python byte-compilation, and `git diff --check` passed. No live API, employer, Gmail, or OpenAI request was used; PR checks remain pending.
+The project `.venv` ran all **386 tests** successfully (80.47 seconds; one upstream Starlette/AnyIO deprecation warning). Focused blocker, form-question, and email workflow validation passed **32 tests**. Full-suite synthetic coverage confirms conflict/location acknowledgements with unchanged saved Jev values, visible controls on result/history/saved routes, public Apply-page crawling, exact question-answer generation, explicit email instructions from the listing and linked page with and without a verified address, writer-context email redaction, contact-only negative cases, dossier/attachment rendering, and no application submission. Ruff, Python byte-compilation, and `git diff --check` passed. No live API, employer, Gmail, or OpenAI request was used.

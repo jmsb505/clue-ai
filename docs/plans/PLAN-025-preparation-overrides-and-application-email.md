@@ -1,6 +1,6 @@
 # PLAN-025 — Preparation overrides and application email drafts
 
-Status: Complete locally — all acceptance tests passed; PR checks pending
+Status: Complete locally — all acceptance tests passed
 Created: 2026-10-12 · Last updated: 2026-10-12
 Related: [PLAN-019](PLAN-019-application-preparation-framework.md), [PLAN-023](PLAN-023-ranked-search-history-and-form-guidance.md), [PLAN-024](PLAN-024-lean-task-first-ui.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md), [ADR 0041](../decisions/0041-lean-task-first-interface.md), [ADR 0042](../decisions/0042-owner-acknowledged-preparation-and-email-application.md)
 
@@ -186,4 +186,4 @@ Remove the override checkbox branches and associated service arguments to restor
 
 ## Completion evidence
 
-Local acceptance completed 2026-10-12. The project `.venv` ran all **386 tests** successfully (80.47 seconds; one upstream Starlette/AnyIO deprecation warning). Ruff passed, Python byte-compilation passed, and `git diff --check` passed. Application-specific route/workflow validation passed **155 tests**, including synthetic conflict/location acknowledgement, unchanged Jev rows, public Apply-page discovery, exact question-answer generation, explicit application-email drafts from both the saved job description and linked page (with and without a public recipient), writer-context email redaction, dossier rendering, and no application submission. No live OpenAI, Jev, employer, or Gmail request was used. Feature branch PR checks remain pending.
+Local acceptance completed 2026-10-12. The project `.venv` ran all **386 tests** successfully (80.47 seconds; one upstream Starlette/AnyIO deprecation warning). Ruff passed, Python byte-compilation passed, and `git diff --check` passed. Focused blocker, form-question, and email workflow validation passed **32 tests**. Full-suite coverage includes synthetic conflict/location acknowledgement, unchanged Jev rows, public Apply-page discovery, exact question-answer generation, explicit application-email drafts from both the saved job description and linked page (with and without a public recipient), writer-context email redaction, dossier rendering, and no application submission. No live OpenAI, Jev, employer, or Gmail request was used.
