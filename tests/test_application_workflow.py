@@ -12,6 +12,7 @@ from email.parser import BytesParser
 from hashlib import sha256
 from pathlib import Path
 from typing import ClassVar
+from urllib.parse import urlsplit
 
 import pytest
 from conftest import make_job
@@ -4887,6 +4888,46 @@ def test_crawler_can_follow_exact_external_source_links_but_not_unlinked_domains
     with pytest.raises(ResearchCrawlError, match="not supplied or linked"):
         crawler.crawl("https://unlinked.example.net/person", "guess a contact")
     assert len(fetched) == 3
+
+
+def test_research_crawler_does_not_request_a_host_again_after_access_denial(settings, monkeypatch):
+    from clue_ai import scrapling_research
+
+    requests = []
+    blocked_host = (urlsplit(JOB_URL).hostname or "").casefold()
+
+    def deny_once(url, host, _settings):
+        requests.append((url, host))
+        if host == blocked_host:
+            raise scrapling_research.ResearchCrawlBlockedError(
+                "The site denied the public-page request.", request_sent=True
+            )
+        return {
+            "url": url,
+            "title": "Alternate allowed source",
+            "text": "Public information from another already allowed host.",
+            "links": [],
+            "form_fields": [],
+            "form_fields_truncated": False,
+            "observed_at": "2026-10-12",
+        }
+
+    monkeypatch.setattr(scrapling_research, "_scrapling_fetch", deny_once)
+    monkeypatch.setattr(scrapling_research, "_require_public_resolution", lambda _host: None)
+    same_host_url = JOB_URL.rstrip("/") + "/company"
+    alternate_url = "https://company.example.org/jobs/role"
+    crawler = BoundedResearchCrawler(settings, [JOB_URL, same_host_url, alternate_url])
+
+    with pytest.raises(ResearchCrawlError, match="denied") as first_error:
+        crawler.crawl(JOB_URL, "Find public role details")
+    assert first_error.value.request_sent is True
+
+    with pytest.raises(ResearchCrawlError, match="No request was sent") as skipped_error:
+        crawler.crawl(same_host_url, "Try another allowed page on the same host")
+    assert skipped_error.value.request_sent is False
+    alternate_page = crawler.crawl(alternate_url, "Read another allowed source")
+    assert alternate_page["title"] == "Alternate allowed source"
+    assert len(requests) == 2
 
 
 def test_public_form_parser_keeps_labels_and_choices_but_never_input_values():

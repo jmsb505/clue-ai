@@ -191,6 +191,12 @@ class ResearchCrawlError(ValueError):
     pass
 
 
+class ResearchCrawlBlockedError(ResearchCrawlError):
+    def __init__(self, message: str, *, request_sent: bool) -> None:
+        super().__init__(message)
+        self.request_sent = request_sent
+
+
 class BoundedResearchCrawler:
     def __init__(
         self,
@@ -203,6 +209,7 @@ class BoundedResearchCrawler:
         self.seed_hosts = set()
         self.linked_external_urls = set()
         self.link_candidates = set()
+        self.blocked_hosts: set[str] = set()
         for value in allowed_urls:
             validated = normalize_public_job_url(value)
             if validated:
@@ -226,10 +233,20 @@ class BoundedResearchCrawler:
             )
         if normalized in self.pages:
             return self.pages[normalized]
+        if host in self.blocked_hosts:
+            raise ResearchCrawlBlockedError(
+                "Clue skipped this page because the site already denied access during this "
+                "application. No request was sent to that host.",
+                request_sent=False,
+            )
         if len(self.pages) >= RESEARCH_PAGE_LIMIT:
             raise ResearchCrawlError("The four-page research limit for this listing was reached.")
         _require_public_resolution(host)
-        page = _scrapling_fetch(normalized, host, self.settings)
+        try:
+            page = _scrapling_fetch(normalized, host, self.settings)
+        except ResearchCrawlBlockedError:
+            self.blocked_hosts.add(host)
+            raise
         fields_remaining = max(
             0,
             MAX_RESEARCH_FORM_FIELDS
@@ -289,6 +306,7 @@ def _scrapling_fetch(url: str, host: str, settings: Settings) -> dict[str, Any]:
             self.start_urls = [url]
             self.allowed_domains = {host}
             self.item: dict[str, Any] | None = None
+            self.access_denied = False
 
         def configure_sessions(self, manager) -> None:
             manager.add(
@@ -321,9 +339,10 @@ def _scrapling_fetch(url: str, host: str, settings: Settings) -> dict[str, Any]:
 
         async def is_blocked(self, response):
             status = int(getattr(response, "status", 0) or 0)
-            return status in {401, 403, 429} or _looks_blocked(
+            self.access_denied = status in {401, 403, 429} or _looks_blocked(
                 getattr(response, "body", b"")
             )
+            return self.access_denied
 
         async def parse(self, response):
             response_url = str(getattr(response, "url", ""))
@@ -384,6 +403,12 @@ def _scrapling_fetch(url: str, host: str, settings: Settings) -> dict[str, Any]:
             f"The public page could not be read ({type(exc).__name__}); Clue did not retry or follow redirects."
         ) from exc
     if spider.item is None:
+        if spider.access_denied:
+            raise ResearchCrawlBlockedError(
+                "The site denied the public-page request or returned an anti-bot challenge. "
+                "Clue stopped requests to this host for this application.",
+                request_sent=True,
+            )
         raise ResearchCrawlError("The public page was blocked, unavailable, or outside the crawl limits.")
     return spider.item
 

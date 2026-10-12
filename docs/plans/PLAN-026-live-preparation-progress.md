@@ -167,17 +167,20 @@ The schema migration only adds a nullable-by-default text timestamp column and i
 ## Progress
 
 - 2026-10-12: M1 and M2 completed locally. The dossier polls active requests, reports heartbeat age and possible stalls, and keeps bounded-crawl failures visible through packet review. PR #10 merged this implementation to main.
+- 2026-10-12: Follow-up crawl correction: the application Researcher now remembers an explicit denial or challenge for the rest of that listing's preparation and skips later requests to the same host. The saved role and other already allowed hosts remain available. Scrapling's “Max retries exceeded” warning can appear even with `max_blocked_retries = 0`; it marks the denied response and does not mean Clue sent retries.
 
 ## Implementation discoveries / decisions
 
 - Use a dedicated heartbeat column, not `updated_at`, because the latter orders application folders and records user-visible state changes.
 - Use a 10-second heartbeat and mark it stale after 35 seconds; this is a liveness threshold, not an operation timeout.
 - Display step names and an indeterminate bar. A fresh heartbeat means the local worker is alive, not that an external site/provider is responding.
+- Keep a per-preparation denied-host set so separate Researcher tool calls cannot re-request a host after its first access denial or anti-bot challenge. Report later same-host tool calls as local skips, not additional blocked pages.
 
 ## Completion evidence
 
 - M1 targeted pytest: `tests/test_application_prep.py` focused progress/migration cases — 3 passed; `tests/test_application_workflow.py` agent/crawl progress cases — 6 passed.
 - Full suite: `394 passed` in 84.64 seconds; one existing Starlette/AnyIO `BlockingPortal` deprecation warning.
 - Static validation: Ruff, Python byte-compilation, JavaScript syntax check, and `git diff --check` pass.
+- Denied-host follow-up: four focused crawl/workflow tests pass. The synthetic denial contacted one host once, skipped a second URL on that host without a request, and continued to another already allowed host; Ruff and `git diff --check` pass. No live public crawl was made.
 - No live OpenAI call or real public crawl was needed for this UI/runtime-state change. Block behavior was tested with a synthetic crawler response.
 - GitHub reported no Actions runs or commit checks for the PR branch. PR #10 merged successfully; local `main` was fast-forwarded to the merge commit.
