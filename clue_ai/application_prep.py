@@ -353,14 +353,51 @@ def save_writing_preferences(database_path: Path, content: str) -> dict[str, Any
     return get_writing_preferences(database_path)
 
 
+_APPLICATION_EMAIL_PATTERNS = (
+    re.compile(
+        r"\b(?:apply|application|applications)\b.{0,100}\b(?:by|via|through)\s+e-?mail\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:send|email|e-?mail|forward|submit)\b.{0,120}\b(?:application|cv|resume|curriculum vitae|cover letter|application materials|supporting documents)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:application|cv|resume|curriculum vitae|cover letter|application materials|supporting documents)\b.{0,120}\b(?:send|email|e-?mail|forward|submit)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:application|cv|resume|curriculum vitae|cover letter|application materials)\b.{0,100}\b(?:by|via|through)\s+e-?mail\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def application_email_instruction_for_description(description: str) -> str:
+    """Return a bounded listing excerpt only when it explicitly directs email submission."""
+    normalized = " ".join(str(description or "").split())
+    for sentence in re.split(r"(?<=[.!?;])\s+", normalized):
+        has_email_channel = bool(
+            re.search(r"\be-?mail\b", sentence, re.IGNORECASE)
+            or re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", sentence)
+        )
+        if not has_email_channel:
+            continue
+        if any(pattern.search(sentence) for pattern in _APPLICATION_EMAIL_PATTERNS):
+            return sentence[:500]
+    return ""
+
+
 def request_preparation(
     database_path: Path,
     job_id: str,
     run_id: str,
     selected_cv_id: str = "",
     additional_source_url: str = "",
+    confirm_jev_conflict: bool = False,
+    confirm_location_eligibility: bool = False,
 ) -> tuple[dict[str, Any], bool]:
-    """Create one idempotent queue item for an eligible Jev match or review result."""
+    """Create one idempotent queue item after any listing-specific override is acknowledged."""
     from clue_ai.applications import not_applied_sql
     from clue_ai.external_links import normalize_public_job_url
 
@@ -390,8 +427,7 @@ def request_preparation(
                 WHERE j.id = ? AND run.status = 'complete' AND j.is_active = 1
                   AND COALESCE(user_state.hidden, 0) = 0
                   AND r.score_state = 'scored'
-                  AND r.filter_status IN ('match', 'review')
-                  AND r.eligibility_status = 'eligible'
+                  AND r.filter_status IN ('match', 'review', 'conflict')
                   AND {not_applied_sql('j')}
                 LIMIT 1""",
             (run_id, job_id),
@@ -400,8 +436,18 @@ def request_preparation(
             db.execute("ROLLBACK")
             raise ValueError(
                 "Preparation is available only for an active, visible, unapplied listing "
-                "with verified location eligibility and a completed Jev match or review "
-                "decision in the selected search run."
+                "with a completed Jev match, review, or conflict decision in the selected search run. "
+                "Unassessed listings must be scored before preparation."
+            )
+        if row["filter_status"] == "conflict" and not confirm_jev_conflict:
+            db.execute("ROLLBACK")
+            raise ValueError(
+                "Jev reports a conflict for this listing. Confirm that you reviewed the conflict before preparing anyway."
+            )
+        if row["eligibility_status"] != "eligible" and not confirm_location_eligibility:
+            db.execute("ROLLBACK")
+            raise ValueError(
+                "Jev has not confirmed this listing's eligible work location. Confirm that you reviewed the location before preparing anyway."
             )
         sources = db.execute(
             "SELECT source_url FROM job_sources WHERE job_id = ? ORDER BY id", (job_id,)
@@ -410,6 +456,19 @@ def request_preparation(
         snapshot["source_urls"] = [item["source_url"] for item in sources]
         if additional_source_url and additional_source_url not in snapshot["source_urls"]:
             snapshot["source_urls"].append(additional_source_url)
+        email_instruction = application_email_instruction_for_description(
+            str(snapshot.get("description") or "")
+        )
+        snapshot["application_email_instruction"] = {
+            "required": bool(email_instruction),
+            "quote": email_instruction,
+            "source_url": str(snapshot.get("canonical_url") or "")
+            or (snapshot["source_urls"][0] if snapshot["source_urls"] else ""),
+        }
+        snapshot["owner_preparation_overrides"] = {
+            "jev_conflict_acknowledged": row["filter_status"] == "conflict",
+            "location_eligibility_acknowledged": row["eligibility_status"] != "eligible",
+        }
         source_rows = db.execute(
             """SELECT id, filename, source_type, content_sha256, extracted_text,
                       is_default_cv, structure_policy
@@ -610,6 +669,8 @@ def retry_preparation(database_path: Path, request_id: str) -> tuple[dict[str, A
         run_id,
         cv_id,
         additional_source_url,
+        bool(snapshot.get("owner_preparation_overrides", {}).get("jev_conflict_acknowledged")),
+        bool(snapshot.get("owner_preparation_overrides", {}).get("location_eligibility_acknowledged")),
     )
     if is_new:
         return created, True

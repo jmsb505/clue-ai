@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 from docx import Document
 
 from clue_ai.application_prep import (
+    application_email_instruction_for_description,
     approved_claims,
     contact_suppression_key,
     get_preparation,
@@ -154,6 +155,17 @@ def run_preparation(
             usage_ids,
         )
         research = _save_research(database_path, request_id, research)
+        saved_email_instruction = snapshot.get(
+            "application_email_instruction", {"required": False, "quote": "", "source_url": ""}
+        )
+        research_email_instruction = research.get(
+            "application_email_instruction", {"required": False, "quote": "", "source_url": ""}
+        )
+        research["application_email_instruction"] = (
+            saved_email_instruction
+            if saved_email_instruction.get("required")
+            else research_email_instruction
+        )
         research = _identify_research_findings(research)
         application_questions = research.get("application_form", {}).get("questions", [])
 
@@ -263,7 +275,11 @@ def run_preparation(
             research,
             application_questions,
             source["structure_policy"],
-            job_source_url=str(snapshot.get("canonical_url") or ""),
+            job_source_url=(
+                str(snapshot.get("canonical_url") or "")
+                or str(snapshot.get("application_email_instruction", {}).get("source_url") or "")
+            ),
+            application_email_instruction=research.get("application_email_instruction", {}),
             permitted_profile_claim_ids=profile_claim_ids,
             recruiter_requirements=recruiter["requirements"],
             permitted_preference_source_ids={
@@ -368,6 +384,14 @@ def run_preparation(
                 preferred_profile_claim_ids,
             ),
         )
+        if research.get("application_email_instruction", {}).get("required") and not any(
+            item.get("purpose") == "application_email"
+            for item in rewrite.get("outreach_drafts", [])
+        ):
+            quality.setdefault("issues", []).append(
+                "The selected listing or its public application page directs applicants to email their materials, but no supported application email draft passed validation."
+            )
+            quality["status"] = "failed"
         quality["revision"] = letter_repair
         writing_review = letter_repair.get("final_writing_review") or letter_repair.get(
             "initial_writing_review"
@@ -697,6 +721,37 @@ def _validate_research(value: dict[str, Any], pages: dict[str, dict[str, Any]]) 
         item["observed_at"] = page["observed_at"]
         contacts.append(item)
     value["findings"] = findings
+    application_email_instruction = {
+        "required": False,
+        "quote": "",
+        "source_url": "",
+    }
+    for page in pages.values():
+        quote = application_email_instruction_for_description(str(page.get("text") or ""))
+        if not quote:
+            continue
+        application_email_instruction = {
+            "required": True,
+            "quote": quote,
+            "source_url": str(page.get("url") or ""),
+        }
+        if not any(
+            item.get("source_url") == application_email_instruction["source_url"]
+            and _quote_supported(quote, str(item.get("quote") or ""))
+            for item in findings
+        ):
+            findings.append(
+                {
+                    "topic": "Application by email",
+                    "fact": "The public application instructions direct applicants to submit materials by email.",
+                    "source_url": application_email_instruction["source_url"],
+                    "quote": quote,
+                    "confidence": "high",
+                    "observed_at": str(page.get("observed_at") or ""),
+                }
+            )
+        break
+    value["application_email_instruction"] = application_email_instruction
     value["contacts"] = contacts
     form_fields = []
     questions = []
@@ -786,6 +841,7 @@ def _validate_rewrite(
     structure_policy: str,
     *,
     job_source_url: str = "",
+    application_email_instruction: dict[str, Any] | None = None,
     permitted_preference_source_ids: set[str] | None = None,
     permitted_profile_claim_ids: set[str] | None = None,
     recruiter_requirements: list[dict[str, Any]] | None = None,
@@ -946,6 +1002,24 @@ def _validate_rewrite(
     eligible_outreach_source_urls = {
         source_url for source_url, _name in eligible_outreach_contacts if source_url
     }
+    application_email_instruction = application_email_instruction or research.get(
+        "application_email_instruction", {}
+    )
+    application_email_required = bool(application_email_instruction.get("required"))
+    application_instruction_quote = str(application_email_instruction.get("quote") or "").casefold()
+    instruction_email_addresses = set(_EMAIL.findall(application_instruction_quote))
+    eligible_application_contacts: dict[tuple[str, str], set[str]] = {}
+    for contact in research.get("contacts", []):
+        email = str(contact.get("public_email") or "").strip()
+        if contact.get("suppressed") or not _EMAIL.fullmatch(email):
+            continue
+        if (
+            contact.get("contact_type") != "general_recruitment_inbox"
+            and email.casefold() not in application_instruction_quote
+        ):
+            continue
+        key = (str(contact.get("source_url") or ""), str(contact.get("name") or ""))
+        eligible_application_contacts.setdefault(key, set()).add(email)
     known_sources = set(verified_fact_sources)
     valid_outreach = []
     for index, item in enumerate(rewrite.get("outreach_drafts", []), start=1):
@@ -955,36 +1029,72 @@ def _validate_rewrite(
             str(item.get("recipient_name") or ""),
         )
         contact_emails = eligible_outreach_contacts.get(contact_key, set())
-        if not contact_emails:
-            reason = "the recipient has no verified, unsuppressed public email and provenance"
-        elif len(contact_emails) != 1:
-            reason = "the recipient has multiple public emails and the address is ambiguous"
-        elif not (item.get("claim_ids") or item.get("cv_line_ids")):
+        item_source_urls = item.get("source_urls", [])
+        if not (item.get("claim_ids") or item.get("cv_line_ids")):
             reason = "it has no approved candidate evidence"
         elif any(
             url not in known_sources | eligible_outreach_source_urls
-            for url in item.get("source_urls", [])
+            for url in item_source_urls
         ):
             reason = "it cites an unverified research source"
         elif "\ufffd" in str(item.get("subject") or "") or "\ufffd" in str(item.get("body") or ""):
             reason = "its subject or body contains a replacement character"
         elif _EMAIL.search(str(item.get("body") or "")):
             reason = "its body contains an email address instead of keeping the address in the recipient field"
+        elif application_email_required and application_email_instruction.get("source_url") and application_email_instruction.get("source_url") not in item_source_urls:
+            reason = "it does not cite the exact public application instruction"
+        elif application_email_required and item.get("contact_source_url") and item.get(
+            "contact_source_url"
+        ) not in known_sources | eligible_outreach_source_urls:
+            reason = "its contact source is not part of the selected listing or verified public research"
+        elif not application_email_required and not contact_emails:
+            reason = "the recipient has no verified, unsuppressed public email and provenance"
+        elif not application_email_required and len(contact_emails) != 1:
+            reason = "the recipient has multiple public emails and the address is ambiguous"
         else:
             body_word_count = len(re.findall(r"\b\w+\b", str(item.get("body") or "")))
-            if not 70 <= body_word_count <= 120:
-                reason = "its body is outside the 70-to-120-word range"
+            lower_bound = 35 if application_email_required else 70
+            if not lower_bound <= body_word_count <= 120:
+                reason = (
+                    "its application message is outside the 35-to-120-word range"
+                    if application_email_required
+                    else "its body is outside the 70-to-120-word range"
+                )
         if reason:
             rewrite.setdefault("unresolved_questions", []).append(
-                f"Clue omitted outreach draft {index} because {reason}."
+                f"Clue omitted {'application email' if application_email_required else 'outreach draft'} {index} because {reason}."
             )
         else:
-            item["recipient_email"] = next(iter(contact_emails))
+            if application_email_required:
+                application_contact_emails = eligible_application_contacts.get(contact_key, set())
+                if len(application_contact_emails) == 1:
+                    item["recipient_email"] = next(iter(application_contact_emails))
+                elif len(instruction_email_addresses) == 1:
+                    item["recipient_email"] = next(iter(instruction_email_addresses))
+                else:
+                    item["recipient_email"] = ""
+                if not item["recipient_email"]:
+                    item["recipient_name"] = "Recruitment team"
+                    item["contact_source_url"] = str(
+                        application_email_instruction.get("source_url") or job_source_url
+                    )
+                elif not item.get("contact_source_url"):
+                    item["contact_source_url"] = str(
+                        application_email_instruction.get("source_url") or job_source_url
+                    )
+                item["purpose"] = "application_email"
+            else:
+                item["recipient_email"] = next(iter(contact_emails))
             valid_outreach.append(item)
     rewrite["outreach_drafts"] = valid_outreach
-    if eligible_outreach_contacts and not valid_outreach:
+    if (
+        (application_email_required or eligible_outreach_contacts)
+        and not valid_outreach
+    ):
         rewrite.setdefault("unresolved_questions", []).append(
-            "A verified public recruitment address was available, but no supported outreach draft was generated."
+            "The selected listing or its public application page directs applicants to email their materials, but no supported application email draft passed validation."
+            if application_email_required
+            else "A verified public recruitment address was available, but no supported outreach draft was generated."
         )
 
 
@@ -1010,7 +1120,10 @@ def _grounding_assertions(
             "source_type": "verified_public_source",
             "source_id": str(finding["id"]),
             "source_url": str(finding.get("source_url") or ""),
-            "text": f"{finding.get('fact', '')} Evidence quote: {finding.get('quote', '')}",
+            "text": _EMAIL.sub(
+                "[redacted email]",
+                f"{finding.get('fact', '')} Evidence quote: {finding.get('quote', '')}",
+            ),
         }
         public_by_finding_id[str(finding["id"])] = public_evidence
         public_by_url.setdefault(str(finding.get("source_url") or ""), []).append(
@@ -3179,14 +3292,30 @@ def _render_artifacts(
         artifacts.append(_artifact(root, "application_answers", f"application-answers-v{revision}.txt", "\n\n".join(answers).encode("utf-8"), "\n\n".join(answers)))
     outreach = []
     for item in rewrite.get("outreach_drafts", []):
+        email = str(item.get("recipient_email") or "").strip()
+        recipient = (
+            f"{item['recipient_name']} <{email}>"
+            if email
+            else f"{item['recipient_name']} (verify address)"
+        )
+        kind = "Application email" if item.get("purpose") == "application_email" else "Outreach"
         outreach.append(
-            f"To: {item['recipient_name']} <{item['recipient_email']}>\n"
+            f"Type: {kind}\nTo: {recipient}\n"
             f"Subject: {item['subject']}\n\n{item['body']}\n\n"
             f"Source: {item['contact_source_url']}"
         )
     if outreach:
         text = "\n\n---\n\n".join(outreach)
-        artifacts.append(_artifact(root, "outreach_draft", f"outreach-draft-v{revision}.txt", text.encode("utf-8"), text))
+        is_application_email = any(
+            item.get("purpose") == "application_email"
+            for item in rewrite.get("outreach_drafts", [])
+        )
+        filename = (
+            f"application-email-draft-v{revision}.txt"
+            if is_application_email
+            else f"outreach-draft-v{revision}.txt"
+        )
+        artifacts.append(_artifact(root, "outreach_draft", filename, text.encode("utf-8"), text))
     return artifacts
 
 
@@ -3822,8 +3951,7 @@ def _assert_snapshot_current(
                 LEFT JOIN job_user_state state ON state.job_id = j.id
                 WHERE j.id = ? AND j.is_active = 1 AND run.status = 'complete'
                   AND r.score_state = 'scored'
-                  AND r.filter_status IN ('match', 'review')
-                  AND r.eligibility_status = 'eligible'
+                  AND r.filter_status IN ('match', 'review', 'conflict')
                   AND COALESCE(state.hidden, 0) = 0 AND {not_applied_sql('j')} LIMIT 1""",
             (request["run_id"], request["job_id"]),
         ).fetchone()
@@ -3842,6 +3970,21 @@ def _assert_snapshot_current(
             raise StalePreparationError("The additional employer source is no longer a valid public HTTPS page.")
         if additional_source_url not in current["source_urls"]:
             current["source_urls"].append(additional_source_url)
+    if "application_email_instruction" in snapshot:
+        email_instruction = application_email_instruction_for_description(
+            str(current.get("description") or "")
+        )
+        current["application_email_instruction"] = {
+            "required": bool(email_instruction),
+            "quote": email_instruction,
+            "source_url": str(current.get("canonical_url") or "")
+            or (current["source_urls"][0] if current["source_urls"] else ""),
+        }
+    if "owner_preparation_overrides" in snapshot:
+        current["owner_preparation_overrides"] = {
+            "jev_conflict_acknowledged": current["filter_status"] == "conflict",
+            "location_eligibility_acknowledged": current["eligibility_status"] != "eligible",
+        }
     core = {key: value for key, value in snapshot.items() if key not in {"inputs"}}
     if current != core:
         raise StalePreparationError("The job or Jev snapshot changed after the owner trigger. Review the current result and start a new request.")
@@ -4731,12 +4874,41 @@ def _set_request_state(database_path: Path, request_id: str, state: str, message
 
 
 def _job_context(snapshot: dict[str, Any]) -> dict[str, Any]:
-    return {key: snapshot.get(key) for key in ("title", "company", "description", "location_raw", "workplace_type", "employment_type", "salary_min", "salary_max", "salary_currency", "salary_period", "canonical_url")}
+    context = {
+        key: snapshot.get(key)
+        for key in (
+            "title", "company", "description", "location_raw", "workplace_type",
+            "employment_type", "salary_min", "salary_max", "salary_currency",
+            "salary_period", "canonical_url",
+        )
+    } | {
+        "source_urls": snapshot.get("source_urls", []),
+        "application_email_instruction": snapshot.get(
+            "application_email_instruction", {"required": False, "quote": "", "source_url": ""}
+        ),
+        "owner_preparation_overrides": snapshot.get("owner_preparation_overrides", {}),
+    }
+    context["description"] = _EMAIL.sub(
+        "[email address]", str(context.get("description") or "")
+    )
+    email_instruction = dict(context["application_email_instruction"])
+    email_instruction["quote"] = _EMAIL.sub(
+        "[email address]", str(email_instruction.get("quote") or "")
+    )
+    context["application_email_instruction"] = email_instruction
+    return context
 
 
 def _research_job_context(snapshot: dict[str, Any]) -> dict[str, Any]:
     return {
         **_job_context(snapshot),
+        # The Researcher needs the unmodified saved role text to find exact requirements
+        # and application instructions; email addresses are removed before writing stages.
+        "description": snapshot.get("description", ""),
+        "application_email_instruction": snapshot.get(
+            "application_email_instruction",
+            {"required": False, "quote": "", "source_url": ""},
+        ),
         "source_urls": snapshot.get("source_urls", []),
         "owner_supplied_employer_page_url": snapshot.get("inputs", {}).get(
             "additional_source_url", ""
@@ -4776,12 +4948,31 @@ def _research_context(value: dict[str, Any]) -> dict[str, Any]:
     ]
     return {
         "company_summary": value.get("company_summary", ""),
-        "findings": identified["findings"],
+        "findings": [
+            {
+                **finding,
+                "fact": _EMAIL.sub("[email address]", str(finding.get("fact") or "")),
+                "quote": _EMAIL.sub("[email address]", str(finding.get("quote") or "")),
+            }
+            for finding in identified["findings"]
+        ],
         "contacts": contacts,
         "application_form": value.get(
             "application_form",
             {"status": "not_observed", "fields": [], "questions": [], "application_pages": []},
         ),
+        "application_email_instruction": {
+            **value.get(
+                "application_email_instruction",
+                {"required": False, "quote": "", "source_url": ""},
+            ),
+            "quote": _EMAIL.sub(
+                "[email address]",
+                str(
+                    value.get("application_email_instruction", {}).get("quote") or ""
+                ),
+            ),
+        },
         "unresolved_questions": value.get("unresolved_questions", []),
     }
 

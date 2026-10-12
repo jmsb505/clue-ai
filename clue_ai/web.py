@@ -925,7 +925,6 @@ def create_app(
             source for source in evidence_sources
             if source["source_type"] == "resume" and source["permitted"]
         ]
-        approved_claim_count = len(approved_claims(db_path))
         return render(
             request,
             "results.html",
@@ -946,7 +945,7 @@ def create_app(
                 "jev_consented": bool(settings_row.get("jev_consent_at")),
                 "sources": sources,
                 "preparation_cvs": permitted_cvs,
-                "preparation_claims_ready": approved_claim_count > 0,
+                "preparation_evidence_ready": _preparation_evidence_ready(db_path),
                 "notice": request.query_params.get("notice", ""),
             },
         )
@@ -985,7 +984,7 @@ def create_app(
                 "current_page": page,
                 "page_count": page_count,
                 "preparation_cvs": permitted_cvs,
-                "preparation_claims_ready": bool(approved_claims(db_path)),
+                "preparation_evidence_ready": _preparation_evidence_ready(db_path),
                 "jev_consented": bool(settings_row.get("jev_consent_at")),
                 "jev_key_configured": bool(current_settings.api_key),
                 "notice": request.query_params.get("notice", ""),
@@ -1059,6 +1058,8 @@ def create_app(
         run_id = str(form.get("run_id") or "")
         selected_cv_id = str(form.get("selected_cv_id") or "")
         additional_source_url = str(form.get("additional_source_url") or "")
+        confirm_jev_conflict = str(form.get("confirm_jev_conflict") or "") == "on"
+        confirm_location_eligibility = str(form.get("confirm_location_eligibility") or "") == "on"
         try:
             record, created = request_preparation(
                 db_path,
@@ -1066,6 +1067,8 @@ def create_app(
                 run_id,
                 selected_cv_id,
                 additional_source_url,
+                confirm_jev_conflict,
+                confirm_location_eligibility,
             )
         except ValueError as exc:
             return RedirectResponse(
@@ -1181,7 +1184,23 @@ def create_app(
                     ),
                     None,
                 )
-                outreach_options.append({"index": index, "message": message, "contact": match})
+                recipient_email = (
+                    str(message.get("recipient_email") or "")
+                    if message.get("purpose") == "application_email"
+                    else (
+                        str(match.get("public_email") or "")
+                        if match and match.get("public_email") and not match.get("suppressed")
+                        else ""
+                    )
+                )
+                outreach_options.append(
+                    {
+                        "index": index,
+                        "message": message,
+                        "contact": match,
+                        "recipient_email": recipient_email,
+                    }
+                )
         gmail_connected = bool(get_settings(db_path).get("gmail_oauth_connected_at"))
         with connect(db_path) as db:
             applied_record = db.execute(
@@ -1690,7 +1709,7 @@ def create_app(
                 "active_page": "saved",
                 "jobs": saved_jobs(db_path),
                 "preparation_cvs": permitted_cvs,
-                "preparation_claims_ready": bool(approved_claims(db_path)),
+                "preparation_evidence_ready": _preparation_evidence_ready(db_path),
                 "notice": request.query_params.get("notice", ""),
             },
         )
@@ -2059,6 +2078,16 @@ def _safe_return_path(value: str) -> str:
     if parts.scheme or parts.netloc:
         return "/"
     return value[:2_000]
+
+
+def _preparation_evidence_ready(database_path: Path) -> bool:
+    """Match the preparation service's accepted claim or permitted-profile inputs."""
+    if approved_claims(database_path):
+        return True
+    return any(
+        item.get("source_type") == "technical_profile" and item.get("permitted")
+        for item in list_preparation_sources(database_path)
+    )
 
 
 def _url_message(value: str) -> str:

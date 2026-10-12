@@ -6,7 +6,7 @@
   <div>
     <span class="kicker kicker-muted">{{ total }} PREVIOUS POSITIONS</span>
     <h1>Your search<br><em>history.</em></h1>
-    <p>Positions are sorted by their latest Jev fit score. Choose one eligible role and select Generate packet to prepare its files.</p>
+    <p>Positions are sorted by their latest Jev fit score. Choose Generate packet on a scored role to research it and prepare files. Any Jev or location warning appears with a listing-specific acknowledgement.</p>
   </div>
   <div class="intro-mark" aria-hidden="true"><span>↕</span><i>⌕</i></div>
 </section>
@@ -53,22 +53,14 @@
             {% if not job.saved %}
               <form action="/jobs/{{ job.id }}/save" method="post"><input type="hidden" name="return_to" value="/searches?page={{ current_page }}"><button class="quiet-button" type="submit">Save for later</button></form>
             {% else %}<span class="tag tag-green">Saved for later</span>{% endif %}
-            {% if job.score_state == 'scored' and job.eligibility_status == 'eligible' and job.filter_status in ['match', 'review'] %}
-              {% if preparation_cvs and preparation_claims_ready %}
-                <form action="/jobs/{{ job.id }}/prepare" method="post" class="prepare-listing-form">
-                  <input type="hidden" name="run_id" value="{{ job.run_id }}">
-                  {% if preparation_cvs|length > 1 %}
-                    <label class="sr-only" for="history-cv-{{ job.id }}">Choose a CV for {{ job.title }}</label>
-                    <select id="history-cv-{{ job.id }}" name="selected_cv_id" required aria-label="Choose a CV for {{ job.title }}">
-                      {% for cv in preparation_cvs %}<option value="{{ cv.id }}" {% if cv.is_default_cv %}selected{% endif %}>{{ cv.filename }}{% if cv.is_default_cv %} · default{% endif %}</option>{% endfor %}
-                    </select>
-                  {% else %}<input type="hidden" name="selected_cv_id" value="{{ preparation_cvs[0].id }}">{% endif %}
-                  <details class="preparation-source-details"><summary>Add official application URL</summary><label class="sr-only" for="history-source-{{ job.id }}">Optional public employer application page URL</label><input id="history-source-{{ job.id }}" type="url" name="additional_source_url" placeholder="https://careers.example.com/jobs/123"><small>Optional. Clue reads public page details only after you start this packet.</small></details>
-                  <button class="button button-dark button-small" type="submit">Generate packet <span aria-hidden="true">→</span></button>
-                </form>
+            {% if job.score_state == 'scored' and job.filter_status in ['match', 'review', 'conflict'] %}
+              {% if preparation_cvs and preparation_evidence_ready %}
+                {% set prepare_run_id = job.run_id %}
+                {% set prepare_form_prefix = 'history' %}
+                {% include '_prepare_listing_form.html' %}
               {% else %}<a class="button button-outline button-small" href="/evidence">Set up materials to prepare</a>{% endif %}
-            {% elif job.score_state != 'scored' %}<span class="panel-muted">Assess with Jev before preparation</span>
-            {% else %}<span class="panel-muted">Preparation requires confirmed eligible location and no Jev conflict.</span>{% endif %}
+            {% elif job.score_state != 'scored' or job.filter_status == 'unassessed' %}<span class="panel-muted">Complete Jev scoring before preparing this listing.</span>
+            {% endif %}
           </div>
         </article>
       {% endfor %}

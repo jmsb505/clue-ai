@@ -3,7 +3,11 @@
 {% block eyebrow %}APPLICATION WORKSPACE{% endblock %}
 {% block content %}
 {% if notice %}<div class="alert alert-success" role="status">{{ notice }}</div>{% endif %}
-{% if packet %}{% set application_form = packet.output.research.application_form|default({}) %}{% endif %}
+{% set application_email_instruction = preparation.snapshot.application_email_instruction|default({"required": false, "quote": "", "source_url": ""}) %}
+{% if packet %}
+  {% set application_form = packet.output.research.application_form|default({}) %}
+  {% set application_email_instruction = packet.output.research.application_email_instruction|default(application_email_instruction) %}
+{% endif %}
 <section class="page-intro">
   <div>
     <span class="kicker kicker-muted">APPLICATION FOLDER · {{ preparation.state|upper }}</span>
@@ -15,8 +19,16 @@
   <a class="text-link" href="/applications">← All packets</a>
   {% if packet and application_form.application_pages %}<a class="button button-dark button-small" href="{{ application_form.application_pages[0].url }}" target="_blank" rel="noopener noreferrer">Open application page <span aria-hidden="true">↗</span></a>{% elif preparation.snapshot.canonical_url %}<a class="button button-outline button-small" href="{{ preparation.snapshot.canonical_url }}" target="_blank" rel="noopener noreferrer">Open job posting <span aria-hidden="true">↗</span></a>{% endif %}
 </div>
-<details id="application-summary" class="panel preparation-snapshot-panel application-section application-foldout" {% if preparation.snapshot.filter_status == 'review' %}open{% endif %}>
-  <summary><span><span class="kicker kicker-muted">ROLE DETAILS</span><b>{{ preparation.snapshot.company or 'Company not provided' }} · {{ preparation.snapshot.title }}</b></span><span class="tag {% if preparation.snapshot.filter_status == 'review' %}tag-amber{% else %}tag-green{% endif %}">{% if preparation.snapshot.filter_status == 'review' %}Jev review{% else %}Jev match{% endif %}</span></summary>
+{% if application_email_instruction.required %}
+  <div class="application-form-research">
+    <h4>Apply by email</h4>
+    <p>The selected listing or its public application page explicitly says: “{{ application_email_instruction.quote }}”
+      {% if application_email_instruction.source_url %}<a href="{{ application_email_instruction.source_url }}" target="_blank" rel="noopener noreferrer">Open source <span aria-hidden="true">↗</span></a>{% endif %}
+    </p>
+  </div>
+{% endif %}
+<details id="application-summary" class="panel preparation-snapshot-panel application-section application-foldout" {% if preparation.snapshot.filter_status in ['review', 'conflict'] or preparation.snapshot.eligibility_status != 'eligible' %}open{% endif %}>
+  <summary><span><span class="kicker kicker-muted">ROLE DETAILS</span><b>{{ preparation.snapshot.company or 'Company not provided' }} · {{ preparation.snapshot.title }}</b></span><span class="tag {% if preparation.snapshot.filter_status == 'conflict' %}tag-warning{% elif preparation.snapshot.filter_status == 'review' or preparation.snapshot.eligibility_status != 'eligible' %}tag-amber{% else %}tag-green{% endif %}">{% if preparation.snapshot.filter_status == 'conflict' %}Jev conflict{% elif preparation.snapshot.filter_status == 'review' %}Jev review{% else %}Jev match{% endif %}</span></summary>
   <div class="application-foldout-body">
   <dl class="preparation-facts">
     <div><dt>Company</dt><dd>{{ preparation.snapshot.company or 'Not provided' }}</dd></div>
@@ -32,6 +44,14 @@
   {% if preparation.snapshot.filter_status == 'review' %}
     <div class="alert alert-warning" role="note"><b>Jev did not confirm a match.</b> This packet was prepared only because you chose this individual listing. Review these unresolved checks against the employer's current posting before relying on the materials:
       {% if filter_review_items %}<ul>{% for item in filter_review_items %}<li>{{ item.label }}</li>{% endfor %}</ul>{% else %}The saved Jev result needs manual review.{% endif %}
+    </div>
+  {% endif %}
+  {% set owner_overrides = preparation.snapshot.owner_preparation_overrides|default({}) %}
+  {% if owner_overrides.jev_conflict_acknowledged or owner_overrides.location_eligibility_acknowledged %}
+    <div class="alert alert-warning" role="note"><b>You chose to prepare this listing with a Jev warning.</b>
+      {% if owner_overrides.jev_conflict_acknowledged %}<p>Saved Jev filter status: <strong>{{ preparation.snapshot.filter_status }}</strong>. This preparation does not change Jev’s conflict decision.</p>{% endif %}
+      {% if owner_overrides.location_eligibility_acknowledged %}<p>Saved Jev location eligibility: <strong>{{ preparation.snapshot.eligibility_status }}</strong>. Verify the employer’s current location terms before applying.</p>{% endif %}
+      <p>These acknowledgements allow research and drafting to run. Jev’s factual-support and tailored-CV checks, packet quality checks, and your final review still apply.</p>
     </div>
   {% endif %}
   <p class="panel-muted">This request stores the exact job and read-only Jev values from the selected completed search. It does not change your Jev decision or mark the job as applied.</p>
@@ -58,7 +78,7 @@
   <p class="panel-muted">Files stay grouped with this role. The current packet is listed first; older versions and submitted receipts remain available below.</p>
   {% if packet %}
     <h3>Current packet · version {{ packet.revision }} · {{ packet.status|replace('_', ' ')|title }}</h3>
-    <ul class="packet-artifact-list">{% for artifact in packet.artifacts %}<li><span><b>{{ artifact.artifact_type|replace('_', ' ')|title }}</b><small>{{ artifact.filename }} · SHA-256 {{ artifact.content_sha256[:12] }}</small></span><a class="button button-outline button-small" href="/packets/{{ packet.id }}/artifacts/{{ artifact.id }}">Download file</a></li>{% endfor %}</ul>
+    <ul class="packet-artifact-list">{% for artifact in packet.artifacts %}<li><span><b>{% if artifact.filename.startswith('application-email-draft-') %}Application email draft{% else %}{{ artifact.artifact_type|replace('_', ' ')|title }}{% endif %}</b><small>{{ artifact.filename }} · SHA-256 {{ artifact.content_sha256[:12] }}</small></span><a class="button button-outline button-small" href="/packets/{{ packet.id }}/artifacts/{{ artifact.id }}">Download file</a></li>{% endfor %}</ul>
     {% if not packet.artifacts %}<p class="panel-muted">This packet has no available files.</p>{% endif %}
   {% endif %}
   {% for archived_packet in packet_history[1:] %}
@@ -138,20 +158,20 @@
   {% endif %}
   {% if outreach_options %}
     <details id="application-outreach" class="packet-detail-section">
-      <summary>Outreach drafts · {{ outreach_options|length }}</summary>
+      <summary>{% if application_email_instruction.required %}Application email draft{% else %}Outreach drafts{% endif %} · {{ outreach_options|length }}</summary>
     {% for option in outreach_options %}
       <article class="packet-outreach-card">
         {% if option.contact and option.contact.suppressed %}<p class="alert alert-warning">This contact was excluded. Do not use this obsolete outreach draft; retry the preparation to generate a replacement without this contact.</p>{% endif %}
         <div class="application-email-preview">
-          <div class="email-preview-header"><span class="kicker kicker-muted">EMAIL DRAFT PREVIEW</span><span class="tag {% if packet.status == 'approved' %}tag-green{% else %}tag-amber{% endif %}">{% if packet.status == 'approved' %}Approved packet{% else %}Review packet first{% endif %}</span></div>
+          <div class="email-preview-header"><span class="kicker kicker-muted">{% if option.message.purpose == 'application_email' %}APPLICATION EMAIL DRAFT{% else %}EMAIL DRAFT PREVIEW{% endif %}</span><span class="tag {% if packet.status == 'approved' %}tag-green{% else %}tag-amber{% endif %}">{% if packet.status == 'approved' %}Approved packet{% else %}Review packet first{% endif %}</span></div>
           <h4>To: {{ option.message.recipient_name or 'Contact not identified' }}</h4>
-          {% if option.contact and option.contact.public_email and not option.contact.suppressed %}
+          {% if option.recipient_email %}
             <div class="email-preview-field">
-              <label for="outreach-{{ preparation.id }}-{{ option.index }}-recipient">Recipient address</label>
-              <div class="email-preview-control"><input id="outreach-{{ preparation.id }}-{{ option.index }}-recipient" type="email" value="{{ option.contact.public_email }}" readonly>{% if packet.status == 'approved' %}<button class="button button-outline button-small" type="button" data-copy-target="outreach-{{ preparation.id }}-{{ option.index }}-recipient" data-copy-label="recipient address" aria-label="Copy recipient address for {{ option.message.recipient_name }}">Copy address</button>{% endif %}</div>
+              <label for="outreach-{{ preparation.id }}-{{ option.index }}-recipient">{% if option.message.purpose == 'application_email' %}Application recipient address{% else %}Recipient address{% endif %}</label>
+              <div class="email-preview-control"><input id="outreach-{{ preparation.id }}-{{ option.index }}-recipient" type="email" value="{{ option.recipient_email }}" readonly>{% if packet.status == 'approved' %}<button class="button button-outline button-small" type="button" data-copy-target="outreach-{{ preparation.id }}-{{ option.index }}-recipient" data-copy-label="recipient address" aria-label="Copy recipient address for {{ option.message.recipient_name }}">Copy address</button>{% endif %}</div>
             </div>
           {% else %}
-            <p class="alert alert-warning">No publicly verified email address is available. Clue will not guess one. You can review the cited source and enter an address yourself.</p>
+            <p class="alert alert-warning">{% if option.message.purpose == 'application_email' %}No verified address for this application channel is available. Clue left the recipient blank and will not guess one. Review the cited source before sending.{% else %}No publicly verified contact address is available. Clue will not guess one. You can review the cited source and enter an address yourself.{% endif %}</p>
           {% endif %}
           <div class="email-preview-field">
             <label for="outreach-{{ preparation.id }}-{{ option.index }}-subject">Subject</label>
@@ -167,11 +187,12 @@
           {% else %}
             <p class="panel-muted">Review and approve this packet version to enable local copy controls.</p>
           {% endif %}
-          <p class="email-preview-source">Contact source: <a href="{{ option.message.contact_source_url }}" target="_blank" rel="noopener noreferrer">Open public source <span aria-hidden="true">↗</span></a> · candidate claims: {{ option.message.claim_ids|join(', ') }}</p>
+          <p class="email-preview-source">{% if option.message.purpose == 'application_email' %}Application instruction source{% else %}Contact source{% endif %}: <a href="{{ option.message.contact_source_url }}" target="_blank" rel="noopener noreferrer">Open public source <span aria-hidden="true">↗</span></a> · candidate claims: {{ option.message.claim_ids|join(', ') }}</p>
         </div>
         <form action="/applications/{{ preparation.id }}/packets/{{ packet.id }}/attachments.zip" method="post" class="attachment-bundle-form">
           <fieldset {% if packet.status != 'approved' %}disabled{% endif %}>
             <legend>Attachments to include</legend>
+            {% if option.message.purpose == 'application_email' %}<p class="panel-muted">The tailored CV and cover letter are selected by default. Download the chosen files and attach them yourself when composing the email.</p>{% endif %}
             {% if packet.artifacts %}
               {% for artifact in packet.artifacts %}
                 <label class="attachment-choice" for="attachment-{{ preparation.id }}-{{ option.index }}-{{ artifact.id }}">
@@ -185,7 +206,7 @@
           </fieldset>
           {% if packet.status == 'approved' and packet.artifacts %}<button class="button button-outline button-small" type="submit">Download selected attachments (.zip)</button>{% elif packet.status != 'approved' %}<p class="panel-muted">Approve the packet before bundling its files.</p>{% endif %}
         </form>
-        {% if packet.status == 'approved' and option.contact and not option.contact.suppressed and option.contact.public_email and gmail_connected %}
+        {% if packet.status == 'approved' and option.message.purpose != 'application_email' and option.contact and not option.contact.suppressed and option.contact.public_email and gmail_connected %}
           <form action="/preparations/{{ preparation.id }}/packets/{{ packet.id }}/gmail-draft" method="post" class="packet-approval-form">
             <input type="hidden" name="draft_index" value="{{ option.index }}">
             <label class="check-field"><input type="checkbox" name="confirm_exact" value="on" required><span><b>Create this exact message as an unsent Gmail draft</b><small>Verify the recipient, subject, and body above. This action creates a draft only; you will send it manually.</small></span></label>
@@ -193,7 +214,9 @@
           </form>
         {% elif option.contact and option.contact.suppressed %}
           <p class="panel-muted">Gmail draft creation is disabled for this excluded contact.</p>
-        {% elif not option.contact or not option.contact.public_email %}
+        {% elif option.message.purpose == 'application_email' %}
+          <p class="panel-muted">Use this local preview in your email app and attach the selected packet files from the ZIP above. Clue keeps the draft and files here for you to review.</p>
+        {% elif not option.recipient_email %}
           <p class="alert alert-warning">Clue did not find a publicly supported email address. It will not guess one; use the saved draft as a manual copy/paste if you choose.</p>
         {% elif packet.status == 'approved' and not gmail_connected %}<p class="panel-muted">Gmail is optional. The preview and attachment download work without a Google connection.</p>{% endif %}
       </article>

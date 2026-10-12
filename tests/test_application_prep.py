@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from clue_ai.application_prep import (
     add_source,
+    application_email_instruction_for_description,
     approved_claims,
     get_preparation,
     list_claims,
@@ -28,6 +29,31 @@ from clue_ai.web import create_app
 
 ORIGIN = {"Origin": "http://127.0.0.1"}
 OFFICIAL_SOURCE_URL = "https://careers.example.org/jobs/software-engineer-intern"
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "To apply, email your CV and cover letter to recruitment@example.org.",
+        "Applications must be sent by email to recruitment@example.org.",
+        "Send your resume to hiring@example.org before the deadline.",
+    ],
+)
+def test_application_email_instruction_requires_an_explicit_application_channel(description):
+    assert application_email_instruction_for_description(description)
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Contact our team by email if you have questions about the company.",
+        "Email our recruiter to learn more about the team; apply through the website.",
+        "Our recruiting team can be reached at recruitment@example.org.",
+        "Submit your application through the online form.",
+    ],
+)
+def test_ordinary_contact_or_online_application_does_not_request_an_application_email(description):
+    assert not application_email_instruction_for_description(description)
 
 
 def test_private_sources_generate_only_unreviewed_claim_suggestions(settings, database):
@@ -263,15 +289,9 @@ def test_owner_trigger_can_use_permitted_technical_profile_without_preapproving_
 
 @pytest.mark.parametrize(
     ("filter_status", "eligibility_status"),
-    [
-        ("conflict", "eligible"),
-        ("unassessed", "eligible"),
-        ("review", "needs_verification"),
-        ("review", "not_eligible"),
-        ("match", "unknown"),
-    ],
+    [("unassessed", "eligible")],
 )
-def test_preparation_request_rejects_conflicts_unassessed_and_unverified_location(
+def test_preparation_request_still_rejects_unassessed_jev_even_with_override_flags(
     database, filter_status, eligibility_status
 ):
     job_id = _save_eligible_match(database)
@@ -282,8 +302,203 @@ def test_preparation_request_rejects_conflicts_unassessed_and_unverified_locatio
         score_state="scored",
     )
 
-    with pytest.raises(ValueError, match="verified location eligibility"):
+    with pytest.raises(ValueError, match="Unassessed listings must be scored"):
+        request_preparation(
+            database,
+            job_id,
+            "run-app-prep",
+            confirm_jev_conflict=True,
+            confirm_location_eligibility=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("filter_status", "eligibility_status", "confirm_conflict", "confirm_location"),
+    [
+        ("conflict", "eligible", True, False),
+        ("review", "needs_verification", False, True),
+        ("conflict", "not_eligible", True, True),
+    ],
+)
+def test_owner_acknowledgements_allow_scored_blockers_without_changing_jev(
+    settings, database, filter_status, eligibility_status, confirm_conflict, confirm_location
+):
+    _configure_preparation_inputs(settings, database)
+    job_id = _save_eligible_match(
+        database,
+        filter_status=filter_status,
+        eligibility_status=eligibility_status,
+    )
+
+    request, created = request_preparation(
+        database,
+        job_id,
+        "run-app-prep",
+        confirm_jev_conflict=confirm_conflict,
+        confirm_location_eligibility=confirm_location,
+    )
+    record = get_preparation(database, request["id"])
+
+    assert created is True
+    assert record["snapshot"]["filter_status"] == filter_status
+    assert record["snapshot"]["eligibility_status"] == eligibility_status
+    assert record["snapshot"]["owner_preparation_overrides"] == {
+        "jev_conflict_acknowledged": filter_status == "conflict",
+        "location_eligibility_acknowledged": eligibility_status != "eligible",
+    }
+    repeated, was_created = request_preparation(
+        database,
+        job_id,
+        "run-app-prep",
+        confirm_jev_conflict=confirm_conflict,
+        confirm_location_eligibility=confirm_location,
+    )
+    assert was_created is False
+    assert repeated["id"] == request["id"]
+    with connect(database) as db:
+        saved = db.execute(
+            "SELECT filter_status, eligibility_status FROM search_results WHERE run_id = ? AND job_id = ?",
+            ("run-app-prep", job_id),
+        ).fetchone()
+    assert saved["filter_status"] == filter_status
+    assert saved["eligibility_status"] == eligibility_status
+
+
+@pytest.mark.parametrize(
+    ("filter_status", "eligibility_status", "expected_message"),
+    [
+        ("conflict", "eligible", "reviewed the conflict"),
+        ("review", "needs_verification", "reviewed the location"),
+    ],
+)
+def test_scored_blocker_requires_its_own_owner_acknowledgement(
+    database, filter_status, eligibility_status, expected_message
+):
+    job_id = _save_eligible_match(
+        database,
+        filter_status=filter_status,
+        eligibility_status=eligibility_status,
+    )
+
+    with pytest.raises(ValueError, match=expected_message):
         request_preparation(database, job_id, "run-app-prep")
+
+
+def test_owner_override_is_retained_when_a_failed_request_is_retried(settings, database):
+    _configure_preparation_inputs(settings, database)
+    job_id = _save_eligible_match(
+        database,
+        filter_status="conflict",
+        eligibility_status="needs_verification",
+    )
+    request, _created = request_preparation(
+        database,
+        job_id,
+        "run-app-prep",
+        confirm_jev_conflict=True,
+        confirm_location_eligibility=True,
+    )
+    with connect(database) as db:
+        db.execute(
+            "UPDATE preparation_requests SET state = 'failed' WHERE id = ?",
+            (request["id"],),
+        )
+
+    retried, created = retry_preparation(database, request["id"])
+    snapshot = get_preparation(database, retried["id"])["snapshot"]
+
+    assert created is True
+    assert snapshot["filter_status"] == "conflict"
+    assert snapshot["eligibility_status"] == "needs_verification"
+    assert snapshot["owner_preparation_overrides"] == {
+        "jev_conflict_acknowledged": True,
+        "location_eligibility_acknowledged": True,
+    }
+
+
+def test_scored_blocker_controls_are_visible_on_search_results_history_and_saved_roles(
+    settings, monkeypatch
+):
+    monkeypatch.setattr("clue_ai.web.run_preparation", lambda *_args: None)
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    _configure_preparation_inputs(settings, settings.database_path)
+    job_id = _save_eligible_match(
+        settings.database_path,
+        filter_status="conflict",
+        eligibility_status="needs_verification",
+    )
+
+    for url in ("/searches", "/searches/run-app-prep?view=all"):
+        response = client.get(url)
+        assert response.status_code == 200
+        assert 'name="confirm_jev_conflict"' in response.text
+        assert 'name="confirm_location_eligibility"' in response.text
+        assert "Generate packet for review" in response.text
+        assert "Jev’s saved match decision stays unchanged" in response.text
+
+    client.post(
+        f"/jobs/{job_id}/save",
+        data={"return_to": "/saved"},
+        headers=ORIGIN,
+    )
+    saved = client.get("/saved")
+    assert 'name="confirm_jev_conflict"' in saved.text
+    assert 'name="confirm_location_eligibility"' in saved.text
+
+    missing_ack = client.post(
+        f"/jobs/{job_id}/prepare",
+        data={"run_id": "run-app-prep"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert "reviewed+the+conflict" in missing_ack.headers["location"]
+
+    accepted = client.post(
+        f"/jobs/{job_id}/prepare",
+        data={
+            "run_id": "run-app-prep",
+            "confirm_jev_conflict": "on",
+            "confirm_location_eligibility": "on",
+        },
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    request_id = accepted.headers["location"].split("/preparations/", 1)[1].split("?", 1)[0]
+    dossier = client.get(f"/preparations/{request_id}")
+    assert accepted.status_code == 303
+    assert "You chose to prepare this listing with a Jev warning" in dossier.text
+    assert "Saved Jev filter status:" in dossier.text
+    assert "Saved Jev location eligibility:" in dossier.text
+    with connect(settings.database_path) as db:
+        saved_jev = db.execute(
+            "SELECT filter_status, eligibility_status FROM search_results WHERE run_id = ? AND job_id = ?",
+            ("run-app-prep", job_id),
+        ).fetchone()
+    assert saved_jev["filter_status"] == "conflict"
+    assert saved_jev["eligibility_status"] == "needs_verification"
+
+
+def test_permitted_technical_profile_alone_exposes_the_prepare_action(settings, monkeypatch):
+    monkeypatch.setattr("clue_ai.web.run_preparation", lambda *_args: None)
+    client = TestClient(create_app(settings), base_url="http://127.0.0.1")
+    _configure_preparation_inputs(settings, settings.database_path)
+    job_id = _save_eligible_match(settings.database_path)
+    with connect(settings.database_path) as db:
+        db.execute(
+            "UPDATE candidate_claims SET status = 'rejected' WHERE source_id IN "
+            "(SELECT id FROM preparation_sources WHERE source_type = 'technical_profile')"
+        )
+
+    history = client.get("/searches")
+    assert "Generate packet" in history.text
+    response = client.post(
+        f"/jobs/{job_id}/prepare",
+        data={"run_id": "run-app-prep"},
+        headers=ORIGIN,
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/preparations/")
 
 
 def test_review_result_can_be_prepared_only_with_verified_location_and_stays_a_review(settings, database):
