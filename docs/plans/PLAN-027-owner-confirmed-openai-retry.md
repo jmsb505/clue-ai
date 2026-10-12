@@ -1,6 +1,6 @@
 # PLAN-027 — Owner-confirmed retry after unresolved OpenAI usage
 
-Status: Validated — PR/merge progression pending
+Status: Complete — implementation merged via PR #14 (`4d7b163`)
 Created: 2026-10-12 · Last updated: 2026-10-12
 Related: [PLAN-026](PLAN-026-live-preparation-progress.md), [ADR 0011](../decisions/0011-stop-crawls-with-app.md), [ADR 0023](../decisions/0023-application-preparation-and-action-boundaries.md)
 
@@ -107,7 +107,7 @@ Documentation updates:
 
 - [x] Record current behavior in README and architecture overview.
 - [x] Accept ADR 0043 after implementation passes.
-- [ ] Record PR and merge evidence here.
+- [x] Record PR and merge evidence here.
 
 Applicable specialized skills:
 
@@ -115,11 +115,11 @@ Applicable specialized skills:
 
 Expected Git checkpoint:
 
-- One coherent, validated branch commit; push and open a normal PR, then advance `main` only through the repository's allowed GitHub review path.
+- Validated commit `2d9331b` was pushed and merged into `main` by squash merge in [PR #14](https://github.com/jmsb505/clue-ai/pull/14), producing `4d7b163`.
 
 ## Final integration validation
 
-M1 local integration validation passed. Branch commit, GitHub PR, and merge evidence remain pending.
+M1 passed local integration validation and merged into `main` through PR #14. The local `main` checkout was fast-forwarded to `4d7b163`.
 
 ## Rollback / recovery
 
@@ -128,6 +128,7 @@ The change adds no database schema. Reverting the code restores the existing har
 ## Progress
 
 - 2026-10-12: Confirmed that startup recovery marks the stalled request failed but `retry_preparation` still refused its unresolved Recruiter reservation. Implemented a dossier-level owner acknowledgment, unchanged usage ledger, and transactional audit event on `codex/owner-confirmed-openai-retry`.
+- 2026-10-12: PR #14 merged with squash commit `4d7b163f2fcffa7810904d4c3dda98f19df872c2`; local `main` fast-forwarded to the same commit.
 
 ## Implementation discoveries / decisions
 
@@ -140,4 +141,4 @@ The change adds no database schema. Reverting the code restores the existing har
 - Focused service, route/dossier, interruption retry, and unresolved-receipt guard tests passed.
 - Ruff, Python byte-compilation, and `git diff --check` passed.
 - The actual stalled Recruiter usage row was verified read-only as `reserved` with no actual usage receipt. Clue was not started, no retry was triggered, and no external service was contacted.
-- GitHub branch push, PR, and merge: pending.
+- GitHub: branch commit `2d9331b40ab909de83d81fd1e9659f5ee960e43a`, [PR #14](https://github.com/jmsb505/clue-ai/pull/14), squash merge `4d7b163f2fcffa7810904d4c3dda98f19df872c2`.

@@ -1,6 +1,6 @@
 # ADR 0043 — Owner-confirmed retry after unresolved OpenAI usage
 
-- Status: Accepted — implementation and local validation passed; PR pending
+- Status: Accepted — implementation and local validation passed; merged in [PR #14](https://github.com/jmsb505/clue-ai/pull/14)
 - Date: 2026-10-12
 - Related: [PLAN-027](../plans/PLAN-027-owner-confirmed-openai-retry.md), [ADR 0011](0011-stop-crawls-with-app.md), [ADR 0023](0023-application-preparation-and-action-boundaries.md)
 
@@ -28,4 +28,4 @@ Clue records a local OpenAI usage reservation before generation. A timeout or pr
 
 ## Validation
 
-PLAN-027 M1 passed 400 repository tests, focused retry/route tests, Ruff, Python byte-compilation, and `git diff --check`. Synthetic tests confirmed that acknowledgment creates a new attempt and audit event while leaving the old usage row unchanged, and that a newer unresolved attempt remains protected. The existing local failed request was inspected read-only; no provider API call or ledger edit was made. GitHub delivery is tracked in PLAN-027.
+PLAN-027 M1 passed 400 repository tests, focused retry/route tests, Ruff, Python byte-compilation, and `git diff --check`. Synthetic tests confirmed that acknowledgment creates a new attempt and audit event while leaving the old usage row unchanged, and that a newer unresolved attempt remains protected. The existing local failed request was inspected read-only; no provider API call or ledger edit was made. Merged through [PR #14](https://github.com/jmsb505/clue-ai/pull/14), squash commit `4d7b163f2fcffa7810904d4c3dda98f19df872c2`.
